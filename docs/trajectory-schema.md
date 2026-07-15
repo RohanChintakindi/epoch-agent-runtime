@@ -54,6 +54,10 @@ Each event contains exactly:
 The summary contains `event_count`, `duration_monotonic_ns`, and counts for each status. Readers
 must reject a record if the summary does not exactly match its events.
 
+The canonical labelled and unlabelled examples live in
+`crates/epoch-trajectory/tests/fixtures/schema-v1.jsonl`. Rust and Python both load that fixture so
+either side fails tests if their interpretation of version 1 drifts.
+
 ## Leakage-resistant grouping
 
 `task_group_id` is the train/validation/test unit. Every execution of the same underlying task or

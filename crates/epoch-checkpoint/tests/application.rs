@@ -17,7 +17,8 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let temp = tempfile::tempdir().expect("tempdir");
-        let producer_store = BlobStore::open(temp.path()).expect("producer blob store");
+        let blob_root = temp.path().join("blobs");
+        let producer_store = BlobStore::open(&blob_root).expect("producer blob store");
         let message = producer_store
             .put(b"visible user message", "text/plain")
             .expect("message blob");
@@ -58,7 +59,7 @@ impl Fixture {
             user_visible_summary_hash: Some(summary.hash),
         };
         let backend = ApplicationCheckpointBackend::new(producer_store);
-        let inspector = BlobStore::open(temp.path()).expect("inspector blob store");
+        let inspector = BlobStore::open(blob_root).expect("inspector blob store");
         Self {
             _temp: temp,
             backend,

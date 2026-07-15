@@ -133,7 +133,8 @@ impl BenchmarkEnvironment {
 fn collect_cpu_model() -> Result<String, EnvironmentError> {
     #[cfg(target_os = "linux")]
     {
-        if let Ok(lscpu) = command_text(Command::new("lscpu"), "cpu_model")
+        let mut lscpu_command = Command::new("lscpu");
+        if let Ok(lscpu) = command_text(&mut lscpu_command, "cpu_model")
             && let Some(model) = parse_cpu_model(&lscpu)
         {
             return Ok(model);

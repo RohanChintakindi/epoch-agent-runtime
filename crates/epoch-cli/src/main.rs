@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
-use clap::{Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
 #[derive(Debug, Parser)]
@@ -16,12 +16,151 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Initialize an Epoch state directory.
+    Init,
     /// Inspect host support for Epoch's execution mechanisms.
     Doctor {
         /// Emit machine-readable JSON.
         #[arg(long)]
         json: bool,
     },
+    /// Run a workload under the selected execution backend.
+    Run {
+        /// Workload manifest to execute.
+        #[arg(long)]
+        manifest: PathBuf,
+    },
+    /// Show the current state of a session.
+    Status { session: String },
+    /// List the typed event timeline for a session or branch.
+    Events {
+        session: String,
+        #[arg(long)]
+        branch: Option<String>,
+    },
+    /// Commit a composite execution checkpoint.
+    Checkpoint {
+        session: String,
+        #[arg(long)]
+        branch: Option<String>,
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// Restore a committed epoch.
+    Restore {
+        epoch: String,
+        #[arg(long, value_enum, default_value_t = RestoreMode::Strict)]
+        mode: RestoreMode,
+    },
+    /// Create a new logical branch from an epoch.
+    Fork {
+        epoch: String,
+        #[arg(long)]
+        name: String,
+    },
+    /// Suspend a branch at a safe boundary.
+    Suspend { branch: String },
+    /// Resume a suspended branch.
+    Resume { branch: String },
+    /// Manage branch promotion and abandonment.
+    Branch {
+        #[command(subcommand)]
+        command: BranchCommand,
+    },
+    /// Compare two epochs or branches semantically.
+    Diff {
+        left: String,
+        right: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manage branch-bound capabilities.
+    Capability {
+        #[command(subcommand)]
+        command: CapabilityCommand,
+    },
+    /// Inspect and reconcile external effects.
+    Effects {
+        #[command(subcommand)]
+        command: EffectsCommand,
+    },
+    /// Run and report benchmark suites.
+    Bench {
+        #[command(subcommand)]
+        command: BenchCommand,
+    },
+    /// Run a reproducible fault scenario.
+    Fault {
+        #[command(subcommand)]
+        command: FaultCommand,
+    },
+    /// Serve the local read-only inspection API.
+    Serve {
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        bind: String,
+    },
+    /// Run the complete deterministic interview demonstration.
+    Demo,
+}
+
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum RestoreMode {
+    #[default]
+    Strict,
+    Inspect,
+    ForkOnDivergence,
+}
+
+#[derive(Debug, Subcommand)]
+enum BranchCommand {
+    Promote { branch: String },
+    Abandon { branch: String },
+}
+
+#[derive(Debug, Subcommand)]
+enum CapabilityCommand {
+    Grant {
+        branch: String,
+        action: String,
+        constraints: Option<String>,
+    },
+    Revoke {
+        capability: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum EffectsCommand {
+    List { session: String },
+    Resolve(ResolveEffect),
+}
+
+#[derive(Debug, Args)]
+#[command(group(
+    ArgGroup::new("resolution")
+        .required(true)
+        .multiple(false)
+        .args(["committed", "failed", "compensate"])
+))]
+struct ResolveEffect {
+    effect: String,
+    #[arg(long)]
+    committed: bool,
+    #[arg(long)]
+    failed: bool,
+    #[arg(long)]
+    compensate: bool,
+}
+
+#[derive(Debug, Subcommand)]
+enum BenchCommand {
+    Run { suite: String },
+    Report { run: String },
+}
+
+#[derive(Debug, Subcommand)]
+enum FaultCommand {
+    Run { scenario: String },
 }
 
 #[derive(Debug, Serialize)]
@@ -104,8 +243,11 @@ fn find_in_path(binary: &str) -> Option<PathBuf> {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    match cli.command {
+    execute(Cli::parse().command)
+}
+
+fn execute(command: Command) -> ExitCode {
+    match command {
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -136,6 +278,35 @@ fn main() -> ExitCode {
                 }
             }
             ExitCode::SUCCESS
+        }
+        unfinished => {
+            eprintln!("epoch {} is not implemented yet", unfinished.command_path());
+            ExitCode::from(2)
+        }
+    }
+}
+
+impl Command {
+    const fn command_path(&self) -> &'static str {
+        match self {
+            Self::Init => "init",
+            Self::Doctor { .. } => "doctor",
+            Self::Run { .. } => "run",
+            Self::Status { .. } => "status",
+            Self::Events { .. } => "events",
+            Self::Checkpoint { .. } => "checkpoint",
+            Self::Restore { .. } => "restore",
+            Self::Fork { .. } => "fork",
+            Self::Suspend { .. } => "suspend",
+            Self::Resume { .. } => "resume",
+            Self::Branch { .. } => "branch",
+            Self::Diff { .. } => "diff",
+            Self::Capability { .. } => "capability",
+            Self::Effects { .. } => "effects",
+            Self::Bench { .. } => "bench",
+            Self::Fault { .. } => "fault",
+            Self::Serve { .. } => "serve",
+            Self::Demo => "demo",
         }
     }
 }
@@ -171,7 +342,7 @@ mod tests {
         let command = Cli::command();
         let actual = command
             .get_subcommands()
-            .map(|subcommand| subcommand.get_name())
+            .map(clap::Command::get_name)
             .collect::<BTreeSet<_>>();
         let expected = [
             "bench",
@@ -213,7 +384,7 @@ mod tests {
                 .find_subcommand(group)
                 .expect("command group exists")
                 .get_subcommands()
-                .map(|subcommand| subcommand.get_name())
+                .map(clap::Command::get_name)
                 .collect::<BTreeSet<_>>();
             assert_eq!(
                 subcommands,
@@ -249,5 +420,26 @@ mod tests {
         ] {
             Cli::try_parse_from(arguments).expect("specified command must parse");
         }
+    }
+
+    #[test]
+    fn unfinished_commands_return_an_explicit_failure() {
+        assert_ne!(execute(Command::Init), ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn effect_resolution_requires_exactly_one_outcome() {
+        assert!(Cli::try_parse_from(["epoch", "effects", "resolve", "effect-1"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "epoch",
+                "effects",
+                "resolve",
+                "effect-1",
+                "--committed",
+                "--failed",
+            ])
+            .is_err()
+        );
     }
 }

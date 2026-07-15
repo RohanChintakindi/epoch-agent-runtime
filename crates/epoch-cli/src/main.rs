@@ -1403,6 +1403,14 @@ mod tests {
                 "/tmp/epoch-demo/workspaces",
                 "--json",
             ],
+            vec![
+                "epoch",
+                "bench",
+                "run",
+                "all",
+                "--performance-probe",
+                "/usr/local/libexec/epoch-performance-probe",
+            ],
             vec!["epoch", "serve", "--bind", "127.0.0.1:9090"],
         ] {
             Cli::try_parse_from(arguments).expect("specified command must parse");

@@ -2,7 +2,7 @@
 
 use std::{fmt::Write as _, path::Path, time::Duration};
 
-use rusqlite::{Connection, TransactionBehavior, params};
+use rusqlite::{Connection, ErrorCode, TransactionBehavior, params};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -102,8 +102,9 @@ fn configure_connection(connection: &Connection) -> Result<(), StorageError> {
     connection.pragma_update(None, "foreign_keys", true)?;
     connection.pragma_update(None, "trusted_schema", false)?;
 
-    let journal_mode: String =
-        connection.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
+    let journal_mode: String = retry_sqlite_busy(|| {
+        connection.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))
+    })?;
     if !journal_mode.eq_ignore_ascii_case("wal") {
         return Err(StorageError::PragmaNotApplied {
             name: "journal_mode",
@@ -131,6 +132,28 @@ fn configure_connection(connection: &Connection) -> Result<(), StorageError> {
         });
     }
     Ok(())
+}
+
+fn retry_sqlite_busy<T>(mut operation: impl FnMut() -> rusqlite::Result<T>) -> rusqlite::Result<T> {
+    const DELAYS_MS: [u64; 9] = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+
+    for delay_ms in DELAYS_MS {
+        match operation() {
+            Ok(value) => return Ok(value),
+            Err(error) if is_sqlite_lock(&error) => {
+                std::thread::sleep(Duration::from_millis(delay_ms));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    operation()
+}
+
+fn is_sqlite_lock(error: &rusqlite::Error) -> bool {
+    matches!(
+        error.sqlite_error_code(),
+        Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+    )
 }
 
 fn validate_migration_plan(migrations: &[Migration]) -> Result<(), StorageError> {

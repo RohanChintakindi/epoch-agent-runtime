@@ -3,6 +3,9 @@ use std::{fs, str::FromStr, sync::Arc, thread};
 use epoch_blob::{BlobError, BlobHash, BlobStore};
 use tempfile::TempDir;
 
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+
 fn store() -> (TempDir, BlobStore) {
     let directory = TempDir::new().expect("create test directory");
     let store = BlobStore::open(directory.path().join("blobs")).expect("open blob store");
@@ -135,4 +138,106 @@ fn deserialization_cannot_bypass_blob_hash_validation() {
         serde_json::from_str::<BlobHash>(&encoded).expect("deserialize valid hash"),
         canonical
     );
+}
+
+#[cfg(unix)]
+fn unix_mode(path: &std::path::Path) -> u32 {
+    fs::symlink_metadata(path)
+        .expect("read path metadata")
+        .mode()
+        & 0o7777
+}
+
+#[cfg(unix)]
+#[test]
+fn creates_private_directories_and_blob_files() {
+    let (directory, store) = store();
+    let metadata = store
+        .put(b"private payload", "application/octet-stream")
+        .expect("persist private blob");
+    let root = directory.path().join("blobs");
+    let sha256 = root.join("sha256");
+    let temp = sha256.join(".tmp");
+    let blob_path = store.blob_path(&metadata.hash);
+    let shard = blob_path.parent().expect("blob has shard directory");
+
+    for path in [&root, &sha256, &temp, shard] {
+        assert_eq!(unix_mode(path), 0o700, "{} must be private", path.display());
+    }
+    assert_eq!(unix_mode(&store.blob_path(&metadata.hash)), 0o600);
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_an_insecure_existing_root_instead_of_silently_chmodding_it() {
+    let directory = TempDir::new().expect("create test directory");
+    let root = directory.path().join("blobs");
+    fs::create_dir(&root).expect("create blob root");
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o755))
+        .expect("make root intentionally insecure");
+
+    assert!(matches!(
+        BlobStore::open(&root),
+        Err(BlobError::InsecurePermissions {
+            expected: 0o700,
+            actual: 0o755,
+            ..
+        })
+    ));
+    assert_eq!(unix_mode(&root), 0o755, "open must not hide unsafe state");
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_a_symlink_as_the_blob_root_without_touching_its_target() {
+    let directory = TempDir::new().expect("create test directory");
+    let target = directory.path().join("target");
+    fs::create_dir(&target).expect("create symlink target");
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).expect("secure symlink target");
+    let root = directory.path().join("blobs");
+    symlink(&target, &root).expect("create root symlink");
+
+    assert!(matches!(
+        BlobStore::open(&root),
+        Err(BlobError::UnsafeSymlink { .. })
+    ));
+    assert!(!target.join("sha256").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_symlinks_inside_the_managed_store() {
+    let directory = TempDir::new().expect("create test directory");
+    let root = directory.path().join("blobs");
+    fs::create_dir(&root).expect("create blob root");
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).expect("secure blob root");
+    let target = directory.path().join("target");
+    fs::create_dir(&target).expect("create symlink target");
+    symlink(&target, root.join("sha256")).expect("create managed symlink");
+
+    assert!(matches!(
+        BlobStore::open(&root),
+        Err(BlobError::UnsafeSymlink { .. })
+    ));
+    assert!(!target.join(".tmp").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn read_rejects_a_symlink_at_the_canonical_blob_path() {
+    let (directory, store) = store();
+    let content = b"outside payload";
+    let hash = BlobHash::digest(content);
+    let blob_path = store.blob_path(&hash);
+    let shard = blob_path.parent().expect("blob has shard");
+    fs::create_dir(shard).expect("create shard");
+    fs::set_permissions(shard, fs::Permissions::from_mode(0o700)).expect("secure shard");
+    let outside = directory.path().join("outside");
+    fs::write(&outside, content).expect("write outside file");
+    symlink(&outside, &blob_path).expect("create blob symlink");
+
+    assert!(matches!(
+        store.read(&hash),
+        Err(BlobError::UnsafeSymlink { .. })
+    ));
 }

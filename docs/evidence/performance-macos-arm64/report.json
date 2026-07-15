@@ -1,0 +1,1006 @@
+{
+  "schema_version": 1,
+  "config": {
+    "code_revision": "26b389efa9ac0dc42095b63833d3039a3b1d6a67",
+    "cow": {
+      "allocations_bytes": [
+        134217728,
+        536870912,
+        1073741824
+      ],
+      "fanouts": [
+        1,
+        2,
+        4,
+        8
+      ],
+      "dirty_basis_points": [
+        0,
+        100,
+        1000,
+        5000,
+        10000
+      ],
+      "repetitions": 3,
+      "helper": "/Users/rohanchintakindi/clawshell/epoch-worktrees/final-performance-matrix/crates/epoch-performance-matrix/helpers/cow_matrix_probe.py",
+      "python": "/usr/bin/python3",
+      "timeout_ms": 180000
+    },
+    "isolation": {
+      "repetitions": 5,
+      "probe": null,
+      "trusted_sandbox_helper": null,
+      "workspace": null,
+      "memory_limit_bytes": 134217728,
+      "pids_limit": 16,
+      "cpu_percent": 100
+    }
+  },
+  "environment": {
+    "operating_system": "macos",
+    "architecture": "aarch64",
+    "kernel_release": "25.5.0",
+    "logical_cpus": 10,
+    "code_revision": "26b389efa9ac0dc42095b63833d3039a3b1d6a67",
+    "host_memory": {
+      "available_bytes": 0,
+      "safety_budget_bytes": 0
+    }
+  },
+  "cow": {
+    "rows": [
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 1,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 1,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 1,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 1,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 1,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 2,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 2,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 2,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 2,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 2,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 4,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 4,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 4,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 4,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 4,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 8,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 8,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 8,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 8,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 134217728,
+          "fanout": 8,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 1,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 1,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 1,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 1,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 1,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 2,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 2,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 2,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 2,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 2,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 4,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 4,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 4,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 4,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 4,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 8,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 8,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 8,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 8,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 536870912,
+          "fanout": 8,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 1,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 1,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 1,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 1,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 1,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 2,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 2,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 2,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 2,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 2,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 4,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 4,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 4,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 4,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 4,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 8,
+          "dirty_basis_points": 0
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 8,
+          "dirty_basis_points": 100
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 8,
+          "dirty_basis_points": 1000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 8,
+          "dirty_basis_points": 5000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "key": {
+          "allocation_bytes": 1073741824,
+          "fanout": 8,
+          "dirty_basis_points": 10000
+        },
+        "status": "unsupported",
+        "estimated_peak_bytes": null,
+        "diagnostic": {
+          "code": "platform_not_linux",
+          "detail": "fork/COW PSS evidence requires Linux /proc"
+        },
+        "samples": [],
+        "summary": null
+      }
+    ],
+    "summary": {
+      "total_rows": 60,
+      "supported_rows": 0,
+      "skipped_rows": 0,
+      "unsupported_rows": 60,
+      "failed_rows": 0
+    }
+  },
+  "isolation": {
+    "status": "unsupported",
+    "direct": {
+      "backend": "direct",
+      "status": "unsupported",
+      "diagnostic": {
+        "code": "fixture_unconfigured",
+        "detail": "isolation probe path was not configured"
+      },
+      "samples": [],
+      "summary": null,
+      "checkpoint_interaction": {
+        "backend": "direct",
+        "status": "unsupported",
+        "detail": "direct performance fixture was unavailable; checkpoint interaction was not measured"
+      }
+    },
+    "linux": {
+      "backend": "linux",
+      "status": "unsupported",
+      "diagnostic": {
+        "code": "fixture_unconfigured",
+        "detail": "isolation probe path was not configured"
+      },
+      "samples": [],
+      "summary": null,
+      "checkpoint_interaction": {
+        "backend": "linux",
+        "status": "unsupported",
+        "detail": "Linux performance fixture was unavailable; checkpoint interaction was not measured"
+      }
+    },
+    "checkpoint_interactions": [
+      {
+        "backend": "direct",
+        "status": "unsupported",
+        "detail": "direct performance fixture was unavailable; checkpoint interaction was not measured"
+      },
+      {
+        "backend": "linux",
+        "status": "unsupported",
+        "detail": "Linux performance fixture was unavailable; checkpoint interaction was not measured"
+      }
+    ]
+  }
+}

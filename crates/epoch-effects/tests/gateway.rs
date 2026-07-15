@@ -350,17 +350,32 @@ fn provider_credential_fields_are_rejected_before_authorization_or_storage() {
     let dispatcher = Arc::new(IdempotentDispatcher::default());
     let _gateway = fixture.gateway(authorizer.clone(), dispatcher.clone());
 
-    let error = CanonicalIntent::new(
-        fixture.session,
-        fixture.branch,
-        "turn-9",
-        "model.call",
-        "provider:demo",
-        json!({"headers": {"Authorization": "Bearer must-not-persist"}}),
-        3,
-    )
-    .expect_err("provider credentials must be refused");
-    assert!(matches!(error, GatewayError::SensitiveField { .. }));
+    for (resource, arguments) in [
+        (
+            "provider:demo",
+            json!({"headers": {"Authorization": "Bearer must-not-persist"}}),
+        ),
+        (
+            "provider:demo",
+            json!({"headers": {"X-API-Key": "must-not-persist"}}),
+        ),
+        (
+            "https://user:must-not-persist@example.invalid/v1",
+            json!({"prompt": "hello"}),
+        ),
+    ] {
+        let error = CanonicalIntent::new(
+            fixture.session,
+            fixture.branch,
+            "turn-9",
+            "model.call",
+            resource,
+            arguments,
+            3,
+        )
+        .expect_err("provider credentials must be refused");
+        assert!(matches!(error, GatewayError::SensitiveField { .. }));
+    }
     assert_eq!(authorizer.calls.load(Ordering::SeqCst), 0);
     assert_eq!(dispatcher.calls.load(Ordering::SeqCst), 0);
 

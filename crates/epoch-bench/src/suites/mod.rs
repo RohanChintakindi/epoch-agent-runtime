@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{BenchmarkEnvironment, BenchmarkReport, SampleOutcome};
+use crate::{BenchmarkEnvironment, BenchmarkReport, PercentileSummary, SampleOutcome};
 
 pub use checkpoint::{run_checkpoint_suite, run_compatibility_matrix};
 pub use cow::run_cow_experiment;
@@ -313,6 +313,25 @@ pub struct CowEvidence {
     pub outcome: SampleOutcome,
     /// Raw successful samples.
     pub samples: Vec<CowSample>,
+    /// Aggregate raw-sample summary, absent for unsupported or failed experiments.
+    pub summary: Option<CowSummary>,
+}
+
+/// COW raw-sample aggregate summary.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CowSummary {
+    /// Helper wall-time percentiles.
+    pub elapsed_ns: PercentileSummary,
+    /// COW proportional-set byte percentiles.
+    pub cow_pss_bytes: PercentileSummary,
+    /// Full-copy control byte percentiles.
+    pub full_copy_bytes: PercentileSummary,
+    /// Minor page-fault percentiles.
+    pub minor_faults: PercentileSummary,
+    /// Major page-fault percentiles.
+    pub major_faults: PercentileSummary,
+    /// Aggregate COW PSS divided by aggregate full-copy bytes, in basis points.
+    pub pss_to_full_copy_basis_points: Option<u32>,
 }
 
 /// Whether a fault result came from a real injection API or a symbolic boundary.
@@ -656,38 +675,46 @@ fn decisions(
     cow: Option<&CowEvidence>,
     thresholds: &DecisionThresholds,
 ) -> Vec<DecisionEvidence> {
-    let checkpoint_evidence = checkpoint.map_or_else(
+    let checkpoint_measurement = checkpoint.map(checkpoint_decision_measurement);
+    let checkpoint_evidence = checkpoint_measurement.as_ref().map_or_else(
         || vec!["checkpoint suite was not requested".to_owned()],
-        |evidence| {
-            let successes = evidence
-                .reports
-                .iter()
-                .map(|report| report.summary.succeeded)
-                .sum::<u32>();
-            let validation_failures = evidence
-                .validation_cases
-                .iter()
-                .filter(|case| !case.passed)
-                .count();
+        |measurement| {
             vec![
-                format!("{successes} successful retained capture/restore samples"),
-                format!("{validation_failures} validation failures"),
+                format!("successful_samples={}", measurement.successes),
+                format!("validation_failures={}", measurement.validation_failures),
+                format!(
+                    "capture_p95_ns={}",
+                    optional_metric(measurement.capture_p95_ns)
+                ),
+                format!(
+                    "restore_p95_ns={}",
+                    optional_metric(measurement.restore_p95_ns)
+                ),
             ]
         },
     );
-    let checkpoint_keep = checkpoint.is_some_and(|evidence| {
-        evidence
-            .reports
-            .iter()
-            .all(|report| report.summary.failed == 0 && report.summary.unsupported == 0)
-            && evidence.validation_cases.iter().all(|case| case.passed)
+    let checkpoint_keep = checkpoint_measurement.is_some_and(|measurement| {
+        measurement.failed == 0
+            && measurement.unsupported == 0
+            && measurement.validation_failures <= thresholds.checkpoint_validation_failures
+            && measurement
+                .capture_p95_ns
+                .is_some_and(|value| value <= thresholds.checkpoint_capture_p95_ns)
+            && measurement
+                .restore_p95_ns
+                .is_some_and(|value| value <= thresholds.checkpoint_restore_p95_ns)
     });
     let cow_evidence = cow.map_or_else(
         || vec!["COW suite was not requested".to_owned()],
         |evidence| match &evidence.outcome {
             SampleOutcome::Succeeded => vec![format!(
-                "{} Linux raw samples; scope remains process-memory compatibility only",
-                evidence.samples.len()
+                "{} Linux raw samples; pss_to_full_copy_basis_points={}; scope remains process-memory compatibility only",
+                evidence.samples.len(),
+                evidence
+                    .summary
+                    .as_ref()
+                    .and_then(|summary| summary.pss_to_full_copy_basis_points)
+                    .map_or_else(|| "unavailable".to_owned(), |value| value.to_string())
             )],
             SampleOutcome::Unsupported { reason } => vec![format!("unsupported: {reason}")],
             SampleOutcome::Failed { error } => vec![format!("failed: {error}")],
@@ -727,6 +754,95 @@ fn decisions(
             ],
         },
     ]
+}
+
+struct CheckpointDecisionMeasurement {
+    successes: u32,
+    unsupported: u32,
+    failed: u32,
+    validation_failures: u32,
+    capture_p95_ns: Option<u64>,
+    restore_p95_ns: Option<u64>,
+}
+
+fn checkpoint_decision_measurement(
+    evidence: &CheckpointSuiteEvidence,
+) -> CheckpointDecisionMeasurement {
+    let mut capture = Vec::new();
+    let mut restore = Vec::new();
+    for report in &evidence.reports {
+        for sample in &report.samples {
+            if !matches!(sample.outcome, SampleOutcome::Succeeded) {
+                continue;
+            }
+            let capture_ns =
+                metric_u64(&sample.metrics, "application_capture_ns").and_then(|value| {
+                    metric_u64(&sample.metrics, "workspace_capture_ns")
+                        .and_then(|workspace| value.checked_add(workspace))
+                });
+            let restore_ns = [
+                "application_restore_ns",
+                "workspace_validation_ns",
+                "workspace_restore_ns",
+            ]
+            .into_iter()
+            .try_fold(0_u64, |total, key| {
+                metric_u64(&sample.metrics, key).and_then(|value| total.checked_add(value))
+            });
+            if let Some(value) = capture_ns {
+                capture.push(value);
+            }
+            if let Some(value) = restore_ns {
+                restore.push(value);
+            }
+        }
+    }
+    capture.sort_unstable();
+    restore.sort_unstable();
+    CheckpointDecisionMeasurement {
+        successes: evidence
+            .reports
+            .iter()
+            .map(|report| report.summary.succeeded)
+            .sum(),
+        unsupported: evidence
+            .reports
+            .iter()
+            .map(|report| report.summary.unsupported)
+            .sum(),
+        failed: evidence
+            .reports
+            .iter()
+            .map(|report| report.summary.failed)
+            .sum(),
+        validation_failures: u32::try_from(
+            evidence
+                .validation_cases
+                .iter()
+                .filter(|case| !case.passed)
+                .count(),
+        )
+        .unwrap_or(u32::MAX),
+        capture_p95_ns: percentile(&capture, 95),
+        restore_p95_ns: percentile(&restore, 95),
+    }
+}
+
+fn metric_u64(metrics: &BTreeMap<String, f64>, key: &str) -> Option<u64> {
+    let value = metrics.get(key)?;
+    if !value.is_finite() || *value < 0.0 {
+        return None;
+    }
+    format!("{value:.0}").parse().ok()
+}
+
+fn percentile(values: &[u64], percentile: usize) -> Option<u64> {
+    let rank = percentile.saturating_mul(values.len()).div_ceil(100).max(1);
+    values.get(rank - 1).copied()
+}
+
+fn optional_metric(value: Option<u64>) -> String {
+    value.map_or_else(|| "unavailable".to_owned(), |value| value.to_string())
 }
 
 fn csv_row(output: &mut String, report: &EvidenceBundle, row: CsvRow<'_>) {

@@ -18,9 +18,9 @@ pub const MAX_REPETITIONS: u32 = 100_000;
 pub use environment::EnvironmentError;
 pub use suites::{
     CheckpointSuiteConfig, CheckpointSuiteEvidence, CompatibilityMatrix, CowConfig, CowEvidence,
-    Decision, DecisionEvidence, DecisionThresholds, EvidenceBundle, EvidenceKind, FaultMatrix,
-    SuiteError, SuiteName, SuiteRequest, run_checkpoint_suite, run_compatibility_matrix,
-    run_cow_experiment, run_fault_matrix, run_suite,
+    CowSummary, Decision, DecisionEvidence, DecisionThresholds, EvidenceBundle, EvidenceKind,
+    FaultMatrix, SuiteError, SuiteName, SuiteRequest, run_checkpoint_suite,
+    run_compatibility_matrix, run_cow_experiment, run_fault_matrix, run_suite,
 };
 
 /// Whether boundary tracing is enabled for a benchmark run.

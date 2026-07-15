@@ -6,9 +6,9 @@ use serde::Deserialize;
 
 use crate::{BenchmarkEnvironment, SampleOutcome};
 
-#[cfg(target_os = "linux")]
-use super::CowSample;
 use super::{CowConfig, CowEvidence, bounded};
+#[cfg(target_os = "linux")]
+use super::{CowSample, CowSummary};
 
 /// Runs the bounded Linux fork/COW helper or returns a structured unsupported result.
 #[must_use]
@@ -21,6 +21,7 @@ pub fn run_cow_experiment(config: &CowConfig, environment: BenchmarkEnvironment)
                 error: bounded(&error.to_string()),
             },
             samples: Vec::new(),
+            summary: None,
         };
     }
     #[cfg(not(target_os = "linux"))]
@@ -32,6 +33,7 @@ pub fn run_cow_experiment(config: &CowConfig, environment: BenchmarkEnvironment)
                 reason: "fork COW metrics require Linux /proc/self/smaps_rollup".to_owned(),
             },
             samples: Vec::new(),
+            summary: None,
         }
     }
     #[cfg(target_os = "linux")]
@@ -91,6 +93,7 @@ fn run_linux(config: &CowConfig, environment: BenchmarkEnvironment) -> CowEviden
                         reason: "python3 COW helper runtime is unavailable".to_owned(),
                     },
                     samples: Vec::new(),
+                    summary: None,
                 };
             }
             Err(error) => return failed(config, environment, &error.to_string()),
@@ -154,16 +157,19 @@ fn run_linux(config: &CowConfig, environment: BenchmarkEnvironment) -> CowEviden
                         reason: bounded(&reason),
                     },
                     samples: Vec::new(),
+                    summary: None,
                 };
             }
             HelperReport::Failed { error } => return failed(config, environment, &error),
         }
     }
+    let summary = summarize(&samples);
     CowEvidence {
         config: config.clone(),
         environment,
         outcome: SampleOutcome::Succeeded,
         samples,
+        summary: Some(summary),
     }
 }
 
@@ -176,5 +182,51 @@ fn failed(config: &CowConfig, environment: BenchmarkEnvironment, error: &str) ->
             error: bounded(error),
         },
         samples: Vec::new(),
+        summary: None,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn summarize(samples: &[CowSample]) -> CowSummary {
+    let mut elapsed = samples
+        .iter()
+        .map(|sample| sample.elapsed_ns)
+        .collect::<Vec<_>>();
+    let mut pss = samples
+        .iter()
+        .map(|sample| sample.cow_pss_bytes)
+        .collect::<Vec<_>>();
+    let mut copied = samples
+        .iter()
+        .map(|sample| sample.full_copy_bytes)
+        .collect::<Vec<_>>();
+    let mut minor = samples
+        .iter()
+        .map(|sample| sample.minor_faults)
+        .collect::<Vec<_>>();
+    let mut major = samples
+        .iter()
+        .map(|sample| sample.major_faults)
+        .collect::<Vec<_>>();
+    for values in [&mut elapsed, &mut pss, &mut copied, &mut minor, &mut major] {
+        values.sort_unstable();
+    }
+    let total_pss = samples.iter().fold(0_u64, |total, sample| {
+        total.saturating_add(sample.cow_pss_bytes)
+    });
+    let total_copied = samples.iter().fold(0_u64, |total, sample| {
+        total.saturating_add(sample.full_copy_bytes)
+    });
+    let ratio = total_pss
+        .checked_mul(10_000)
+        .and_then(|value| value.checked_div(total_copied))
+        .and_then(|value| u32::try_from(value).ok());
+    CowSummary {
+        elapsed_ns: crate::PercentileSummary::from_sorted(&elapsed),
+        cow_pss_bytes: crate::PercentileSummary::from_sorted(&pss),
+        full_copy_bytes: crate::PercentileSummary::from_sorted(&copied),
+        minor_faults: crate::PercentileSummary::from_sorted(&minor),
+        major_faults: crate::PercentileSummary::from_sorted(&major),
+        pss_to_full_copy_basis_points: ratio,
     }
 }

@@ -107,3 +107,52 @@ fn cli_crash_point_exits_nonzero_after_flushing_partial_trace() {
     assert_eq!(kinds.last(), Some(&"model.response"));
     assert!(String::from_utf8_lossy(&output.stderr).contains("injected crash"));
 }
+
+#[test]
+fn cli_uses_the_supervisors_trusted_execution_binding() {
+    let workspace = TestDir::new();
+    let output = Command::new(env!("CARGO_BIN_EXE_epoch-test-agent"))
+        .args([
+            "--workspace",
+            workspace.path().to_str().expect("UTF-8 test path"),
+            "--scenario",
+            "files",
+        ])
+        .env("EPOCH_SESSION_ID", "trusted-session")
+        .env("EPOCH_BRANCH_ID", "trusted-branch")
+        .output()
+        .expect("test agent binary should launch");
+
+    assert!(output.status.success());
+    let first = output
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .next()
+        .expect("first record");
+    let start = decode_line(first).expect("valid start record");
+    let Message::AgentStart(start) = start.message else {
+        panic!("first record was not agent.start");
+    };
+    assert_eq!(start.session_id, "trusted-session");
+    assert_eq!(start.branch_id, "trusted-branch");
+}
+
+#[test]
+fn cli_rejects_an_incomplete_supervisor_binding() {
+    let workspace = TestDir::new();
+    let output = Command::new(env!("CARGO_BIN_EXE_epoch-test-agent"))
+        .args([
+            "--workspace",
+            workspace.path().to_str().expect("UTF-8 test path"),
+            "--scenario",
+            "files",
+        ])
+        .env("EPOCH_SESSION_ID", "trusted-session")
+        .env_remove("EPOCH_BRANCH_ID")
+        .output()
+        .expect("test agent binary should launch");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("must be set together"));
+}

@@ -265,8 +265,10 @@ dependencies = [
  "clap",
  "epoch-blob",
  "epoch-protocol",
+ "epoch-supervisor",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
 ]
 

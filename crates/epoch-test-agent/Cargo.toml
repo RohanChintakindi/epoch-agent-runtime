@@ -13,5 +13,9 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+epoch-supervisor = { path = "../epoch-supervisor" }
+tempfile.workspace = true
+
 [lints]
 workspace = true

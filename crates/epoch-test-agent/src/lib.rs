@@ -52,6 +52,7 @@ pub struct WorkloadConfig {
     pub workspace: PathBuf,
     pub memory_bytes: usize,
     pub crash_at: Option<CrashPoint>,
+    pub execution_binding: Option<ExecutionBinding>,
 }
 
 impl WorkloadConfig {
@@ -63,6 +64,23 @@ impl WorkloadConfig {
             workspace,
             memory_bytes: DEFAULT_MEMORY_BYTES,
             crash_at: None,
+            execution_binding: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutionBinding {
+    pub session_id: String,
+    pub branch_id: String,
+}
+
+impl ExecutionBinding {
+    #[must_use]
+    pub fn new(session_id: impl Into<String>, branch_id: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            branch_id: branch_id.into(),
         }
     }
 }
@@ -169,10 +187,19 @@ pub fn run_workload(
     let mut emitter = Emitter::new(output);
     let mut random = SplitMix64::new(config.seed);
 
+    let (session_id, branch_id) = config.execution_binding.as_ref().map_or_else(
+        || {
+            (
+                deterministic_id("session", config.seed, config.scenario),
+                deterministic_id("branch", config.seed, config.scenario),
+            )
+        },
+        |binding| (binding.session_id.clone(), binding.branch_id.clone()),
+    );
     emitter.emit(Message::AgentStart(AgentStart {
         agent_id: deterministic_id("agent", config.seed, config.scenario),
-        session_id: deterministic_id("session", config.seed, config.scenario),
-        branch_id: deterministic_id("branch", config.seed, config.scenario),
+        session_id,
+        branch_id,
         extensions: Extensions::new(),
     }))?;
 

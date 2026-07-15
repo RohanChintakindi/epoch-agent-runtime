@@ -126,3 +126,12 @@ fn lost_response_mode_closes_without_reply_but_status_remains_committed() {
             .is_some()
     );
 }
+
+#[test]
+fn mock_service_refuses_non_loopback_listeners() {
+    let directory = TempDir::new().expect("temporary directory");
+    assert!(
+        MockEffectServer::bind("0.0.0.0:0", directory.path().join("effects.db")).is_err(),
+        "the test effect service must not become a network-exposed side effect endpoint"
+    );
+}

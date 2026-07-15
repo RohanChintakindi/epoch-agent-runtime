@@ -7,6 +7,7 @@ use std::{env, path::PathBuf, process::ExitCode, str::FromStr as _, sync::Arc};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use epoch_capabilities::{CapabilityConstraints, CapabilityError, CapabilityService, IssueRequest};
 use epoch_core::{BranchId, CapabilityId, EpochId, SessionId};
+use epoch_dashboard::{DashboardConfig, DashboardError, parse_loopback_bind, serve};
 use epoch_effects::{DenyAllAuthorizer, DeterministicLocalDispatcher, EffectGateway};
 use epoch_sandbox::{
     BackendCapabilities as SandboxBackendCapabilities, ExecutionBackend as _, LinuxBackend,
@@ -133,6 +134,13 @@ enum Command {
     },
     /// Serve the local read-only inspection API.
     Serve {
+        /// Existing Epoch state directory containing state.db.
+        #[arg(long, default_value = ".epoch")]
+        state_root: PathBuf,
+        /// Optional directory containing bounded benchmark JSON reports.
+        #[arg(long)]
+        results_root: Option<PathBuf>,
+        /// Loopback listener. Non-loopback addresses are always refused.
         #[arg(long, default_value = "127.0.0.1:8080")]
         bind: String,
     },
@@ -538,6 +546,11 @@ fn execute(command: Command) -> ExitCode {
         }),
         Command::Bench { command } => execute_bench(command),
         Command::Ml { command } => execute_ml_command(command),
+        Command::Serve {
+            state_root,
+            results_root,
+            bind,
+        } => serve_dashboard(state_root, results_root, &bind),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -613,6 +626,35 @@ fn execute_ml_command(command: MlCommand) -> ExitCode {
             max_branches,
             max_events_per_branch,
         }),
+    }
+}
+
+fn serve_dashboard(state_root: PathBuf, results_root: Option<PathBuf>, raw_bind: &str) -> ExitCode {
+    let bind = match parse_loopback_bind(raw_bind) {
+        Ok(bind) => bind,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::from(2);
+        }
+    };
+    eprintln!("Epoch dashboard listening at http://{bind} (local, read-only, no authentication)");
+    match serve(DashboardConfig {
+        state_root,
+        results_root,
+        bind,
+    }) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => report_dashboard_error(&error),
+    }
+}
+
+fn report_dashboard_error(error: &DashboardError) -> ExitCode {
+    if error.is_user_error() {
+        eprintln!("{error}");
+        ExitCode::from(2)
+    } else {
+        eprintln!("trusted dashboard state is unavailable: {error}");
+        ExitCode::from(SUPERVISOR_FAILURE_EXIT)
     }
 }
 

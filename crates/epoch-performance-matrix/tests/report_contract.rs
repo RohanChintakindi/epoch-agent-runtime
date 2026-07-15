@@ -33,7 +33,13 @@ fn mac_like_run_is_structured_and_artifacts_are_stable_and_non_overwriting() {
     );
     let report = PerformanceRunner::new(config, environment).run();
     assert_eq!(report.cow.rows.len(), 60);
-    assert!(report.cow.rows.iter().all(|row| row.status == "unsupported"));
+    assert!(
+        report
+            .cow
+            .rows
+            .iter()
+            .all(|row| row.status == "unsupported")
+    );
     assert_eq!(report.isolation.linux.status, "unsupported");
     assert_eq!(report.environment.code_revision, REVISION);
 
@@ -41,7 +47,12 @@ fn mac_like_run_is_structured_and_artifacts_are_stable_and_non_overwriting() {
     let output = directory.path().join("evidence");
     let bundle = write_artifacts(&output, &report).unwrap();
     assert_eq!(bundle, ArtifactBundle::at(&output));
-    for path in [&bundle.json, &bundle.csv, &bundle.markdown, &bundle.checksums] {
+    for path in [
+        &bundle.json,
+        &bundle.csv,
+        &bundle.markdown,
+        &bundle.checksums,
+    ] {
         assert!(path.is_file(), "missing {}", path.display());
     }
     assert!(write_artifacts(&output, &report).is_err());
@@ -49,4 +60,3 @@ fn mac_like_run_is_structured_and_artifacts_are_stable_and_non_overwriting() {
     assert!(markdown.contains(REVISION));
     assert!(markdown.contains("platform_not_linux"));
 }
-

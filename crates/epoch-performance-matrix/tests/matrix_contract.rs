@@ -68,4 +68,3 @@ fn non_linux_host_retains_structured_unsupported_rows() {
         PlannedOutcome::Unsupported { ref code, .. } if code == "platform_not_linux"
     )));
 }
-

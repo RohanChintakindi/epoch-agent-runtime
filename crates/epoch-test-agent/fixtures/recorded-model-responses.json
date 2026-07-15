@@ -1,0 +1,7 @@
+{
+  "full": "Run the file, memory, child-process, and loopback-network tools, then stop at a safe point.",
+  "files": "Create the deterministic artifact, append one mutation, then stop at a safe point.",
+  "memory": "Allocate and fill the bounded deterministic memory buffer, then stop at a safe point.",
+  "child": "Spawn the deterministic child process, record its result, then stop at a safe point.",
+  "network": "Perform the loopback request against the in-process fixture, then stop at a safe point."
+}

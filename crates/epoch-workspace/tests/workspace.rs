@@ -283,10 +283,12 @@ fn corrupt_manifest_blob_is_rejected_before_target_or_staging_creation() {
     let target = fixture.target("corrupt");
     assert!(backend.restore(&snapshot, &target).is_err());
     assert!(!target.exists());
-    assert!(fs::read_dir(&fixture.restore_parent)
-        .expect("parent")
-        .next()
-        .is_none());
+    assert!(
+        fs::read_dir(&fixture.restore_parent)
+            .expect("parent")
+            .next()
+            .is_none()
+    );
 }
 
 #[test]
@@ -409,8 +411,10 @@ fn interrupted_restore_cleans_staging_even_with_inaccessible_final_directory_mod
         })
     ));
     assert!(!target.exists());
-    assert!(fs::read_dir(&fixture.restore_parent)
-        .expect("parent")
-        .next()
-        .is_none());
+    assert!(
+        fs::read_dir(&fixture.restore_parent)
+            .expect("parent")
+            .next()
+            .is_none()
+    );
 }

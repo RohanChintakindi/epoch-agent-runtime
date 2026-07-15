@@ -238,23 +238,32 @@ fn completion_status(bundle: &EvidenceBundle) -> &'static str {
             .any(|report| report.summary.failed > 0)
             || checkpoint.validation_cases.iter().any(|case| !case.passed)
     });
-    let cow_failed = bundle
-        .cow
-        .as_ref()
-        .is_some_and(|cow| matches!(cow.outcome, SampleOutcome::Failed { .. }));
-    if checkpoint_failed || cow_failed {
-        "completed_with_failures"
-    } else if bundle
-        .cow
-        .as_ref()
-        .is_some_and(|cow| matches!(cow.outcome, SampleOutcome::Unsupported { .. }))
-        || bundle.compatibility.as_ref().is_some_and(|matrix| {
-            matrix
-                .rows
-                .iter()
-                .any(|row| matches!(row.outcome, SampleOutcome::Unsupported { .. }))
+    let cow_failed = bundle.cow.as_ref().is_some_and(|matrix| {
+        matrix
+            .points
+            .iter()
+            .any(|point| matches!(point.outcome, SampleOutcome::Failed { .. }))
+    });
+    let fault_failed = bundle.faults.as_ref().is_some_and(|matrix| {
+        matrix.rows.iter().any(|row| {
+            row.evidence_kind == epoch_bench::EvidenceKind::Actual
+                && (!row.containment_verified
+                    || matches!(row.outcome, SampleOutcome::Failed { .. }))
         })
-    {
+    });
+    if checkpoint_failed || cow_failed || fault_failed {
+        "completed_with_failures"
+    } else if bundle.cow.as_ref().is_some_and(|matrix| {
+        matrix
+            .points
+            .iter()
+            .any(|point| matches!(point.outcome, SampleOutcome::Unsupported { .. }))
+    }) || bundle.compatibility.as_ref().is_some_and(|matrix| {
+        matrix
+            .rows
+            .iter()
+            .any(|row| matches!(row.outcome, SampleOutcome::Unsupported { .. }))
+    }) {
         "completed_with_unsupported"
     } else {
         "completed"

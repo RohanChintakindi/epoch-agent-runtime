@@ -329,7 +329,8 @@ impl EffectDispatcher for DeterministicLocalDispatcher {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EffectState {
     Requested,
     Prepared,
@@ -376,13 +377,19 @@ pub struct EffectAttemptTransition {
     pub occurred_at_unix_ms: i64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct EffectSnapshot {
     pub effect_id: EffectId,
+    pub session_id: SessionId,
+    pub branch_id: BranchId,
+    pub capability_id: Option<CapabilityId>,
     pub operation_id: OperationId,
+    pub action: String,
+    pub resource: String,
     pub input_hash: BlobHash,
     pub state: EffectState,
     pub result_hash: Option<BlobHash>,
+    pub policy_revision: u64,
     pub revision: u64,
 }
 
@@ -465,6 +472,31 @@ impl EffectGateway {
             .ok_or_else(|| GatewayError::OperationNotFound {
                 operation_id: operation_id.clone(),
             })
+    }
+
+    /// Lists durable effects for a session, optionally narrowed to one branch.
+    ///
+    /// Results use stable operation-ID ordering and never include provider credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when trusted state is unavailable or contains invalid values.
+    pub fn list(
+        &self,
+        session_id: SessionId,
+        branch_id: Option<BranchId>,
+    ) -> Result<Vec<EffectSnapshot>, GatewayError> {
+        let store = self.store.lock().map_err(|_| GatewayError::LockPoisoned)?;
+        let mut statement = store.connection().prepare(
+            "SELECT id, session_id, branch_id, capability_id, operation_id, action, resource, \
+                    input_hash, state, result_hash, policy_revision, revision \
+             FROM effect_intents WHERE session_id = ?1 AND (?2 IS NULL OR branch_id = ?2) \
+             ORDER BY operation_id",
+        )?;
+        let branch_id = branch_id.map(|id| id.to_string());
+        let rows =
+            statement.query_map(params![session_id.to_string(), branch_id], read_snapshot)?;
+        rows.map(|row| decode_snapshot(row?)).collect()
     }
 
     /// Reads immutable transition history in sequence order.
@@ -635,19 +667,11 @@ impl EffectGateway {
         store
             .connection()
             .query_row(
-                "SELECT id, operation_id, input_hash, state, result_hash, revision \
+                "SELECT id, session_id, branch_id, capability_id, operation_id, action, resource, \
+                        input_hash, state, result_hash, policy_revision, revision \
                  FROM effect_intents WHERE operation_id = ?1",
                 [operation_id.as_str()],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, Option<String>>(4)?,
-                        row.get::<_, i64>(5)?,
-                    ))
-                },
+                read_snapshot,
             )
             .optional()?
             .map(decode_snapshot)
@@ -1200,41 +1224,99 @@ fn find_in_transaction(
 ) -> Result<Option<EffectSnapshot>, GatewayError> {
     transaction
         .query_row(
-            "SELECT id, operation_id, input_hash, state, result_hash, revision \
+            "SELECT id, session_id, branch_id, capability_id, operation_id, action, resource, \
+                    input_hash, state, result_hash, policy_revision, revision \
              FROM effect_intents WHERE operation_id = ?1",
             [operation_id.as_str()],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, Option<String>>(4)?,
-                    row.get::<_, i64>(5)?,
-                ))
-            },
+            read_snapshot,
         )
         .optional()?
         .map(decode_snapshot)
         .transpose()
 }
 
-fn decode_snapshot(
-    stored: (String, String, String, String, Option<String>, i64),
-) -> Result<EffectSnapshot, GatewayError> {
-    let (effect_id, operation_id, input_hash, state, result_hash, revision) = stored;
+type RawEffectSnapshot = (
+    String,
+    String,
+    String,
+    Option<String>,
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    i64,
+    i64,
+);
+
+fn read_snapshot(row: &rusqlite::Row<'_>) -> Result<RawEffectSnapshot, rusqlite::Error> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+        row.get(6)?,
+        row.get(7)?,
+        row.get(8)?,
+        row.get(9)?,
+        row.get(10)?,
+        row.get(11)?,
+    ))
+}
+
+fn decode_snapshot(stored: RawEffectSnapshot) -> Result<EffectSnapshot, GatewayError> {
+    let (
+        effect_id,
+        session_id,
+        branch_id,
+        capability_id,
+        operation_id,
+        action,
+        resource,
+        input_hash,
+        state,
+        result_hash,
+        policy_revision,
+        revision,
+    ) = stored;
     Ok(EffectSnapshot {
         effect_id: effect_id
             .parse()
             .map_err(|_| GatewayError::InvalidStoredValue {
                 field: "effect_intents.id",
             })?,
+        session_id: session_id
+            .parse()
+            .map_err(|_| GatewayError::InvalidStoredValue {
+                field: "effect_intents.session_id",
+            })?,
+        branch_id: branch_id
+            .parse()
+            .map_err(|_| GatewayError::InvalidStoredValue {
+                field: "effect_intents.branch_id",
+            })?,
+        capability_id: capability_id
+            .map(|value| value.parse())
+            .transpose()
+            .map_err(|_| GatewayError::InvalidStoredValue {
+                field: "effect_intents.capability_id",
+            })?,
         operation_id: OperationId(operation_id),
+        action,
+        resource,
         input_hash: BlobHash::from_str(&input_hash)?,
         state: parse_current_state(&state)?,
         result_hash: result_hash
             .map(|value| BlobHash::from_str(&value))
             .transpose()?,
+        policy_revision: u64::try_from(policy_revision).map_err(|_| {
+            GatewayError::InvalidStoredValue {
+                field: "effect_intents.policy_revision",
+            }
+        })?,
         revision: u64::try_from(revision).map_err(|_| GatewayError::InvalidStoredValue {
             field: "effect_intents.revision",
         })?,

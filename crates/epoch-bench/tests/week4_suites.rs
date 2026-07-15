@@ -2,8 +2,10 @@ use std::{collections::BTreeMap, path::Path};
 
 use epoch_bench::{
     BenchmarkEnvironment, CheckpointSuiteConfig, CowConfig, Decision, DecisionThresholds,
-    EvidenceKind, SampleOutcome, SuiteName, SuiteRequest, run_checkpoint_suite,
-    run_compatibility_matrix, run_cow_experiment, run_fault_matrix, run_suite,
+    EvidenceKind, FinalBenchmarkEnvironment, FinalCowMatrixConfig, FinalHostMemory,
+    FinalIsolationConfig, FinalPerformanceConfig, PerformanceSuiteRequest, SampleOutcome,
+    SuiteName, SuiteRequest, run_checkpoint_suite, run_compatibility_matrix, run_cow_experiment,
+    run_fault_matrix, run_suite,
 };
 use tempfile::TempDir;
 
@@ -30,6 +32,26 @@ fn checkpoint_config(root: &Path) -> CheckpointSuiteConfig {
         repetitions: 2,
         fixture_bytes: 16 * 1024,
         fixture_files: 4,
+    }
+}
+
+fn performance_request() -> PerformanceSuiteRequest {
+    let mut cow = FinalCowMatrixConfig::required();
+    cow.repetitions = 1;
+    PerformanceSuiteRequest {
+        config: FinalPerformanceConfig {
+            code_revision: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            cow,
+            isolation: FinalIsolationConfig::disabled_fixture(),
+        },
+        environment: FinalBenchmarkEnvironment::synthetic_non_linux(
+            "synthetic",
+            "test-arch",
+            FinalHostMemory {
+                available_bytes: 8 * 1024 * 1024 * 1024,
+                safety_budget_bytes: 4 * 1024 * 1024 * 1024,
+            },
+        ),
     }
 }
 
@@ -203,9 +225,15 @@ fn all_suite_emits_stable_json_csv_and_threshold_backed_decisions() {
         suite: SuiteName::All,
         checkpoint: checkpoint_config(&temp.path().join("checkpoint")),
         cow: CowConfig::new(4 * 1024 * 1024, 1, 2_500, 1).unwrap(),
+        performance: Some(performance_request()),
         thresholds: DecisionThresholds::week4(),
     };
     let report = run_suite(&request, environment()).expect("all suite");
+
+    let performance = report.performance.as_ref().expect("final performance matrix");
+    assert_eq!(performance.cow.rows.len(), 60);
+    assert_eq!(performance.cow.summary.total_rows, 60);
+    assert_eq!(performance.isolation.status, "unsupported");
 
     let cow_matrix = report.cow.as_ref().expect("COW matrix");
     assert!(cow_matrix.points.len() >= 4);
@@ -235,8 +263,11 @@ fn all_suite_emits_stable_json_csv_and_threshold_backed_decisions() {
     let csv = report.to_csv().unwrap();
     assert!(csv.starts_with("schema_version,run_id,section,case,status"));
     assert!(csv.contains("unsupported"));
+    assert!(csv.contains("final_cow"));
+    assert!(csv.contains("final_isolation"));
     let markdown = report.to_markdown();
     assert!(markdown.contains("## Keep / narrow / kill"));
+    assert!(markdown.contains("## Final performance matrix"));
     assert!(
         report
             .decisions

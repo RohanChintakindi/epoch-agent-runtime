@@ -10,6 +10,7 @@ members = [
     "crates/epoch-effects",
     "crates/epoch-proc",
     "crates/epoch-protocol",
+    "crates/epoch-sandbox",
     "crates/epoch-storage",
     "crates/epoch-supervisor",
     "crates/epoch-test-agent",
@@ -30,6 +31,7 @@ epoch-capabilities = { path = "crates/epoch-capabilities" }
 epoch-checkpoint = { path = "crates/epoch-checkpoint" }
 epoch-core = { path = "crates/epoch-core" }
 epoch-effects = { path = "crates/epoch-effects" }
+epoch-sandbox = { path = "crates/epoch-sandbox" }
 epoch-storage = { path = "crates/epoch-storage" }
 epoch-workspace = { path = "crates/epoch-workspace" }
 getrandom = "0.4"

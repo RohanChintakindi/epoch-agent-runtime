@@ -308,6 +308,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-sandbox"
+version = "0.1.0"
+dependencies = [
+ "nix",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "epoch-storage"
 version = "0.1.0"
 dependencies = [

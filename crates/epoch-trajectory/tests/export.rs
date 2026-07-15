@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
 use epoch_core::{BranchId, EpochId, EventId, SessionId};
 use epoch_storage::Store;
@@ -250,6 +250,72 @@ fn export_is_deterministic_grouped_labelled_and_payload_free() {
     assert_eq!(root.events.len(), 2);
     assert_eq!(root.events[0].kind, "agent.start");
     assert_eq!(root.events[1].kind, "other");
+
+    let wire = serde_json::to_value(root).expect("trajectory wire JSON");
+    let record_fields = wire
+        .as_object()
+        .expect("trajectory object")
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        record_fields,
+        [
+            "branch_depth",
+            "candidate_group_id",
+            "events",
+            "privacy_profile",
+            "schema_version",
+            "session_group_id",
+            "success_label",
+            "summary",
+            "task_group_id",
+            "trajectory_id",
+            "value_label",
+        ]
+        .into_iter()
+        .collect()
+    );
+    let event_fields = wire["events"][0]
+        .as_object()
+        .expect("trajectory event object")
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        event_fields,
+        [
+            "actor",
+            "delta_monotonic_ns",
+            "has_causal_parent",
+            "kind",
+            "position",
+            "references_epoch",
+            "status",
+        ]
+        .into_iter()
+        .collect()
+    );
+    let summary_fields = wire["summary"]
+        .as_object()
+        .expect("trajectory summary object")
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        summary_fields,
+        [
+            "denied_events",
+            "duration_monotonic_ns",
+            "event_count",
+            "failed_events",
+            "started_events",
+            "succeeded_events",
+            "unknown_events",
+        ]
+        .into_iter()
+        .collect()
+    );
 
     let encoded = first
         .iter()

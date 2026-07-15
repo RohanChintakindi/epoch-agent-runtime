@@ -15,6 +15,8 @@ Linux isolation and checkpoint backends are added only after that vertical slice
 - `epoch-core`: stable identifiers, lifecycle state machines, and shared domain types.
 - `epoch-events`: append-only execution history with deterministic queries and external payloads.
 - `epoch-protocol`: versioned JSONL messages at the agent/supervisor boundary.
+- `epoch-sandbox`: fail-closed direct/Linux backend contracts and a native-tested Linux isolation
+  prototype.
 - `epoch-supervisor`: direct execution plus restart-safe cooperative application recovery.
 - `epoch-test-agent`: seeded workload for repeatable execution, tracing, and fault experiments.
 - `epoch-workspace`: deterministic full-copy workspace snapshots and no-clobber restore.
@@ -43,6 +45,10 @@ checkpoint/restore/status/diff flow and its explicit process-memory limitations.
 The [logical fork and replay boundary](docs/fork-replay.md) documents durable branch lineage,
 restart-safe inspection, recorded-result evidence, and the explicit replay, effect-frontier, and
 promotion limitations.
+
+The [Linux sandbox guide](docs/linux-sandbox.md) documents backend discovery, namespace/cgroup/
+seccomp boundaries, the threat model, native Oracle validation, measured launch samples, and the
+prototype's explicit limitations.
 
 ## Development
 

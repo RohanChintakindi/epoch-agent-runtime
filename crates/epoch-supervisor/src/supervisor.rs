@@ -64,8 +64,9 @@ struct ExecutionIds {
 
 #[derive(Debug)]
 pub struct DirectSupervisor {
-    database_path: PathBuf,
-    journal: EventJournal,
+    pub(crate) database_path: PathBuf,
+    pub(crate) blob_root: PathBuf,
+    pub(crate) journal: EventJournal,
 }
 
 impl DirectSupervisor {
@@ -86,6 +87,7 @@ impl DirectSupervisor {
             .map_err(|error| initialization(&error))?;
         Ok(Self {
             database_path,
+            blob_root,
             journal,
         })
     }

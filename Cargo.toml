@@ -8,6 +8,7 @@ members = [
     "crates/epoch-cli",
     "crates/epoch-core",
     "crates/epoch-diff",
+    "crates/epoch-dashboard",
     "crates/epoch-events",
     "crates/epoch-effects",
     "crates/epoch-proc",
@@ -35,6 +36,7 @@ epoch-blob = { path = "crates/epoch-blob" }
 epoch-capabilities = { path = "crates/epoch-capabilities" }
 epoch-checkpoint = { path = "crates/epoch-checkpoint" }
 epoch-core = { path = "crates/epoch-core" }
+epoch-dashboard = { path = "crates/epoch-dashboard" }
 epoch-effects = { path = "crates/epoch-effects" }
 epoch-performance-matrix = { path = "crates/epoch-performance-matrix" }
 epoch-sandbox = { path = "crates/epoch-sandbox" }

@@ -477,6 +477,13 @@ impl DirectSupervisor {
             }
             BackendOutcome::Failed(issue) => return RecoveryOutcome::Failed(map_failure(issue)),
         };
+        let workspace_backend = match self.workspace_backend() {
+            Ok(backend) => backend,
+            Err(issue) => return RecoveryOutcome::Failed(issue),
+        };
+        if let Err(error) = workspace_backend.validate(&loaded.workspace) {
+            return map_workspace_error(&error);
+        }
         RecoveryOutcome::Supported(ValidatedApplicationSource {
             epoch_id,
             session_id: loaded.session_id,

@@ -28,6 +28,8 @@ pub struct DemoConfig {
 #[derive(Serialize)]
 struct DemoReport {
     schema_version: u16,
+    code_revision: String,
+    code_dirty: bool,
     outcome: &'static str,
     run_id: Option<String>,
     run_root: Option<String>,
@@ -139,8 +141,11 @@ pub fn run(config: &DemoConfig) -> ExitCode {
             ExitCode::from(DEMO_FAILURE_EXIT),
         ),
     };
+    let (code_revision, code_dirty) = collect_code_revision();
     let report = DemoReport {
         schema_version: 1,
+        code_revision,
+        code_dirty,
         outcome,
         run_id: Some(runner.paths.run_id.clone()),
         run_root: Some(display(&runner.paths.run_root)),
@@ -747,13 +752,36 @@ fn unsupported_sections() -> Vec<UnsupportedSection> {
     ]
 }
 
+fn collect_code_revision() -> (String, bool) {
+    let revision = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|value| value.trim().to_owned())
+        .filter(|value| value.len() == 40)
+        .unwrap_or_else(|| "unavailable".to_owned());
+    let dirty = revision == "unavailable"
+        || Command::new("git")
+            .args(["status", "--porcelain", "--untracked-files=no"])
+            .output()
+            .map_or(true, |output| {
+                !output.status.success() || !output.stdout.is_empty()
+            });
+    (revision, dirty)
+}
+
 fn failed_report(
     paths: Option<&DemoPaths>,
     phases: Vec<PhaseReport>,
     failure: DemoFailure,
 ) -> DemoReport {
+    let (code_revision, code_dirty) = collect_code_revision();
     DemoReport {
         schema_version: 1,
+        code_revision,
+        code_dirty,
         outcome: "failed",
         run_id: paths.map(|paths| paths.run_id.clone()),
         run_root: paths.map(|paths| display(&paths.run_root)),

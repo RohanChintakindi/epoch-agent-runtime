@@ -175,6 +175,13 @@ fn demo_runs_real_composite_recovery_flow_and_reports_only_current_gaps() {
     let report: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("demo JSON report");
     assert_eq!(report["schema_version"], 1);
+    assert!(
+        report["code_revision"] == "unavailable"
+            || report["code_revision"]
+                .as_str()
+                .is_some_and(|value| value.len() == 40)
+    );
+    assert!(report["code_dirty"].is_boolean());
     assert_eq!(report["outcome"], "completed_with_unsupported");
     assert!(
         report["summary"]

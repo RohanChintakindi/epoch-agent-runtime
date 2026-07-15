@@ -88,6 +88,9 @@ sudo install -d -o root -g root -m 0755 /usr/local/libexec
 sudo install -o root -g root -m 0755 \
   target/debug/epoch-sandbox-init \
   /usr/local/libexec/epoch-sandbox-init
+sudo install -o root -g root -m 0755 \
+  target/debug/epoch-performance-probe \
+  /usr/local/libexec/epoch-performance-probe
 sudo install -d -m 0777 /var/tmp/epoch-performance-workspace
 
 sudo env \
@@ -110,6 +113,7 @@ sudo env \
   --isolation-repetitions 7 \
   --performance-max-memory-bytes 4294967296 \
   --performance-sandbox-helper /usr/local/libexec/epoch-sandbox-init \
+  --performance-probe /usr/local/libexec/epoch-performance-probe \
   --performance-workspace /var/tmp/epoch-performance-workspace
 
 sudo env \

@@ -253,6 +253,8 @@ enum BenchCommand {
         #[arg(long)]
         performance_sandbox_helper: Option<PathBuf>,
         #[arg(long)]
+        performance_probe: Option<PathBuf>,
+        #[arg(long)]
         performance_workspace: Option<PathBuf>,
     },
     Report {
@@ -787,6 +789,7 @@ fn execute_bench(command: BenchCommand) -> ExitCode {
             isolation_repetitions,
             performance_max_memory_bytes,
             performance_sandbox_helper,
+            performance_probe,
             performance_workspace,
         } => bench::run(&bench::RunOptions {
             suite,
@@ -804,6 +807,7 @@ fn execute_bench(command: BenchCommand) -> ExitCode {
             isolation_repetitions,
             performance_max_memory_bytes,
             performance_sandbox_helper,
+            performance_probe,
             performance_workspace,
         }),
         BenchCommand::Report { run, root, format } => bench::report(&run, &root, format),

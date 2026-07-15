@@ -67,6 +67,9 @@ sudo install -d -o root -g root -m 0755 /usr/local/libexec
 sudo install -o root -g root -m 0755 \
   target/debug/epoch-sandbox-init \
   /usr/local/libexec/epoch-sandbox-init
+sudo install -o root -g root -m 0755 \
+  target/debug/epoch-performance-probe \
+  /usr/local/libexec/epoch-performance-probe
 sudo install -d -m 0777 /var/tmp/epoch-performance-workspace
 REVISION="$(git rev-parse HEAD)"
 OUTPUT="/var/tmp/epoch-performance-${REVISION}"
@@ -78,7 +81,7 @@ sudo target/debug/epoch-performance-matrix \
   --max-memory-bytes 4294967296 \
   --cow-helper "$PWD/crates/epoch-performance-matrix/helpers/cow_matrix_probe.py" \
   --python /usr/bin/python3 \
-  --isolation-probe "$PWD/target/debug/epoch-performance-probe" \
+  --isolation-probe /usr/local/libexec/epoch-performance-probe \
   --sandbox-helper /usr/local/libexec/epoch-sandbox-init \
   --isolation-workspace /var/tmp/epoch-performance-workspace
 ```

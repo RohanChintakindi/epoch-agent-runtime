@@ -35,6 +35,7 @@ pub(super) struct RunOptions {
     pub isolation_repetitions: u16,
     pub performance_max_memory_bytes: u64,
     pub performance_sandbox_helper: Option<PathBuf>,
+    pub performance_probe: Option<PathBuf>,
     pub performance_workspace: Option<PathBuf>,
 }
 
@@ -155,7 +156,11 @@ fn performance_request(
         .parent()
         .ok_or_else(|| "benchmark executable has no parent directory".to_owned())?
         .to_path_buf();
-    let probe = executable_directory.join("epoch-performance-probe");
+    let default_probe = executable_directory.join("epoch-performance-probe");
+    let probe = options
+        .performance_probe
+        .clone()
+        .or_else(|| default_probe.is_file().then_some(default_probe));
     let default_helper = executable_directory.join("epoch-sandbox-init");
     let helper = options
         .performance_sandbox_helper
@@ -173,7 +178,7 @@ fn performance_request(
         Some(repository.join("crates/epoch-performance-matrix/helpers/cow_matrix_probe.py"));
     let isolation = FinalIsolationConfig {
         repetitions: options.isolation_repetitions,
-        probe: probe.is_file().then_some(probe),
+        probe,
         trusted_sandbox_helper: helper.is_file().then_some(helper),
         workspace: Some(workspace),
         ..FinalIsolationConfig::disabled_fixture()

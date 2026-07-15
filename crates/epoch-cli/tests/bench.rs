@@ -59,7 +59,10 @@ fn bench_run_persists_every_stable_artifact_and_report_reloads_it() {
     let reloaded: serde_json::Value = serde_json::from_slice(&report.stdout).expect("report JSON");
     assert_eq!(reloaded["run_id"], run_id);
     assert_eq!(reloaded["suite"], "checkpoint");
-    assert_eq!(reloaded["checkpoint"]["reports"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        reloaded["checkpoint"]["reports"].as_array().unwrap().len(),
+        2
+    );
 }
 
 #[test]

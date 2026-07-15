@@ -11,10 +11,13 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+epoch-bench.workspace = true
 epoch-core = { path = "../epoch-core" }
 epoch-supervisor = { path = "../epoch-supervisor" }
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 epoch-blob.workspace = true

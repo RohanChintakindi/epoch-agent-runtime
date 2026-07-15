@@ -219,6 +219,7 @@ name = "epoch-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "epoch-bench",
  "epoch-blob",
  "epoch-checkpoint",
  "epoch-core",
@@ -226,6 +227,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "uuid",
 ]
 
 [[package]]

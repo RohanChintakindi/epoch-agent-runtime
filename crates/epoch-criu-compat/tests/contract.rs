@@ -11,7 +11,7 @@ fn missing_criu_config() -> RunnerConfig {
         PathBuf::from("/definitely/missing/criu"),
         PathBuf::from("/bin/true"),
         RunLimits::new(5_000, 5_000, 64 * 1024).expect("limits"),
-        ScalingPlan::new(vec![4 * 1024 * 1024], vec![1]).expect("scaling"),
+        ScalingPlan::new(vec![4 * 1024 * 1024], vec![2]).expect("scaling"),
     )
     .expect("configuration")
 }
@@ -40,12 +40,13 @@ fn resource_and_scaling_bounds_are_enforced_before_execution() {
     assert!(RunLimits::new(1_000, 1_000, 1_048_577).is_err());
     assert!(RunLimits::new(1_000, 1_000, 1_024).is_ok());
 
-    assert!(ScalingPlan::new(vec![], vec![1]).is_err());
-    assert!(ScalingPlan::new(vec![0], vec![1]).is_err());
-    assert!(ScalingPlan::new(vec![1_073_741_825], vec![1]).is_err());
+    assert!(ScalingPlan::new(vec![], vec![2]).is_err());
+    assert!(ScalingPlan::new(vec![0], vec![2]).is_err());
+    assert!(ScalingPlan::new(vec![1_073_741_825], vec![2]).is_err());
     assert!(ScalingPlan::new(vec![1_048_576], vec![0]).is_err());
+    assert!(ScalingPlan::new(vec![1_048_576], vec![1]).is_err());
     assert!(ScalingPlan::new(vec![1_048_576], vec![65]).is_err());
-    assert!(ScalingPlan::new(vec![1_048_576; 17], vec![1]).is_err());
+    assert!(ScalingPlan::new(vec![1_048_576; 17], vec![2]).is_err());
 }
 
 #[test]

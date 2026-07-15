@@ -4,7 +4,6 @@ from epoch_branch_value.baselines import heuristic_baseline, random_baseline
 from epoch_branch_value.metrics import evaluate_predictions
 from epoch_branch_value.synthetic import generate_records
 
-
 FORBIDDEN_AUTHORITY_KEYS = {
     "allow",
     "capability",
@@ -21,7 +20,10 @@ def test_random_and_heuristic_baselines_are_fixed_seed_and_label_blind():
     assert random_baseline(records, seed=77) == random_baseline(list(reversed(records)), seed=77)
     assert heuristic_baseline(records) == heuristic_baseline(list(reversed(records)))
 
-    flipped = [record.with_label(success=not record.label.success, value=1.0 - record.label.value) for record in records]
+    flipped = [
+        record.with_label(success=not record.label.success, value=1.0 - record.label.value)
+        for record in records
+    ]
     assert heuristic_baseline(records) == heuristic_baseline(flipped)
 
 

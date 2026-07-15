@@ -385,7 +385,7 @@ fn cli_returns_explicit_machine_readable_failed_and_unsupported_outcomes() {
 #[test]
 fn cli_fork_and_branch_inspection_are_restart_safe_and_promotion_is_explicit() {
     let fixture = TempDir::new().expect("create CLI fork fixture");
-    let (session, branch) = run_fixture(&fixture, 91);
+    let (session, branch, _) = run_fixture(&fixture, 91);
     let epoch_id = checkpoint(&fixture, &session, &branch);
 
     let fork = successful_json(

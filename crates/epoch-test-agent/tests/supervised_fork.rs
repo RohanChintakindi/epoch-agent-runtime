@@ -40,6 +40,7 @@ impl Fixture {
 
     fn checkpoint(&self, seed: u64) -> (SessionId, BranchId, ApplicationCheckpointReport) {
         let workspace = self.directory.path().join(format!("workspace-{seed}"));
+        fs::create_dir(&workspace).expect("create declared fork workspace");
         let manifest = self.directory.path().join(format!("workload-{seed}.toml"));
         let executable = env!("CARGO_BIN_EXE_epoch-test-agent");
         fs::write(
@@ -48,9 +49,10 @@ impl Fixture {
                 "schema_version = 1\n\
                  name = \"epoch-test-agent\"\n\
                  executable = \"{executable}\"\n\
+                 working_directory = \"{}\"\n\
                  arguments = [\"--seed\", \"{seed}\", \"--scenario\", \"files\", \
-                              \"--workspace\", \"{}\"]\n",
-                workspace.display()
+                              \"--workspace\", \".\"]\n",
+                workspace.display(),
             ),
         )
         .expect("write fork workload");
@@ -97,7 +99,7 @@ fn parent_snapshot(state_root: &std::path::Path, branch_id: BranchId) -> ParentS
         .connection()
         .query_row(
             "SELECT status, blob_hash, metadata_json FROM snapshot_components \
-             WHERE epoch_id = ?1",
+             WHERE epoch_id = ?1 AND kind = 'application_context'",
             [&epoch.0],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
@@ -185,7 +187,11 @@ fn fork_inherits_validated_context_without_mutating_parent_or_effects() {
         before,
         "fork creation must not mutate parent state or non-rollbackable effects"
     );
-    supported(supervisor.restore_application(checkpoint.epoch_id, ApplicationRestoreMode::Inspect));
+    supported(supervisor.restore_application(
+        checkpoint.epoch_id,
+        ApplicationRestoreMode::Inspect,
+        None,
+    ));
     assert_eq!(
         parent_snapshot(&fixture.state_root, parent_branch_id),
         before
@@ -336,6 +342,24 @@ fn fork_rejects_invalid_name_uncommitted_epoch_and_corrupt_component() {
         supervisor.fork_application_epoch(checkpoint.epoch_id, "corrupt")
     else {
         panic!("corrupt checkpoint must fail")
+    };
+    assert_eq!(issue.code, RecoveryCode::Integrity);
+
+    let corrupt_workspace = Fixture::new();
+    let (_, _, checkpoint) = corrupt_workspace.checkpoint(806);
+    let blobs = epoch_blob::BlobStore::open(corrupt_workspace.state_root.join("blobs"))
+        .expect("open workspace blob store");
+    fs::write(
+        blobs.blob_path(&checkpoint.workspace.manifest_hash),
+        b"corrupt workspace manifest",
+    )
+    .expect("corrupt workspace manifest");
+    let supervisor =
+        DirectSupervisor::open(&corrupt_workspace.state_root).expect("restart supervisor");
+    let RecoveryOutcome::Failed(issue) =
+        supervisor.fork_application_epoch(checkpoint.epoch_id, "corrupt-workspace")
+    else {
+        panic!("corrupt composite workspace must fail fork")
     };
     assert_eq!(issue.code, RecoveryCode::Integrity);
 }

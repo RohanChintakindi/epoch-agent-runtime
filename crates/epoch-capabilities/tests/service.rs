@@ -8,8 +8,8 @@ use std::{
 };
 
 use epoch_capabilities::{
-    CapabilityConstraints, CapabilityDecision, CapabilityHandle, CapabilityService, CapabilityUse,
-    Clock, DecisionOutcome, DenialReason, IssueRequest,
+    CapabilityConstraints, CapabilityDecision, CapabilityHandle, CapabilityService,
+    CapabilityState, CapabilityUse, Clock, DecisionOutcome, DenialReason, IssueRequest,
 };
 use epoch_core::{BranchId, SessionId};
 use epoch_storage::Store;
@@ -141,6 +141,46 @@ fn opaque_handle_is_not_authoritative_plaintext_at_rest() {
     }
     assert!(!format!("{:?}", issued.handle).contains(issued.handle.expose()));
     assert!(CapabilityHandle::from_str(issued.handle.expose()).is_ok());
+}
+
+#[test]
+fn capability_can_be_inspected_and_revoked_by_non_secret_identity() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    fixture.initialize(&service);
+    let issued = service.issue(&fixture.issue_request()).expect("issue");
+
+    let active = service
+        .inspect(issued.capability_id)
+        .expect("inspect active capability");
+    assert_eq!(active.capability_id, issued.capability_id);
+    assert_eq!(active.session_id, fixture.session);
+    assert_eq!(active.branch_id, fixture.branch);
+    assert_eq!(active.subject, "agent-1");
+    assert_eq!(active.action, "email.send");
+    assert_eq!(active.resource, "mailbox:test");
+    assert_eq!(active.remaining_uses, Some(2));
+    assert_eq!(active.remaining_budget_units, Some(4));
+    assert_eq!(active.policy_revision, 7);
+    assert_eq!(active.state, CapabilityState::Active);
+    assert_eq!(active.expires_at_unix_ms, Some(2_000));
+
+    service
+        .revoke_by_id(issued.capability_id)
+        .expect("revoke without exposing bearer handle");
+    assert_eq!(
+        service
+            .inspect(issued.capability_id)
+            .expect("inspect revoked capability")
+            .state,
+        CapabilityState::Revoked
+    );
+    assert_denied(
+        &service
+            .authorize_and_consume(&issued.handle, &fixture.use_request("after-id-revoke"))
+            .expect("durable denial"),
+        DenialReason::Revoked,
+    );
 }
 
 #[test]

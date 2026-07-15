@@ -44,6 +44,7 @@ fn collects_and_validates_real_environment_metadata() {
     assert!(!collected.kernel_release.is_empty());
     assert!(!collected.architecture.is_empty());
     assert!(!collected.cpu_model.is_empty());
+    assert_ne!(collected.cpu_model, "linux-cpu-model-unreported");
     assert!(collected.cpu_count > 0);
     assert!(!collected.runtime_version.is_empty());
 }

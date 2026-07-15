@@ -233,3 +233,20 @@ fn bounded(value: &str) -> String {
     }
     value[..end].to_owned()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_cpu_model;
+
+    #[test]
+    fn parses_native_cpu_model_without_architecture_specific_placeholders() {
+        assert_eq!(
+            parse_cpu_model("Architecture: aarch64\nModel name: Neoverse-N1\n"),
+            Some("Neoverse-N1".to_owned())
+        );
+        assert_eq!(
+            parse_cpu_model("CPU implementer : 0x41\nCPU part : 0xd0c\n"),
+            Some("ARM implementer 0x41 part 0xd0c".to_owned())
+        );
+    }
+}

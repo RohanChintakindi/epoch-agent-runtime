@@ -286,3 +286,49 @@ fn cli_returns_explicit_machine_readable_failed_and_unsupported_outcomes() {
     assert_eq!(future_mode["outcome"], "unsupported");
     assert_eq!(future_mode["issue"]["code"], "unsupported_mode");
 }
+
+#[test]
+fn cli_fork_and_branch_inspection_are_restart_safe_and_promotion_is_explicit() {
+    let fixture = TempDir::new().expect("create CLI fork fixture");
+    let (session, branch) = run_fixture(&fixture, 91);
+    let epoch_id = checkpoint(&fixture, &session, &branch);
+
+    let fork = successful_json(
+        &epoch(&fixture, &["fork", &epoch_id, "--name", "cli-experiment"]),
+        "fork",
+    );
+    assert_eq!(fork["operation"], "fork");
+    assert_eq!(fork["outcome"], "supported");
+    assert_eq!(fork["result"]["session_id"], session);
+    assert_eq!(fork["result"]["parent_branch_id"], branch);
+    assert_eq!(fork["result"]["fork_epoch_id"], epoch_id);
+    assert_eq!(fork["result"]["name"], "cli-experiment");
+    assert_eq!(
+        fork["result"]["replay"]["continuation"]["outcome"],
+        "unsupported"
+    );
+    assert_eq!(fork["result"]["effect_frontier"]["outcome"], "unsupported");
+    let child = fork["result"]["branch_id"].as_str().expect("child branch");
+
+    let inspect = successful_json(
+        &epoch(&fixture, &["branch", "inspect", child]),
+        "branch inspect",
+    );
+    assert_eq!(inspect["operation"], "branch.inspect");
+    assert_eq!(inspect["outcome"], "supported");
+    assert_eq!(inspect["result"], fork["result"]);
+
+    let promotion = epoch(&fixture, &["branch", "promote", child]);
+    assert_eq!(promotion.status.code(), Some(3));
+    let promotion: serde_json::Value =
+        serde_json::from_slice(&promotion.stdout).expect("promotion JSON");
+    assert_eq!(promotion["operation"], "branch.promote");
+    assert_eq!(promotion["outcome"], "unsupported");
+    assert_eq!(promotion["issue"]["code"], "unsupported_mode");
+    assert!(
+        promotion["issue"]["detail"]
+            .as_str()
+            .expect("promotion detail")
+            .contains("compare-and-swap")
+    );
+}

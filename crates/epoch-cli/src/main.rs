@@ -867,7 +867,7 @@ mod tests {
     fn nested_command_groups_match_the_runtime_spec() {
         let command = Cli::command();
         for (group, expected) in [
-            ("branch", ["abandon", "promote"].as_slice()),
+            ("branch", ["abandon", "inspect", "promote"].as_slice()),
             ("capability", ["grant", "revoke"].as_slice()),
             ("effects", ["list", "resolve"].as_slice()),
             ("bench", ["report", "run"].as_slice()),
@@ -909,6 +909,7 @@ mod tests {
                 "fork-on-divergence",
             ],
             vec!["epoch", "effects", "resolve", "effect-1", "--committed"],
+            vec!["epoch", "branch", "inspect", "branch-1"],
             vec!["epoch", "serve", "--bind", "127.0.0.1:9090"],
         ] {
             Cli::try_parse_from(arguments).expect("specified command must parse");

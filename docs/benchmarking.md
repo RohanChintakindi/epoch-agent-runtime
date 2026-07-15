@@ -96,6 +96,10 @@ This requests a 64 MiB parent allocation, four children, and 25% dirty pages. Th
 front end independently reject more than 256 MiB per allocation, 16 children, 512 MiB allocation
 times fan-out, ratios above 100%, or more than 100 COW repetitions.
 
+The checked-in [Oracle ARM64 evidence index](../results/oracle-arm64/README.md) links the raw JSON,
+CSV, generated decision report, environment, checksums, and concise measured summary from this
+exact command.
+
 ## COW helper boundary
 
 The auditable helper is

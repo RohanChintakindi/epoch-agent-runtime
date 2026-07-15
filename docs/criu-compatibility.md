@@ -84,13 +84,15 @@ was unavailable, and compatible-task support was not compiled. Those warnings ar
 [extended-check log](evidence/criu-oracle-arm64/logs/environment-criu-check-all.log); they do not
 erase successful scenario-level evidence.
 
-## Current evidence and decision
+## Historical evidence and decision
 
 The committed [machine-readable report](evidence/criu-oracle-arm64/compatibility.json),
-[Markdown matrix](evidence/criu-oracle-arm64/compatibility.md), and linked logs are one exact native
-run. All 12 declared in-scope rows restored and resumed correctly across 4 MiB and 64 MiB resident
-allocations and two- and four-process trees. External TCP is retained as the thirteenth, explicitly
-unsupported row.
+[Markdown matrix](evidence/criu-oracle-arm64/compatibility.md), and linked logs are a historical
+native run generated from source revision `96febca`. The older evidence schema did not embed its
+source revision, so this directory is a baseline and must not be presented as final candidate
+proof. All 12 declared in-scope rows restored and resumed correctly across 4 MiB and 64 MiB
+resident allocations and two- and four-process trees. External TCP is retained as the thirteenth,
+explicitly unsupported row.
 
 Observed dump latency was 20–248 ms, restore latency was 10–124 ms, and image bytes ranged from
 about 4.3 MiB to 67.6 MiB. These samples satisfy the preliminary 1-second checkpoint and 3-second
@@ -98,6 +100,10 @@ restore gates. The recommendation is therefore **keep the narrow declared CRIU s
 CRIU for arbitrary agents.” Broader use remains narrowed until threads, pipes, Unix sockets, timers,
 signals, deleted/backing-file changes, real external connections, repeated correctness runs, and
 larger scaling points have their own evidence.
+
+Final acceptance uses a new directory produced from a clean candidate revision. Its report must
+embed the full 40-character `code_revision` and `code_dirty: false`, as specified by the
+[final acceptance runbook](final-runbook.md).
 
 ## Integration contract and limitations
 

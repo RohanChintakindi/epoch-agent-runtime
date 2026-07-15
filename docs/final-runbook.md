@@ -30,7 +30,11 @@ for rehearsal in 1 2 3; do
     --workspace "$root/workspaces" \
     --json > "$DEMO_PARENT/rehearsal-$rehearsal.json"
 done
-sha256sum "$DEMO_PARENT"/rehearsal-*.json
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum "$DEMO_PARENT"/rehearsal-*.json
+else
+  shasum -a 256 "$DEMO_PARENT"/rehearsal-*.json
+fi
 ```
 
 Each report must say `13/13`, contain 13 succeeded phases, identify the clean candidate revision,
@@ -116,8 +120,13 @@ Copy only final candidate artifacts into a revision-named directory. Preserve ra
 then generate checksums without rewriting the measured files:
 
 ```bash
-find <evidence-directory> -type f -print0 | sort -z | xargs -0 sha256sum \
-  > <evidence-directory>/SHA256SUMS
+if command -v sha256sum >/dev/null 2>&1; then
+  find <evidence-directory> -type f ! -name SHA256SUMS -print0 \
+    | sort -z | xargs -0 sha256sum > <evidence-directory>/SHA256SUMS
+else
+  find <evidence-directory> -type f ! -name SHA256SUMS -print0 \
+    | sort -z | xargs -0 shasum -a 256 > <evidence-directory>/SHA256SUMS
+fi
 ```
 
 Older committed Oracle artifacts are historical baselines, not final proof. Their documentation

@@ -1,4 +1,9 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::Path,
+    sync::{Arc, Barrier},
+    thread,
+};
 
 #[cfg(unix)]
 use std::os::unix::{ffi::OsStringExt, fs::PermissionsExt};
@@ -119,6 +124,61 @@ fn snapshot_is_stable_and_immutable_after_source_mutation() {
     assert_eq!(fs::read(target.join("a/nested")).expect("nested"), b"first");
     assert_eq!(fs::read(target.join("z")).expect("z"), b"last");
     assert!(!target.join("new").exists());
+}
+
+#[test]
+fn concurrent_snapshots_converge_on_one_manifest_hash() {
+    const CALLERS: usize = 12;
+    let fixture = Fixture::new();
+    write(&fixture.source.join("file"), b"content");
+    let backend = Arc::new(fixture.backend());
+    let barrier = Arc::new(Barrier::new(CALLERS));
+    let handles = (0..CALLERS)
+        .map(|_| {
+            let backend = backend.clone();
+            let barrier = barrier.clone();
+            let source = fixture.source.clone();
+            thread::spawn(move || {
+                barrier.wait();
+                backend.snapshot(source)
+            })
+        })
+        .collect::<Vec<_>>();
+    let snapshots = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("caller").expect("snapshot"))
+        .collect::<Vec<_>>();
+    assert!(snapshots.iter().all(|snapshot| snapshot == &snapshots[0]));
+}
+
+#[test]
+fn concurrent_empty_restore_has_exactly_one_no_clobber_winner() {
+    const CALLERS: usize = 24;
+    let fixture = Fixture::new();
+    let backend = Arc::new(fixture.backend());
+    let snapshot = Arc::new(backend.snapshot(&fixture.source).expect("snapshot"));
+    let target = fixture.target("one-winner");
+    let barrier = Arc::new(Barrier::new(CALLERS));
+    let handles = (0..CALLERS)
+        .map(|_| {
+            let backend = backend.clone();
+            let snapshot = snapshot.clone();
+            let target = target.clone();
+            let barrier = barrier.clone();
+            thread::spawn(move || {
+                barrier.wait();
+                backend.restore(&snapshot, target)
+            })
+        })
+        .collect::<Vec<_>>();
+    let outcomes = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("caller"))
+        .collect::<Vec<_>>();
+    assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 1);
+    assert!(outcomes.iter().filter(|outcome| outcome.is_err()).all(
+        |outcome| matches!(outcome, Err(WorkspaceError::TargetExists { .. }))
+    ));
 }
 
 #[test]

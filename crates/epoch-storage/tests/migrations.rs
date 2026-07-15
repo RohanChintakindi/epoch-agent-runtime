@@ -322,3 +322,193 @@ fn event_schema_supports_external_payloads_and_rejects_mutation() {
         );
     }
 }
+
+#[test]
+fn fork_lineage_is_complete_scoped_exact_and_immutable() {
+    let database = TestDatabase::new("fork-lineage");
+    let store = Store::open(database.path()).expect("open database");
+    for session_id in ["session-a", "session-b"] {
+        store
+            .connection()
+            .execute(
+                "INSERT INTO sessions (id, state, created_at_unix_ms, updated_at_unix_ms) \
+                 VALUES (?1, 'completed', 0, 0)",
+                [session_id],
+            )
+            .expect("insert session");
+    }
+    for (branch_id, session_id) in [
+        ("parent-a", "session-a"),
+        ("sibling-a", "session-a"),
+        ("parent-b", "session-b"),
+    ] {
+        store
+            .connection()
+            .execute(
+                "INSERT INTO branches \
+                 (id, session_id, state, created_at_unix_ms, updated_at_unix_ms) \
+                 VALUES (?1, ?2, 'completed', 0, 0)",
+                params![branch_id, session_id],
+            )
+            .expect("insert parent branch");
+    }
+    let component_hash = "a".repeat(64);
+    store
+        .connection()
+        .execute(
+            "INSERT INTO blobs (hash, byte_length, media_type, created_at_unix_ms) \
+             VALUES (?1, 2, 'application/json', 0)",
+            [&component_hash],
+        )
+        .expect("insert component blob");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO epochs \
+             (id, session_id, branch_id, sequence, status, backend, created_at_unix_ms, \
+              committed_at_unix_ms) \
+             VALUES ('epoch-a', 'session-a', 'parent-a', 0, 'committed', \
+                     'cooperative-w02-v1', 0, 0)",
+            [],
+        )
+        .expect("insert committed epoch");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO snapshot_components \
+             (epoch_id, kind, status, backend, blob_hash, checksum_sha256, byte_length, \
+              metadata_json, staged_at_unix_ms, committed_at_unix_ms) \
+             VALUES ('epoch-a', 'application_context', 'committed', 'cooperative-w02-v1', \
+                     ?1, ?1, 2, '{\"boundary_sequence\":7}', 0, 0)",
+            [&component_hash],
+        )
+        .expect("insert committed component");
+
+    store
+        .connection()
+        .execute(
+            "INSERT INTO branches \
+             (id, session_id, parent_branch_id, fork_epoch_id, name, fork_point_sequence, \
+              fork_component_hash, state, created_at_unix_ms, updated_at_unix_ms) \
+             VALUES ('child-a', 'session-a', 'parent-a', 'epoch-a', 'experiment', 7, ?1, \
+                     'created', 1, 1)",
+            [&component_hash],
+        )
+        .expect("insert complete fork lineage");
+
+    for (statement, message) in [
+        (
+            "INSERT INTO branches \
+             (id, session_id, parent_branch_id, fork_epoch_id, name, fork_point_sequence, \
+              fork_component_hash, state, created_at_unix_ms, updated_at_unix_ms) \
+             VALUES ('duplicate', 'session-a', 'parent-a', 'epoch-a', 'experiment', 7, \
+                     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', \
+                     'created', 2, 2)",
+            "same-session fork name collision",
+        ),
+        (
+            "INSERT INTO branches \
+             (id, session_id, parent_branch_id, fork_epoch_id, name, fork_point_sequence, \
+              fork_component_hash, state, created_at_unix_ms, updated_at_unix_ms) \
+             VALUES ('cross-session', 'session-b', 'parent-b', 'epoch-a', 'experiment', 7, \
+                     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', \
+                     'created', 2, 2)",
+            "cross-session source epoch",
+        ),
+        (
+            "INSERT INTO branches \
+             (id, session_id, parent_branch_id, fork_epoch_id, name, fork_point_sequence, \
+              fork_component_hash, state, created_at_unix_ms, updated_at_unix_ms) \
+             VALUES ('wrong-parent', 'session-a', 'sibling-a', 'epoch-a', 'other', 7, \
+                     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', \
+                     'created', 2, 2)",
+            "source epoch outside the claimed parent branch",
+        ),
+        (
+            "INSERT INTO branches \
+             (id, session_id, parent_branch_id, fork_epoch_id, name, state, \
+              created_at_unix_ms, updated_at_unix_ms) \
+             VALUES ('partial', 'session-a', 'parent-a', 'epoch-a', 'partial', 'created', 2, 2)",
+            "partial fork lineage",
+        ),
+        (
+            "UPDATE branches SET fork_epoch_id = NULL WHERE id = 'child-a'",
+            "lineage mutation",
+        ),
+    ] {
+        let error = store
+            .connection()
+            .execute(statement, [])
+            .expect_err(message);
+        assert_eq!(
+            error.sqlite_error_code(),
+            Some(ErrorCode::ConstraintViolation),
+            "{message} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn durable_effect_history_cannot_be_erased() {
+    let database = TestDatabase::new("effect-history");
+    let store = Store::open(database.path()).expect("open database");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO sessions (id, state, created_at_unix_ms, updated_at_unix_ms) \
+             VALUES ('session', 'completed', 0, 0)",
+            [],
+        )
+        .expect("insert session");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO branches \
+             (id, session_id, state, created_at_unix_ms, updated_at_unix_ms) \
+             VALUES ('branch', 'session', 'completed', 0, 0)",
+            [],
+        )
+        .expect("insert branch");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO blobs (hash, byte_length, media_type, created_at_unix_ms) \
+             VALUES (?1, 2, 'application/json', 0)",
+            ["b".repeat(64)],
+        )
+        .expect("insert input blob");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO effect_intents \
+             (id, session_id, branch_id, operation_id, replay_key, action, resource, input_hash, \
+              state, policy_revision, prepared_at_unix_ms) \
+             VALUES ('effect', 'session', 'branch', 'operation', 'replay', 'write', 'fixture', \
+                     ?1, 'succeeded', 0, 0)",
+            ["b".repeat(64)],
+        )
+        .expect("insert effect intent");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO effect_attempts \
+             (id, effect_id, attempt_no, state, downstream_idempotency_key, started_at_unix_ms) \
+             VALUES ('attempt', 'effect', 1, 'succeeded', 'downstream', 0)",
+            [],
+        )
+        .expect("insert effect attempt");
+
+    for statement in [
+        "DELETE FROM effect_attempts WHERE id = 'attempt'",
+        "DELETE FROM effect_intents WHERE id = 'effect'",
+    ] {
+        let error = store
+            .connection()
+            .execute(statement, [])
+            .expect_err("effect history deletion must be rejected");
+        assert_eq!(
+            error.sqlite_error_code(),
+            Some(ErrorCode::ConstraintViolation)
+        );
+    }
+}

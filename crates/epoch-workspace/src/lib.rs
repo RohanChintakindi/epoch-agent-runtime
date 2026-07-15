@@ -189,6 +189,9 @@ impl WorkspaceBackend {
             return Err(WorkspaceError::InvalidSourceRoot);
         }
         let canonical_source = fs::canonicalize(source)?;
+        if canonical_source == self.blob_root || canonical_source.starts_with(&self.blob_root) {
+            return Err(WorkspaceError::StateRootOverlapsWorkspace);
+        }
         let mut capture = Capture {
             backend: self,
             source: &canonical_source,
@@ -1007,6 +1010,8 @@ fn make_file_owner_writable(
 pub enum WorkspaceError {
     #[error("workspace source root must be a real directory")]
     InvalidSourceRoot,
+    #[error("workspace source is equal to or contained by the managed state root")]
+    StateRootOverlapsWorkspace,
     #[error("invalid workspace limits")]
     InvalidLimits,
     #[error("workspace limit {kind:?} exceeded: {actual} > {maximum}")]

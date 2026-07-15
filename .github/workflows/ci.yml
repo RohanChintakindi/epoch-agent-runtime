@@ -41,3 +41,27 @@ jobs:
       - name: Inspect runner capabilities
         run: cargo run --locked -p epoch-cli -- doctor --json
 
+  ml-cross-language:
+    name: ML cross-language smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.27"
+          python-version: "3.9"
+          enable-cache: true
+          cache-dependency-glob: ml/branch-value/uv.lock
+      - name: Sync locked ML environment
+        run: uv sync --project ml/branch-value --locked --all-groups
+      - name: Test and lint ML package
+        working-directory: ml/branch-value
+        run: |
+          uv run --frozen pytest
+          uv run --frozen ruff check .
+          uv run --frozen ruff format --check .
+      - name: Run Rust-to-Python smoke
+        run: ./scripts/ml-cross-language-smoke.sh

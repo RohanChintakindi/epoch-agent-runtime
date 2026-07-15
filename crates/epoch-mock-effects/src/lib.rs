@@ -177,6 +177,11 @@ impl MockEffectServer {
         let local_addr = server.server_addr().to_ip().ok_or_else(|| {
             MockEffectError::Http("mock effect service requires an IP listener".to_owned())
         })?;
+        if !local_addr.ip().is_loopback() {
+            return Err(MockEffectError::Http(format!(
+                "refusing non-loopback mock effect listener {local_addr}"
+            )));
+        }
         let store = MockEffectStore::open(database_path)?;
         Ok(Self {
             server,

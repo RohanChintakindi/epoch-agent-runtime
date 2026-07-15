@@ -11,7 +11,7 @@ uses this envelope:
   "payload": {
     "call_id": "call-1",
     "tool": "write_file",
-    "input_hash": "sha256:..."
+    "input_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   }
 }
 ```
@@ -20,6 +20,10 @@ uses this envelope:
 supervisor still assigns the durable event sequence from the runtime specification when it ingests
 the record. Inputs and outputs are represented by hashes so large or sensitive content can live in
 the content-addressed blob store instead of the event stream.
+
+Every hash is a bare 64-character lowercase SHA-256 digest represented by `epoch_blob::BlobHash`.
+Sequence and context-revision values cannot exceed `i64::MAX`, matching SQLite's signed integer
+domain. Identifiers are limited to 255 UTF-8 bytes; model and tool names are limited to 128 bytes.
 
 ## Version 1 messages
 
@@ -55,7 +59,20 @@ Tool outcomes are `succeeded`, `failed`, or `denied`. Completion outcomes are `s
 
 The decoder consumes exactly one record. A record may have no terminator, `LF`, or `CRLF`; an
 encoder always emits one trailing `LF`. Empty records, multiple physical records, malformed JSON,
-and records larger than 1 MiB including the terminator are rejected with distinct typed errors.
+bare carriage returns, duplicate object keys at any nesting depth, and records larger than 1 MiB
+including the terminator are rejected with distinct typed errors.
 
 The 1 MiB boundary is a defensive framing limit, not permission to embed large model or tool
 content. Normal messages should carry content hashes and small metadata.
+
+## Trusted blob ownership
+
+An agent-provided hash is an untrusted claim, not evidence that content exists. The trusted
+supervisor owns blob ingestion: it receives or captures the referenced bytes through a separate
+bounded channel, writes them with `BlobStore::put`, and performs an integrity-checked lookup before
+acknowledging or persisting the boundary record. `Envelope::referenced_hashes` exposes every claim,
+and `validate_referenced_blobs` rejects both missing content and content that fails verification.
+
+The agent must never receive write authority to the trusted blob-store root. A raw deterministic
+agent trace is therefore useful as a producer fixture, but it is not directly eligible for durable
+event persistence until the supervisor has ingested and verified each referenced blob.

@@ -4,9 +4,9 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use epoch_blob::BlobHash;
 use epoch_protocol::{Message, decode_line};
 use epoch_test_agent::{CrashPoint, Scenario, WorkloadConfig, WorkloadError, run_workload};
-use sha2::{Digest, Sha256};
 
 static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
 
@@ -54,11 +54,12 @@ fn messages(trace: &[u8]) -> Vec<Message> {
         .collect()
 }
 
-fn sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+fn sha256(bytes: &[u8]) -> BlobHash {
+    BlobHash::digest(bytes)
 }
 
-fn is_canonical_sha256(value: &str) -> bool {
+fn is_canonical_sha256(value: &BlobHash) -> bool {
+    let value = value.as_str();
     value.len() == 64
         && value
             .bytes()

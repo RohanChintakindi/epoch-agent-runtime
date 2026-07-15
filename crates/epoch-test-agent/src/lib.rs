@@ -2,7 +2,6 @@
 
 use std::{
     collections::BTreeMap,
-    fmt::Write as _,
     fs::{self, OpenOptions},
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -11,13 +10,13 @@ use std::{
 };
 
 use clap::ValueEnum;
+use epoch_blob::BlobHash;
 use epoch_protocol::{
     AgentStart, Completion, CompletionOutcome, ContextUpdate, Envelope, Extensions, Message,
     ModelRequest, ModelResponse, ProtocolError, SafePoint, ToolCall, ToolOutcome, ToolResult,
     encode_line,
 };
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const DEFAULT_MEMORY_BYTES: usize = 64 * 1024;
@@ -90,27 +89,27 @@ impl CrashPoint {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct MemoryState {
     pub bytes: usize,
-    pub content_hash: String,
+    pub content_hash: BlobHash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ChildState {
     pub exit_code: i32,
-    pub stdout_hash: String,
+    pub stdout_hash: BlobHash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NetworkState {
-    pub request_hash: String,
-    pub response_hash: String,
+    pub request_hash: BlobHash,
+    pub response_hash: BlobHash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NormalizedState {
     pub seed: u64,
     pub scenario: Scenario,
-    pub model_response_hash: String,
-    pub files: BTreeMap<String, String>,
+    pub model_response_hash: BlobHash,
+    pub files: BTreeMap<String, BlobHash>,
     pub memory: Option<MemoryState>,
     pub child: Option<ChildState>,
     pub network: Option<NetworkState>,
@@ -120,8 +119,8 @@ pub struct NormalizedState {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RunSummary {
     pub state: NormalizedState,
-    pub state_hash: String,
-    pub normalized_trace_hash: String,
+    pub state_hash: BlobHash,
+    pub normalized_trace_hash: BlobHash,
     pub event_count: u64,
 }
 
@@ -467,7 +466,7 @@ fn loopback_exchange(request: &[u8], response: &[u8]) -> Result<Vec<u8>, Workloa
     Ok(observed)
 }
 
-fn normalized_state_hash(state: &NormalizedState) -> Result<String, WorkloadError> {
+fn normalized_state_hash(state: &NormalizedState) -> Result<BlobHash, WorkloadError> {
     let encoded = serde_json::to_vec(state)
         .map_err(|error| WorkloadError::StateEncoding(error.to_string()))?;
     Ok(sha256(&encoded))
@@ -477,17 +476,8 @@ fn deterministic_id(prefix: &str, seed: u64, scenario: Scenario) -> String {
     format!("{prefix}-{}-{seed:016x}", scenario.as_str())
 }
 
-fn sha256(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    lower_hex(&digest)
-}
-
-fn lower_hex(bytes: &[u8]) -> String {
-    let mut encoded = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-    encoded
+fn sha256(bytes: &[u8]) -> BlobHash {
+    BlobHash::digest(bytes)
 }
 
 const fn runs_files(scenario: Scenario) -> bool {
@@ -509,7 +499,7 @@ const fn runs_network(scenario: Scenario) -> bool {
 struct Emitter<'a, W> {
     output: &'a mut W,
     sequence: u64,
-    trace_hasher: Sha256,
+    normalized_trace: Vec<u8>,
 }
 
 impl<'a, W: Write> Emitter<'a, W> {
@@ -517,7 +507,7 @@ impl<'a, W: Write> Emitter<'a, W> {
         Self {
             output,
             sequence: 0,
-            trace_hasher: Sha256::new(),
+            normalized_trace: Vec::new(),
         }
     }
 
@@ -525,7 +515,7 @@ impl<'a, W: Write> Emitter<'a, W> {
         let encoded = encode_line(&Envelope::new(self.sequence, message))?;
         self.output.write_all(encoded.as_bytes())?;
         self.output.flush()?;
-        self.trace_hasher.update(encoded.as_bytes());
+        self.normalized_trace.extend_from_slice(encoded.as_bytes());
         self.sequence = self
             .sequence
             .checked_add(1)
@@ -533,9 +523,8 @@ impl<'a, W: Write> Emitter<'a, W> {
         Ok(())
     }
 
-    fn finish(self) -> (String, u64) {
-        let digest = self.trace_hasher.finalize();
-        (lower_hex(&digest), self.sequence)
+    fn finish(self) -> (BlobHash, u64) {
+        (BlobHash::digest(&self.normalized_trace), self.sequence)
     }
 }
 

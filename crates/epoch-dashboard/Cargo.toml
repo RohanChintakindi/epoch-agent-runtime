@@ -13,10 +13,10 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tiny_http = "0.12"
+uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-uuid.workspace = true
 
 [lints]
 workspace = true

@@ -156,3 +156,127 @@ pub struct CgroupMembership {
     pub controllers: Vec<String>,
     pub path: String,
 }
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct EncodedValue {
+    pub display: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_hex: Option<String>,
+}
+
+impl EncodedValue {
+    #[must_use]
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        match std::str::from_utf8(bytes) {
+            Ok(value) => Self {
+                display: value.to_owned(),
+                raw_hex: None,
+            },
+            Err(_) => Self {
+                display: String::from_utf8_lossy(bytes).into_owned(),
+                raw_hex: Some(hex_bytes(bytes)),
+            },
+        }
+    }
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut result = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        result.push(char::from(HEX[usize::from(byte >> 4)]));
+        result.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    result
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FdKind {
+    Path,
+    Socket,
+    Pipe,
+    AnonInode,
+    Memfd,
+    Other,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct NormalizedFdTarget {
+    pub kind: FdKind,
+    pub target: EncodedValue,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_id: Option<u64>,
+    pub deleted: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct FdSummary {
+    pub total: u64,
+    pub groups: Vec<FdGroup>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct FdGroup {
+    pub kind: FdKind,
+    pub target: EncodedValue,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_id: Option<u64>,
+    pub deleted: bool,
+    pub count: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NamespaceIdentity {
+    pub kind: String,
+    pub inode: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransportProtocol {
+    Tcp,
+    Udp,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkRole {
+    Listener,
+    Connected,
+    Unconnected,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SocketState {
+    Established,
+    SynSent,
+    SynReceived,
+    FinWait1,
+    FinWait2,
+    TimeWait,
+    Closed,
+    CloseWait,
+    LastAck,
+    Listen,
+    Closing,
+    NewSynReceived,
+    Unknown(u8),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NetworkAddress {
+    pub address: String,
+    pub port: u16,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NetworkEndpoint {
+    pub protocol: TransportProtocol,
+    pub role: NetworkRole,
+    pub state: SocketState,
+    pub local: NetworkAddress,
+    pub remote: NetworkAddress,
+    pub inode: u64,
+}

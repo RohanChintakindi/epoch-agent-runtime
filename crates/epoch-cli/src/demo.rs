@@ -393,7 +393,9 @@ impl DemoRunner {
                     "after_epoch_id": required(value, "/result/after_epoch_id")?,
                     "identical": required(value, "/result/diff/identical")?,
                     "change_count": required_array(value, "/result/diff/changes")?.len(),
-                    "unsupported_sections": required(value, "/result/diff/unsupported_sections")?,
+                    "workspace": required(value, "/result/workspace")?,
+                    "capabilities": required(value, "/result/capabilities")?,
+                    "effects": required(value, "/result/effects")?,
                 }))
             },
         )?;

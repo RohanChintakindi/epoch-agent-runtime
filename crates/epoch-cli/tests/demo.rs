@@ -216,6 +216,11 @@ fn demo_runs_real_composite_recovery_flow_and_reports_only_current_gaps() {
         phase(&report, "semantic_diff")["evidence"]["identical"],
         false
     );
+    assert!(phase(&report, "semantic_diff")["evidence"]["workspace"]["identical"].is_boolean());
+    assert!(
+        phase(&report, "semantic_diff")["evidence"]["capabilities"]["before_frontier"].is_number()
+    );
+    assert!(phase(&report, "semantic_diff")["evidence"]["effects"]["before_frontier"].is_number());
     assert!(phase(&report, "fork")["evidence"]["branch_id"].is_string());
     assert_eq!(
         report["unsupported_sections"]

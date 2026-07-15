@@ -52,7 +52,7 @@ def test_real_rust_contract_round_trips_labelled_and_unlabelled_records_privatel
 def test_record_output_exactly_matches_the_rust_metadata_only_schema():
     event = TrajectoryEvent(
         position=0,
-        delta_monotonic_ns=25,
+        delta_monotonic_ns=0,
         actor="supervisor",
         kind="safe_point",
         status="succeeded",
@@ -122,6 +122,7 @@ def test_record_output_exactly_matches_the_rust_metadata_only_schema():
         (lambda value: value.update(value_label=None), "label pair"),
         (lambda value: value.update(value_label=float("nan")), "value_label"),
         (lambda value: value["events"][0].update(position=9), "contiguous"),
+        (lambda value: value["events"][0].update(delta_monotonic_ns=1), "must be zero"),
         (lambda value: value["events"][0].update(delta_monotonic_ns=-1), "delta_monotonic_ns"),
         (lambda value: value["events"][0].update(actor="root"), "actor"),
         (lambda value: value["events"][0].update(kind="tool result"), "kind"),
@@ -151,11 +152,8 @@ def test_zero_events_are_valid_but_more_than_256_are_rejected(tmp_path):
     write_jsonl(dataset, [empty])
     assert load_jsonl(dataset) == [empty]
 
-    event = record.events[0]
-    too_many = [replace(event, position=index) for index in range(257)]
     invalid = record.as_dict()
-    invalid["events"] = [item.as_dict() for item in too_many]
-    invalid["summary"] = TrajectorySummary.from_events(tuple(too_many)).as_dict()
+    invalid["events"] = [{**record.events[0].as_dict(), "position": index} for index in range(257)]
     oversized = tmp_path / "oversized.jsonl"
     oversized.write_text(json.dumps(invalid) + "\n", encoding="utf-8")
     with pytest.raises(DatasetValidationError, match="events"):

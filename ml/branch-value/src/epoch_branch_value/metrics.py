@@ -49,14 +49,16 @@ def evaluate_predictions(
     squared_error = 0.0
     epsilon = 1e-7
     for record in records:
+        if not record.is_labelled:
+            raise ValueError("metrics require labelled records")
         prediction = by_id[record.trajectory_id]
-        target = 1.0 if record.label.success else 0.0
+        target = 1.0 if record.success_label else 0.0
         probability = prediction.success_probability
-        correct += (probability >= 0.5) == record.label.success
+        correct += (probability >= 0.5) == record.success_label
         brier += (probability - target) ** 2
         clipped = min(1.0 - epsilon, max(epsilon, probability))
         log_loss -= target * math.log(clipped) + (1.0 - target) * math.log(1.0 - clipped)
-        difference = prediction.value_score - record.label.value
+        difference = prediction.value_score - record.value_label
         absolute_error += abs(difference)
         squared_error += difference**2
     count = len(records)

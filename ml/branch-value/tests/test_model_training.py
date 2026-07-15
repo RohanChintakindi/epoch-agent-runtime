@@ -104,8 +104,8 @@ def test_training_and_evaluation_use_only_labelled_records_and_are_reproducible(
     assert constant["success_probability"] == sum(
         float(record.success_label) for record in train_records
     ) / len(train_records)
-    assert constant["value_score"] == sum(record.value_label for record in train_records) / len(
-        train_records
+    assert constant["value_score"] == pytest.approx(
+        sum(record.value_label for record in train_records) / len(train_records)
     )
 
     manifest = json.loads((first_dir / "manifest.json").read_text(encoding="utf-8"))

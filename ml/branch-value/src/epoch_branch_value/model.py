@@ -15,16 +15,13 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from .baselines import Prediction
 from .schema import (
     ACTORS,
-    MAX_CAPABILITY_COUNT,
-    MAX_DURATION_MS,
-    MAX_EFFECT_COUNT,
-    MAX_TOKEN_COUNT,
+    KINDS,
+    MAX_U64,
     STATUSES,
     TrajectoryRecord,
 )
 
 PAD = "<pad>"
-UNKNOWN = "<unknown>"
 MODEL_SOURCE = "sequence_encoder_v1"
 
 
@@ -36,29 +33,20 @@ class Vocabulary:
 
     @classmethod
     def build(cls, records: Sequence[TrajectoryRecord]) -> Vocabulary:
-        kinds = sorted({step.kind for record in records for step in record.steps})
-        if not kinds:
-            raise ValueError("cannot build a vocabulary without steps")
+        if not records:
+            raise ValueError("cannot build a vocabulary without trajectories")
         return cls(
             actors=(PAD, *sorted(ACTORS)),
             statuses=(PAD, *sorted(STATUSES)),
-            kinds=(PAD, UNKNOWN, *kinds),
+            kinds=(PAD, *sorted(KINDS)),
         )
 
     def __post_init__(self) -> None:
-        if not self.actors or self.actors[0] != PAD or len(set(self.actors)) != len(self.actors):
+        if self.actors != (PAD, *sorted(ACTORS)):
             raise ValueError("actor vocabulary is invalid")
-        if (
-            not self.statuses
-            or self.statuses[0] != PAD
-            or len(set(self.statuses)) != len(self.statuses)
-        ):
+        if self.statuses != (PAD, *sorted(STATUSES)):
             raise ValueError("status vocabulary is invalid")
-        if (
-            len(self.kinds) < 2
-            or self.kinds[:2] != (PAD, UNKNOWN)
-            or len(set(self.kinds)) != len(self.kinds)
-        ):
+        if self.kinds != (PAD, *sorted(KINDS)):
             raise ValueError("kind vocabulary is invalid")
 
     def as_dict(self) -> Dict[str, Any]:
@@ -155,7 +143,7 @@ class BranchValueModel(nn.Module):
         self.actor_embedding = nn.Embedding(len(vocabulary.actors), 8, padding_idx=0)
         self.status_embedding = nn.Embedding(len(vocabulary.statuses), 8, padding_idx=0)
         self.kind_embedding = nn.Embedding(len(vocabulary.kinds), 16, padding_idx=0)
-        self.encoder = build_encoder(encoder_name, 8 + 8 + 16 + 4, hidden_size)
+        self.encoder = build_encoder(encoder_name, 8 + 8 + 16 + 3, hidden_size)
         self.success_head = nn.Linear(self.encoder.output_size, 1)
         self.value_head = nn.Linear(self.encoder.output_size, 1)
 
@@ -184,25 +172,24 @@ def collate_records(
     actor_index = {value: index for index, value in enumerate(vocabulary.actors)}
     status_index = {value: index for index, value in enumerate(vocabulary.statuses)}
     kind_index = {value: index for index, value in enumerate(vocabulary.kinds)}
-    maximum_steps = max(len(record.steps) for record in records)
-    actor_ids = torch.zeros((len(records), maximum_steps), dtype=torch.long, device=device)
+    maximum_events = max(1, max(len(record.events) for record in records))
+    actor_ids = torch.zeros((len(records), maximum_events), dtype=torch.long, device=device)
     status_ids = torch.zeros_like(actor_ids)
     kind_ids = torch.zeros_like(actor_ids)
-    numeric = torch.zeros((len(records), maximum_steps, 4), dtype=torch.float32, device=device)
+    numeric = torch.zeros((len(records), maximum_events, 3), dtype=torch.float32, device=device)
     lengths = torch.tensor(
-        [len(record.steps) for record in records], dtype=torch.long, device=device
+        [max(1, len(record.events)) for record in records], dtype=torch.long, device=device
     )
     for row, record in enumerate(records):
-        for column, step in enumerate(record.steps):
-            actor_ids[row, column] = actor_index[step.actor]
-            status_ids[row, column] = status_index[step.status]
-            kind_ids[row, column] = kind_index.get(step.kind, kind_index[UNKNOWN])
+        for column, event in enumerate(record.events):
+            actor_ids[row, column] = actor_index[event.actor]
+            status_ids[row, column] = status_index[event.status]
+            kind_ids[row, column] = kind_index[event.kind]
             numeric[row, column] = torch.tensor(
                 (
-                    _log_scale(step.duration_ms, MAX_DURATION_MS),
-                    _log_scale(step.token_count, MAX_TOKEN_COUNT),
-                    _log_scale(step.effect_count, MAX_EFFECT_COUNT),
-                    _log_scale(step.capability_count, MAX_CAPABILITY_COUNT),
+                    _log_scale(event.delta_monotonic_ns, MAX_U64),
+                    float(event.references_epoch),
+                    float(event.has_causal_parent),
                 ),
                 dtype=torch.float32,
                 device=device,
@@ -214,12 +201,20 @@ def collate_records(
         numeric=numeric,
         lengths=lengths,
         success_targets=torch.tensor(
-            [float(record.label.success) for record in records],
+            [
+                float(record.success_label) if record.success_label is not None else float("nan")
+                for record in records
+            ],
             dtype=torch.float32,
             device=device,
         ),
         value_targets=torch.tensor(
-            [record.label.value for record in records], dtype=torch.float32, device=device
+            [
+                record.value_label if record.value_label is not None else float("nan")
+                for record in records
+            ],
+            dtype=torch.float32,
+            device=device,
         ),
         trajectory_ids=tuple(record.trajectory_id for record in records),
     )

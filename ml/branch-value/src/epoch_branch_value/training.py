@@ -1,25 +1,47 @@
-"""Fixed-seed CPU training, artifact persistence, and baseline evaluation."""
+"""Fixed-seed CPU training with verified, private, hash-bound model bundles."""
 
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import math
 import os
 import random
+import re
+import shutil
+import stat
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import torch
 from torch import nn
 
-from .baselines import heuristic_baseline, random_baseline
+from .baselines import constant_baseline, heuristic_baseline, random_baseline
 from .metrics import Metrics, evaluate_predictions
-from .model import BranchValueModel, Vocabulary, collate_records, predict
-from .schema import TrajectoryRecord, canonical_records
+from .model import MODEL_SOURCE, BranchValueModel, Vocabulary, collate_records, predict
+from .schema import TrajectoryRecord, canonical_records, labelled_records
 from .split import SplitConfig, records_for_split, split_by_task_group
+
+MAX_MODEL_BYTES = 64 * 1024 * 1024
+MAX_MODEL_JSON_BYTES = 1024 * 1024
+MAX_SPLIT_JSON_BYTES = 64 * 1024 * 1024
+MAX_METRICS_JSON_BYTES = 1024 * 1024
+MAX_MANIFEST_BYTES = 64 * 1024
+ARTIFACT_LIMITS = {
+    "model.pt": MAX_MODEL_BYTES,
+    "model.json": MAX_MODEL_JSON_BYTES,
+    "split.json": MAX_SPLIT_JSON_BYTES,
+    "training-metrics.json": MAX_METRICS_JSON_BYTES,
+}
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+class ArtifactValidationError(ValueError):
+    """A model bundle failed bounded regular-file or integrity validation."""
 
 
 @dataclass(frozen=True)
@@ -74,6 +96,7 @@ class EvaluationReport:
     model: ScoredMetrics
     random: ScoredMetrics
     heuristic: ScoredMetrics
+    constant: ScoredMetrics
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -82,6 +105,7 @@ class EvaluationReport:
             "model": self.model.as_dict(),
             "random": self.random.as_dict(),
             "heuristic": self.heuristic.as_dict(),
+            "constant": self.constant.as_dict(),
         }
 
 
@@ -110,6 +134,14 @@ class TrainingResult:
         }
 
 
+@dataclass(frozen=True)
+class LoadedModel:
+    model: BranchValueModel
+    vocabulary: Vocabulary
+    metadata: Mapping[str, Any]
+    split_document: Mapping[str, Any]
+
+
 def train_model(
     records: Sequence[TrajectoryRecord], output_dir: os.PathLike[str], config: TrainConfig
 ) -> TrainingResult:
@@ -122,6 +154,10 @@ def train_model(
     validation_records = records_for_split(records, split, "validation")
     test_records = records_for_split(records, split, "test")
     vocabulary = Vocabulary.build(train_records)
+    constant_success = sum(float(record.success_label) for record in train_records) / len(
+        train_records
+    )
+    constant_value = sum(float(record.value_label) for record in train_records) / len(train_records)
     _configure_determinism(config.seed)
     model = BranchValueModel(vocabulary, config.hidden_size, config.encoder).cpu()
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
@@ -154,6 +190,8 @@ def train_model(
         validation_records,
         split="validation",
         random_seed=config.seed,
+        constant_success=constant_success,
+        constant_value=constant_value,
     )
     result = TrainingResult(
         seed=config.seed,
@@ -165,30 +203,37 @@ def train_model(
         final_train_loss=final_train_loss,
         validation=validation,
     )
-    output.mkdir(parents=True)
-    torch.save(model.state_dict(), output / "model.pt")
-    _write_json(
-        output / "model.json",
-        {
-            "format_version": 1,
-            "device": "cpu",
-            "model_source": "sequence_encoder_v1",
-            "encoder": config.encoder,
-            "hidden_size": config.hidden_size,
-            "parameter_count": model.parameter_count(),
-            "vocabulary": vocabulary.as_dict(),
-            "training": config.as_dict(),
-        },
-    )
-    _write_json(
-        output / "split.json",
-        {
-            "format_version": 1,
-            "dataset_sha256": dataset_fingerprint(records),
-            "split": split.as_dict(),
-        },
-    )
-    _write_json(output / "training-metrics.json", result.as_dict())
+    weights = io.BytesIO()
+    torch.save(model.state_dict(), weights)
+    labelled = labelled_records(records)
+    payloads = {
+        "model.pt": weights.getvalue(),
+        "model.json": _json_bytes(
+            {
+                "format_version": 1,
+                "device": "cpu",
+                "model_source": MODEL_SOURCE,
+                "encoder": config.encoder,
+                "hidden_size": config.hidden_size,
+                "parameter_count": model.parameter_count(),
+                "vocabulary": vocabulary.as_dict(),
+                "training": config.as_dict(),
+                "constant_baseline": {
+                    "success_probability": constant_success,
+                    "value_score": constant_value,
+                },
+            }
+        ),
+        "split.json": _json_bytes(
+            {
+                "format_version": 1,
+                "dataset_sha256": dataset_fingerprint(labelled),
+                "split": split.as_dict(),
+            }
+        ),
+        "training-metrics.json": _json_bytes(result.as_dict()),
+    }
+    _publish_bundle(output, payloads)
     return result
 
 
@@ -197,64 +242,47 @@ def evaluate_model(
 ) -> EvaluationReport:
     if split not in {"train", "validation", "test"}:
         raise ValueError("split must be train, validation, or test")
-    root = Path(model_dir)
-    metadata = _read_object(root / "model.json")
-    split_manifest = _read_object(root / "split.json")
-    if metadata.get("format_version") != 1 or split_manifest.get("format_version") != 1:
-        raise ValueError("model artifact format is unsupported")
-    if split_manifest.get("dataset_sha256") != dataset_fingerprint(records):
-        raise ValueError("split manifest does not match dataset")
-    raw_split = split_manifest.get("split")
+    loaded = _load_model(model_dir)
+    split_document = loaded.split_document
+    labelled = labelled_records(records)
+    if split_document.get("dataset_sha256") != dataset_fingerprint(labelled):
+        raise ValueError("split manifest does not match labelled dataset")
+    raw_split = split_document.get("split")
     if not isinstance(raw_split, dict):
         raise ValueError("split manifest is invalid")
-    assignment = raw_split.get("assignment")
-    if not isinstance(assignment, dict) or set(assignment) != {
-        record.trajectory_id for record in records
-    }:
-        raise ValueError("split manifest does not match dataset identities")
-    group_splits: Dict[str, str] = {}
-    selected: List[TrajectoryRecord] = []
-    for record in records:
-        assigned = assignment.get(record.trajectory_id)
-        if assigned not in {"train", "validation", "test"}:
-            raise ValueError("split manifest contains an invalid assignment")
-        previous = group_splits.setdefault(record.task_group_id, assigned)
-        if previous != assigned:
-            raise ValueError("split manifest leaks one task group across partitions")
-        if assigned == split:
-            selected.append(record)
-    if not selected:
-        raise ValueError("selected split is empty")
-    vocabulary_raw = metadata.get("vocabulary")
-    if not isinstance(vocabulary_raw, dict):
-        raise ValueError("model vocabulary is invalid")
-    vocabulary = Vocabulary.from_dict(vocabulary_raw)
-    hidden_size = metadata.get("hidden_size")
-    encoder = metadata.get("encoder")
-    if (
-        isinstance(hidden_size, bool)
-        or not isinstance(hidden_size, int)
-        or not isinstance(encoder, str)
-    ):
-        raise ValueError("model architecture metadata is invalid")
-    model = BranchValueModel(vocabulary, hidden_size, encoder).cpu()
+    raw_config = raw_split.get("config")
+    if not isinstance(raw_config, dict):
+        raise ValueError("split manifest config is invalid")
     try:
-        state = torch.load(root / "model.pt", map_location="cpu", weights_only=True)
-    except (OSError, RuntimeError) as error:
-        raise ValueError("model weights are unavailable or invalid") from error
-    if not isinstance(state, Mapping):
-        raise ValueError("model weights are invalid")
-    model.load_state_dict(state, strict=True)
-    training = metadata.get("training")
-    if not isinstance(training, dict) or not isinstance(training.get("seed"), int):
-        raise ValueError("training metadata is invalid")
+        config = SplitConfig.from_dict(raw_config)
+        recomputed = split_by_task_group(records, config)
+    except ValueError as error:
+        raise ValueError(f"split manifest cannot be recomputed: {error}") from error
+    if raw_split != recomputed.as_dict():
+        raise ValueError("split manifest differs from recomputed task-group split")
+    selected = records_for_split(labelled, recomputed, split)
+    if not selected:
+        raise ValueError("selected labelled split is empty")
+    constant_success, constant_value = _constant_values(loaded.metadata)
+    seed = _training_seed(loaded.metadata)
     return _evaluate_with_model(
-        model,
-        vocabulary,
+        loaded.model,
+        loaded.vocabulary,
         selected,
         split=split,
-        random_seed=training["seed"],
+        random_seed=seed,
+        constant_success=constant_success,
+        constant_value=constant_value,
     )
+
+
+def score_model(records: Sequence[TrajectoryRecord], model_dir: os.PathLike[str]) -> List[Any]:
+    """Score labelled or unlabelled records without consulting labels or the training split."""
+
+    if not records:
+        raise ValueError("scoring requires at least one trajectory")
+    loaded = _load_model(model_dir)
+    return predict(loaded.model, records, loaded.vocabulary)
 
 
 def dataset_fingerprint(records: Sequence[TrajectoryRecord]) -> str:
@@ -268,10 +296,13 @@ def _evaluate_with_model(
     *,
     split: str,
     random_seed: int,
+    constant_success: float,
+    constant_value: float,
 ) -> EvaluationReport:
     model_predictions = predict(model, records, vocabulary)
     random_predictions = random_baseline(records, random_seed)
     heuristic_predictions = heuristic_baseline(records)
+    constant_predictions = constant_baseline(records, constant_success, constant_value)
     return EvaluationReport(
         split=split,
         model=ScoredMetrics(
@@ -284,27 +315,219 @@ def _evaluate_with_model(
             heuristic_predictions[0].source,
             evaluate_predictions(records, heuristic_predictions),
         ),
+        constant=ScoredMetrics(
+            constant_predictions[0].source,
+            evaluate_predictions(records, constant_predictions),
+        ),
     )
+
+
+def _load_model(model_dir: os.PathLike[str]) -> LoadedModel:
+    payloads = _load_verified_bundle(Path(model_dir))
+    metadata = _decode_object("model.json", payloads["model.json"])
+    split_document = _decode_object("split.json", payloads["split.json"])
+    if set(metadata) != {
+        "format_version",
+        "device",
+        "model_source",
+        "encoder",
+        "hidden_size",
+        "parameter_count",
+        "vocabulary",
+        "training",
+        "constant_baseline",
+    }:
+        raise ArtifactValidationError("artifact model.json fields are invalid")
+    if (
+        metadata.get("format_version") != 1
+        or metadata.get("device") != "cpu"
+        or metadata.get("model_source") != MODEL_SOURCE
+        or metadata.get("encoder") != "gru"
+    ):
+        raise ArtifactValidationError("artifact model.json contract is unsupported")
+    if set(split_document) != {"format_version", "dataset_sha256", "split"}:
+        raise ArtifactValidationError("artifact split.json fields are invalid")
+    if split_document.get("format_version") != 1 or not _is_sha256(
+        split_document.get("dataset_sha256")
+    ):
+        raise ArtifactValidationError("artifact split.json contract is invalid")
+    vocabulary_raw = metadata.get("vocabulary")
+    if not isinstance(vocabulary_raw, dict):
+        raise ArtifactValidationError("artifact model vocabulary is invalid")
+    hidden_size = metadata.get("hidden_size")
+    if isinstance(hidden_size, bool) or not isinstance(hidden_size, int):
+        raise ArtifactValidationError("artifact model architecture is invalid")
+    try:
+        vocabulary = Vocabulary.from_dict(vocabulary_raw)
+        model = BranchValueModel(vocabulary, hidden_size, "gru").cpu()
+        state = torch.load(io.BytesIO(payloads["model.pt"]), map_location="cpu", weights_only=True)
+        if not isinstance(state, Mapping):
+            raise ValueError("weights are not a state mapping")
+        model.load_state_dict(state, strict=True)
+    except Exception as error:
+        raise ArtifactValidationError(
+            "artifact model weights or architecture are invalid"
+        ) from error
+    parameter_count = metadata.get("parameter_count")
+    if (
+        isinstance(parameter_count, bool)
+        or not isinstance(parameter_count, int)
+        or parameter_count != model.parameter_count()
+    ):
+        raise ArtifactValidationError("artifact model parameter count is invalid")
+    _training_seed(metadata)
+    _constant_values(metadata)
+    return LoadedModel(model, vocabulary, metadata, split_document)
+
+
+def _load_verified_bundle(root: Path) -> Dict[str, bytes]:
+    try:
+        root_stat = root.lstat()
+    except OSError as error:
+        raise ArtifactValidationError("artifact model directory is unavailable") from error
+    if not stat.S_ISDIR(root_stat.st_mode) or root.is_symlink():
+        raise ArtifactValidationError("artifact model path must be a regular directory")
+    manifest_bytes = _read_bounded_regular(root / "manifest.json", MAX_MANIFEST_BYTES)
+    manifest = _decode_object("manifest.json", manifest_bytes)
+    if set(manifest) != {"format_version", "files"} or manifest.get("format_version") != 1:
+        raise ArtifactValidationError("artifact manifest contract is invalid")
+    files = manifest.get("files")
+    if not isinstance(files, dict) or set(files) != set(ARTIFACT_LIMITS):
+        raise ArtifactValidationError("artifact manifest file set is invalid")
+    payloads: Dict[str, bytes] = {}
+    for name, maximum in ARTIFACT_LIMITS.items():
+        entry = files.get(name)
+        if not isinstance(entry, dict) or set(entry) != {"sha256", "size"}:
+            raise ArtifactValidationError(f"artifact manifest entry {name} is invalid")
+        expected_size = entry.get("size")
+        expected_hash = entry.get("sha256")
+        if (
+            isinstance(expected_size, bool)
+            or not isinstance(expected_size, int)
+            or not 1 <= expected_size <= maximum
+            or not _is_sha256(expected_hash)
+        ):
+            raise ArtifactValidationError(f"artifact manifest entry {name} is invalid")
+        payload = _read_bounded_regular(root / name, maximum)
+        if len(payload) != expected_size or hashlib.sha256(payload).hexdigest() != expected_hash:
+            raise ArtifactValidationError(f"artifact {name} failed manifest verification")
+        payloads[name] = payload
+    return payloads
+
+
+def _read_bounded_regular(path: Path, maximum: int) -> bytes:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise ArtifactValidationError(f"artifact {path.name} is unavailable") from error
+    if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
+        raise ArtifactValidationError(f"artifact {path.name} must be a regular file")
+    if not 1 <= metadata.st_size <= maximum:
+        raise ArtifactValidationError(f"artifact {path.name} is empty or exceeds its size bound")
+    try:
+        payload = path.read_bytes()
+    except OSError as error:
+        raise ArtifactValidationError(f"artifact {path.name} cannot be read") from error
+    if len(payload) != metadata.st_size:
+        raise ArtifactValidationError(f"artifact {path.name} changed while being read")
+    return payload
+
+
+def _publish_bundle(output: Path, payloads: Mapping[str, bytes]) -> None:
+    if set(payloads) != set(ARTIFACT_LIMITS):
+        raise ValueError("model bundle payload set is invalid")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists():
+        raise ValueError("output directory already exists; refusing to clobber model artifacts")
+    stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
+    os.chmod(stage, 0o700)
+    published = False
+    try:
+        manifest_files: Dict[str, Dict[str, Any]] = {}
+        for name, maximum in ARTIFACT_LIMITS.items():
+            payload = payloads[name]
+            if not 1 <= len(payload) <= maximum:
+                raise ValueError(f"artifact {name} exceeds its size bound")
+            _write_private_new(stage / name, payload)
+            manifest_files[name] = {
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "size": len(payload),
+            }
+        manifest = _json_bytes({"format_version": 1, "files": manifest_files})
+        if len(manifest) > MAX_MANIFEST_BYTES:
+            raise ValueError("artifact manifest exceeds its size bound")
+        _write_private_new(stage / "manifest.json", manifest)
+        if output.exists():
+            raise ValueError("output directory already exists; refusing to clobber model artifacts")
+        os.rename(stage, output)
+        published = True
+    finally:
+        if not published:
+            shutil.rmtree(stage, ignore_errors=True)
+
+
+def _write_private_new(path: Path, payload: bytes) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            descriptor = -1
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _json_bytes(value: Mapping[str, Any]) -> bytes:
+    return (json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
+
+
+def _decode_object(name: str, payload: bytes) -> Dict[str, Any]:
+    try:
+        value = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ArtifactValidationError(f"artifact {name} is not valid JSON") from error
+    if not isinstance(value, dict):
+        raise ArtifactValidationError(f"artifact {name} must be a JSON object")
+    return value
+
+
+def _training_seed(metadata: Mapping[str, Any]) -> int:
+    training = metadata.get("training")
+    if not isinstance(training, dict):
+        raise ArtifactValidationError("artifact training metadata is invalid")
+    seed = training.get("seed")
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise ArtifactValidationError("artifact training seed is invalid")
+    return seed
+
+
+def _constant_values(metadata: Mapping[str, Any]) -> Tuple[float, float]:
+    constant = metadata.get("constant_baseline")
+    if not isinstance(constant, dict) or set(constant) != {
+        "success_probability",
+        "value_score",
+    }:
+        raise ArtifactValidationError("artifact constant baseline is invalid")
+    values = (constant["success_probability"], constant["value_score"])
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or not 0.0 <= float(value) <= 1.0
+        for value in values
+    ):
+        raise ArtifactValidationError("artifact constant baseline is invalid")
+    return float(values[0]), float(values[1])
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and SHA256_PATTERN.fullmatch(value) is not None
 
 
 def _configure_determinism(seed: int) -> None:
     random.seed(seed)
     torch.manual_seed(seed)
     torch.use_deterministic_algorithms(True)
-
-
-def _write_json(path: Path, value: Mapping[str, Any]) -> None:
-    path.write_text(
-        json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n",
-        encoding="utf-8",
-    )
-
-
-def _read_object(path: Path) -> Dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError(f"artifact {path.name} is unavailable or invalid") from error
-    if not isinstance(value, dict):
-        raise ValueError(f"artifact {path.name} must be a JSON object")
-    return value

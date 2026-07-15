@@ -113,6 +113,8 @@ impl CanonicalIntent {
         validate_text("replay_key", &replay_key, MAX_REPLAY_KEY_LENGTH)?;
         validate_text("action", &action, MAX_ACTION_LENGTH)?;
         validate_text("resource", &resource, MAX_RESOURCE_LENGTH)?;
+        reject_sensitive_text(&action, "action")?;
+        reject_sensitive_text(&resource, "resource")?;
         reject_sensitive_fields(&arguments, "arguments")?;
         let arguments = canonicalize_value(arguments);
 
@@ -912,18 +914,7 @@ fn reject_sensitive_fields(value: &Value, path: &str) -> Result<(), GatewayError
         Value::Object(fields) => {
             for (key, nested) in fields {
                 let normalized = key.to_ascii_lowercase().replace('-', "_");
-                if matches!(
-                    normalized.as_str(),
-                    "authorization"
-                        | "proxy_authorization"
-                        | "api_key"
-                        | "apikey"
-                        | "access_token"
-                        | "refresh_token"
-                        | "password"
-                        | "secret"
-                        | "client_secret"
-                ) {
+                if sensitive_key(&normalized) {
                     return Err(GatewayError::SensitiveField {
                         path: format!("{path}.{key}"),
                     });
@@ -939,6 +930,57 @@ fn reject_sensitive_fields(value: &Value, path: &str) -> Result<(), GatewayError
             Ok(())
         }
         _ => Ok(()),
+    }
+}
+
+fn sensitive_key(normalized: &str) -> bool {
+    matches!(
+        normalized,
+        "authorization"
+            | "proxy_authorization"
+            | "api_key"
+            | "apikey"
+            | "access_token"
+            | "refresh_token"
+            | "token"
+            | "password"
+            | "secret"
+            | "credential"
+            | "credentials"
+            | "client_secret"
+    ) || normalized.ends_with("_api_key")
+        || normalized.ends_with("_authorization")
+        || normalized.ends_with("_access_token")
+        || normalized.ends_with("_refresh_token")
+}
+
+fn reject_sensitive_text(value: &str, path: &'static str) -> Result<(), GatewayError> {
+    const MARKERS: [&str; 10] = [
+        "bearer ",
+        "basic ",
+        "api_key=",
+        "api-key=",
+        "apikey=",
+        "access_token=",
+        "access-token=",
+        "refresh_token=",
+        "client_secret=",
+        "password=",
+    ];
+    let normalized = value.to_ascii_lowercase();
+    let has_marker = MARKERS.iter().any(|marker| normalized.contains(marker));
+    let has_url_userinfo = normalized.split_once("://").is_some_and(|(_, suffix)| {
+        suffix
+            .split(['/', '?', '#'])
+            .next()
+            .is_some_and(|authority| authority.contains('@'))
+    });
+    if has_marker || has_url_userinfo {
+        Err(GatewayError::SensitiveField {
+            path: path.to_owned(),
+        })
+    } else {
+        Ok(())
     }
 }
 

@@ -55,12 +55,16 @@ def test_reader_reports_line_numbers_duplicate_keys_and_duplicate_trajectory_ids
         '{"schema_version":1,"schema_version":1}\n',
         encoding="utf-8",
     )
-    with pytest.raises(DatasetValidationError, match="line 1.*duplicate JSON key"):
+    with pytest.raises(DatasetValidationError, match=r"line 1.*duplicate JSON key"):
         load_jsonl(duplicate_key)
 
     duplicate_id = tmp_path / "duplicate-id.jsonl"
-    write_jsonl(duplicate_id, [record, replace(record, branch_id="00000000-0000-4000-8000-000000000099")])
-    with pytest.raises(DatasetValidationError, match="line 2.*duplicate trajectory_id"):
+    duplicate = replace(record, branch_id="00000000-0000-4000-8000-000000000099")
+    duplicate_id.write_text(
+        json.dumps(record.as_dict()) + "\n" + json.dumps(duplicate.as_dict()) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(DatasetValidationError, match=r"line 2.*duplicate trajectory_id"):
         load_jsonl(duplicate_id)
 
 
@@ -76,12 +80,12 @@ def test_typed_constructors_enforce_bounds_without_json(tmp_path):
             effect_count=0,
             capability_count=0,
         )
-    with pytest.raises(DatasetValidationError, match="label.value"):
+    with pytest.raises(DatasetValidationError, match=r"label.value"):
         Label(success=True, value=float("nan"))
 
-    record = generate_records(task_groups=1, branches_per_group=1, seed=3)[0]
+    records = generate_records(task_groups=2, branches_per_group=1, seed=3)
     with pytest.raises(DatasetValidationError, match="maximum record count"):
-        load_jsonl(_write(tmp_path, [record, record]), max_records=1)
+        load_jsonl(_write(tmp_path, records), max_records=1)
 
 
 def _write(tmp_path, records):

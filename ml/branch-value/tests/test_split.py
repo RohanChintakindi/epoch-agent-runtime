@@ -20,7 +20,11 @@ def test_split_is_group_disjoint_deterministic_and_input_order_independent():
     assert group_sets[1].isdisjoint(group_sets[2])
     assert set.union(*group_sets) == {record.task_group_id for record in records}
     for task_group in {record.task_group_id for record in records}:
-        assigned = {first.assignment[record.trajectory_id] for record in records if record.task_group_id == task_group}
+        assigned = {
+            first.assignment[record.trajectory_id]
+            for record in records
+            if record.task_group_id == task_group
+        }
         assert len(assigned) == 1
 
 
@@ -51,5 +55,5 @@ def test_conflicting_task_group_for_duplicate_branch_identity_is_rejected():
         branch_id=records[0].branch_id,
         task_group_id="tg_ffffffffffffffff",
     )
-    with pytest.raises(ValueError, match="branch_id.*task groups"):
+    with pytest.raises(ValueError, match=r"branch_id.*task groups"):
         split_by_task_group([records[0], poisoned, *records[2:]], SplitConfig(seed=3))

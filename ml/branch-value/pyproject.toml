@@ -5,6 +5,7 @@ description = "Privacy-safe trajectory branch-value experiments for Epoch"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "numpy>=1.23,<3",
     "torch>=2.2,<2.8",
 ]
 
@@ -34,6 +35,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "RUF"]
+ignore = ["UP006", "UP035", "UP045"]
 
 [tool.uv]
 package = true

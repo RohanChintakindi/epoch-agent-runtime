@@ -1,3 +1,4 @@
+mod bench;
 mod demo;
 
 use std::{env, path::PathBuf, process::ExitCode, str::FromStr as _, sync::Arc};
@@ -221,8 +222,43 @@ struct ResolveEffect {
 
 #[derive(Debug, Subcommand)]
 enum BenchCommand {
-    Run { suite: String },
-    Report { run: String },
+    Run {
+        suite: String,
+        #[arg(long, default_value = ".epoch/benchmarks")]
+        root: PathBuf,
+        #[arg(long, default_value_t = 1)]
+        warmups: u32,
+        #[arg(long, default_value_t = 5)]
+        repetitions: u32,
+        #[arg(long, default_value_t = 1_048_576)]
+        fixture_bytes: u64,
+        #[arg(long, default_value_t = 16)]
+        fixture_files: u32,
+        #[arg(long, default_value_t = 24_301)]
+        seed: u64,
+        #[arg(long, default_value_t = 33_554_432)]
+        cow_allocation_bytes: u64,
+        #[arg(long, default_value_t = 2)]
+        cow_children: u32,
+        #[arg(long, default_value_t = 2_500)]
+        cow_dirty_basis_points: u32,
+        #[arg(long, default_value_t = 3)]
+        cow_repetitions: u32,
+    },
+    Report {
+        run: String,
+        #[arg(long, default_value = ".epoch/benchmarks")]
+        root: PathBuf,
+        #[arg(long, value_enum, default_value_t = BenchFormat::Markdown)]
+        format: BenchFormat,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum BenchFormat {
+    Markdown,
+    Json,
+    Csv,
 }
 
 #[derive(Debug, Subcommand)]
@@ -459,6 +495,7 @@ fn execute(command: Command) -> ExitCode {
             workspace,
             json,
         }),
+        Command::Bench { command } => execute_bench(command),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -720,6 +757,37 @@ fn user_security_error(detail: impl AsRef<str>) -> ExitCode {
 fn trusted_security_error(detail: impl AsRef<str>) -> ExitCode {
     eprintln!("trusted state is unavailable: {}", detail.as_ref());
     ExitCode::from(SUPERVISOR_FAILURE_EXIT)
+}
+
+fn execute_bench(command: BenchCommand) -> ExitCode {
+    match command {
+        BenchCommand::Run {
+            suite,
+            root,
+            warmups,
+            repetitions,
+            fixture_bytes,
+            fixture_files,
+            seed,
+            cow_allocation_bytes,
+            cow_children,
+            cow_dirty_basis_points,
+            cow_repetitions,
+        } => bench::run(&bench::RunOptions {
+            suite,
+            root,
+            warmups,
+            repetitions,
+            fixture_bytes,
+            fixture_files,
+            seed,
+            cow_allocation_bytes,
+            cow_children,
+            cow_dirty_basis_points,
+            cow_repetitions,
+        }),
+        BenchCommand::Report { run, root, format } => bench::report(&run, &root, format),
+    }
 }
 
 fn inspect_status(raw_session: &str) -> ExitCode {

@@ -15,6 +15,8 @@ Linux isolation and checkpoint backends are added only after that vertical slice
 - `epoch-core`: stable identifiers, lifecycle state machines, and shared domain types.
 - `epoch-events`: append-only execution history with deterministic queries and external payloads.
 - `epoch-protocol`: versioned JSONL messages at the agent/supervisor boundary.
+- `epoch-sandbox`: fail-closed direct/Linux backend contracts and a native-tested Linux isolation
+  prototype.
 - `epoch-supervisor`: direct execution plus restart-safe cooperative application recovery.
 - `epoch-test-agent`: seeded workload for repeatable execution, tracing, and fault experiments.
 - `epoch-cli`: command-line entry point and host capability diagnostics.
@@ -38,6 +40,10 @@ cooperative checkpoint context are written as one JSON object to stderr. See the
 The [application checkpoint guide](docs/application-checkpoints.md) documents the Week 2 context
 schema, integrity boundary, supervisor-backed checkpoint/restore/status flow, and its explicit
 application-only limitations.
+
+The [Linux sandbox guide](docs/linux-sandbox.md) documents backend discovery, namespace/cgroup/
+seccomp boundaries, the threat model, native Oracle validation, measured launch samples, and the
+prototype's explicit limitations.
 
 ## Development
 

@@ -1,3 +1,5 @@
+mod demo;
+
 use std::{env, path::PathBuf, process::ExitCode, str::FromStr as _, sync::Arc};
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
@@ -128,7 +130,20 @@ enum Command {
         bind: String,
     },
     /// Run the complete deterministic interview demonstration.
-    Demo,
+    Demo {
+        /// Explicit deterministic test-agent executable.
+        #[arg(long)]
+        agent: PathBuf,
+        /// Dedicated demo-owned root. Existing unowned content is refused.
+        #[arg(long)]
+        root: PathBuf,
+        /// Demo-owned workspace base inside `root`.
+        #[arg(long)]
+        workspace: PathBuf,
+        /// Emit the complete machine-readable report to stdout.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
@@ -433,6 +448,17 @@ fn execute(command: Command) -> ExitCode {
         Command::Branch { command } => execute_branch_command(command),
         Command::Capability { command } => execute_capability_command(command),
         Command::Effects { command } => execute_effects_command(command),
+        Command::Demo {
+            agent,
+            root,
+            workspace,
+            json,
+        } => demo::run(&demo::DemoConfig {
+            agent,
+            root,
+            workspace,
+            json,
+        }),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -1112,7 +1138,7 @@ impl Command {
             Self::Bench { .. } => "bench",
             Self::Fault { .. } => "fault",
             Self::Serve { .. } => "serve",
-            Self::Demo => "demo",
+            Self::Demo { .. } => "demo",
         }
     }
 }

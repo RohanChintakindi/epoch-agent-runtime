@@ -317,6 +317,13 @@ pub struct CowEvidence {
     pub summary: Option<CowSummary>,
 }
 
+/// Bounded, predeclared COW scale/dirty/fan-out matrix.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CowMatrixEvidence {
+    /// Every configured point, including structured unsupported and failed outcomes.
+    pub points: Vec<CowEvidence>,
+}
+
 /// COW raw-sample aggregate summary.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CowSummary {
@@ -411,7 +418,7 @@ pub struct EvidenceBundle {
     /// Compatibility matrix when requested.
     pub compatibility: Option<CompatibilityMatrix>,
     /// COW suite when requested.
-    pub cow: Option<CowEvidence>,
+    pub cow: Option<CowMatrixEvidence>,
     /// Fault matrix when requested.
     pub faults: Option<FaultMatrix>,
     /// Derived keep/narrow/kill decisions.
@@ -560,36 +567,38 @@ fn append_compatibility_csv(
 }
 
 fn append_cow_csv(output: &mut String, bundle: &EvidenceBundle) -> serde_json::Result<()> {
-    let Some(cow) = &bundle.cow else {
+    let Some(matrix) = &bundle.cow else {
         return Ok(());
     };
-    if cow.samples.is_empty() {
-        csv_row(
-            output,
-            bundle,
-            CsvRow {
-                section: "cow",
-                case: "experiment",
-                status: cow.outcome.label(),
-                elapsed_ns: 0,
-                message: cow.outcome.message(),
-                evidence: "{}",
-            },
-        );
-    } else {
-        for sample in &cow.samples {
+    for (point_index, cow) in matrix.points.iter().enumerate() {
+        if cow.samples.is_empty() {
             csv_row(
                 output,
                 bundle,
                 CsvRow {
                     section: "cow",
-                    case: &format!("sample-{}", sample.ordinal),
-                    status: "succeeded",
-                    elapsed_ns: sample.elapsed_ns,
-                    message: "",
-                    evidence: &serde_json::to_string(sample)?,
+                    case: &format!("point-{point_index}-experiment"),
+                    status: cow.outcome.label(),
+                    elapsed_ns: 0,
+                    message: cow.outcome.message(),
+                    evidence: &serde_json::to_string(&cow.config)?,
                 },
             );
+        } else {
+            for sample in &cow.samples {
+                csv_row(
+                    output,
+                    bundle,
+                    CsvRow {
+                        section: "cow",
+                        case: &format!("point-{point_index}-sample-{}", sample.ordinal),
+                        status: "succeeded",
+                        elapsed_ns: sample.elapsed_ns,
+                        message: "",
+                        evidence: &serde_json::to_string(sample)?,
+                    },
+                );
+            }
         }
     }
     Ok(())
@@ -651,7 +660,7 @@ pub fn run_suite(
         .then(|| run_compatibility_matrix(&request.checkpoint, environment.clone()))
         .transpose()?;
     let cow = matches!(request.suite, SuiteName::Cow | SuiteName::All)
-        .then(|| run_cow_experiment(&request.cow, environment.clone()));
+        .then(|| run_cow_matrix(&request.cow, &environment));
     let faults = matches!(request.suite, SuiteName::Faults | SuiteName::All)
         .then(|| run_fault_matrix(&request.checkpoint.root.join("faults")))
         .transpose()?;
@@ -675,9 +684,31 @@ pub fn run_suite(
     })
 }
 
+fn run_cow_matrix(base: &CowConfig, environment: &BenchmarkEnvironment) -> CowMatrixEvidence {
+    let mut configs = vec![base.clone()];
+    for candidate in [
+        CowConfig::new(4 * 1024 * 1024, 1, 0, base.repetitions),
+        CowConfig::new(4 * 1024 * 1024, 1, 10_000, base.repetitions),
+        CowConfig::new(32 * 1024 * 1024, 2, 2_500, base.repetitions),
+        CowConfig::new(32 * 1024 * 1024, 4, 2_500, base.repetitions),
+    ] {
+        if let Ok(candidate) = candidate
+            && !configs.contains(&candidate)
+        {
+            configs.push(candidate);
+        }
+    }
+    CowMatrixEvidence {
+        points: configs
+            .iter()
+            .map(|config| run_cow_experiment(config, environment.clone()))
+            .collect(),
+    }
+}
+
 fn decisions(
     checkpoint: Option<&CheckpointSuiteEvidence>,
-    cow: Option<&CowEvidence>,
+    cow: Option<&CowMatrixEvidence>,
     faults: Option<&FaultMatrix>,
     thresholds: &DecisionThresholds,
 ) -> Vec<DecisionEvidence> {
@@ -712,18 +743,33 @@ fn decisions(
     });
     let cow_evidence = cow.map_or_else(
         || vec!["COW suite was not requested".to_owned()],
-        |evidence| match &evidence.outcome {
-            SampleOutcome::Succeeded => vec![format!(
-                "{} Linux raw samples; pss_to_full_copy_basis_points={}; scope remains process-memory compatibility only",
-                evidence.samples.len(),
-                evidence
-                    .summary
-                    .as_ref()
-                    .and_then(|summary| summary.pss_to_full_copy_basis_points)
-                    .map_or_else(|| "unavailable".to_owned(), |value| value.to_string())
-            )],
-            SampleOutcome::Unsupported { reason } => vec![format!("unsupported: {reason}")],
-            SampleOutcome::Failed { error } => vec![format!("failed: {error}")],
+        |matrix| {
+            let succeeded = matrix
+                .points
+                .iter()
+                .filter(|point| matches!(point.outcome, SampleOutcome::Succeeded))
+                .count();
+            let unsupported = matrix
+                .points
+                .iter()
+                .filter(|point| matches!(point.outcome, SampleOutcome::Unsupported { .. }))
+                .count();
+            let failed = matrix
+                .points
+                .iter()
+                .filter(|point| matches!(point.outcome, SampleOutcome::Failed { .. }))
+                .count();
+            let maximum_ratio = matrix
+                .points
+                .iter()
+                .filter_map(|point| point.summary.as_ref())
+                .filter_map(|summary| summary.pss_to_full_copy_basis_points)
+                .max();
+            vec![format!(
+                "matrix_points={}; succeeded={succeeded}; unsupported={unsupported}; failed={failed}; maximum_pss_to_full_copy_basis_points={}; scope remains process-memory compatibility only",
+                matrix.points.len(),
+                maximum_ratio.map_or_else(|| "unavailable".to_owned(), |value| value.to_string())
+            )]
         },
     );
     vec![

@@ -165,8 +165,8 @@ fn reopening_rejects_a_database_from_a_newer_binary() {
             .connection()
             .execute(
                 "INSERT INTO schema_migrations (version, name, checksum_sha256, applied_at_unix_ms) \
-                 VALUES (?1, 'future', 'future-checksum', 0)",
-                [LATEST_SCHEMA_VERSION + 1],
+                 VALUES (?1, 'future', ?2, 0)",
+                params![LATEST_SCHEMA_VERSION + 1, "f".repeat(64)],
             )
             .expect("insert future migration marker");
     }
@@ -189,8 +189,8 @@ fn reopening_detects_modified_migration_history() {
         store
             .connection()
             .execute(
-                "UPDATE schema_migrations SET checksum_sha256 = 'tampered' WHERE version = 1",
-                [],
+                "UPDATE schema_migrations SET checksum_sha256 = ?1 WHERE version = 1",
+                ["f".repeat(64)],
             )
             .expect("tamper with migration metadata");
     }

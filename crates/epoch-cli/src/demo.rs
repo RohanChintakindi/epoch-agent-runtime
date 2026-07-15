@@ -68,6 +68,7 @@ struct DemoManifest {
     name: String,
     executable: String,
     arguments: Vec<String>,
+    working_directory: String,
 }
 
 struct DemoPaths {
@@ -75,6 +76,7 @@ struct DemoPaths {
     run_root: PathBuf,
     workspace_root: PathBuf,
     baseline_workspace: PathBuf,
+    restored_workspace: PathBuf,
     report_path: PathBuf,
     baseline_manifest: PathBuf,
     variant_manifest: PathBuf,
@@ -84,6 +86,7 @@ struct DemoPaths {
 struct DemoRunner {
     paths: DemoPaths,
     phases: Vec<PhaseReport>,
+    baseline_artifact: Option<Vec<u8>>,
 }
 
 struct BaselineIds {
@@ -113,13 +116,14 @@ pub fn run(config: &DemoConfig) -> ExitCode {
     let mut runner = DemoRunner {
         paths,
         phases: Vec::new(),
+        baseline_artifact: None,
     };
     let result = runner.execute();
     let (outcome, summary, failure, exit) = match result {
         Ok(()) => (
             "completed_with_unsupported",
             format!(
-                "Epoch demo completed: {0}/{0} real phases succeeded; four integrations remain explicitly unsupported.",
+                "Epoch demo completed: {0}/{0} real phases succeeded; four narrow boundaries remain explicitly unsupported.",
                 runner.phases.len()
             ),
             None,
@@ -223,6 +227,16 @@ impl DemoRunner {
             ],
             checkpoint_evidence,
         )?;
+        self.baseline_artifact = Some(
+            fs::read(self.paths.baseline_workspace.join("artifact.txt")).map_err(|error| {
+                self.local_failure(
+                    "checkpoint_baseline_artifact",
+                    Instant::now(),
+                    "checkpoint_artifact_unreadable",
+                    error.to_string(),
+                )
+            })?,
+        );
         Ok(BaselineIds {
             session_id,
             epoch_id: required_string(&checkpoint, "/result/epoch_id")?,
@@ -241,7 +255,7 @@ impl DemoRunner {
                     evidence: json!({
                         "artifact": display(&artifact),
                         "changed": true,
-                        "workspace_checkpoint": "unsupported",
+                        "workspace_checkpoint": "captured_before_change",
                     }),
                     diagnostic: None,
                 });
@@ -292,13 +306,19 @@ impl DemoRunner {
     ) -> Result<(), DemoFailure> {
         let restored = self.command_phase(
             "restore_baseline",
-            vec!["restore".into(), baseline.epoch_id.clone().into()],
+            vec![
+                "restore".into(),
+                baseline.epoch_id.clone().into(),
+                "--workspace-target".into(),
+                self.paths.restored_workspace.as_os_str().to_owned(),
+            ],
             |value| {
                 Ok(json!({
                     "epoch_id": required(value, "/result/epoch_id")?,
                     "activated": required(value, "/result/activated")?,
                     "process_restored": required(value, "/result/process_restored")?,
                     "workspace_restored": required(value, "/result/workspace_restored")?,
+                    "workspace_target": required(value, "/result/workspace_target")?,
                 }))
             },
         )?;
@@ -326,8 +346,13 @@ impl DemoRunner {
 
     fn status_after_restore(&mut self, baseline: &BaselineIds) -> Result<(), DemoFailure> {
         let artifact = self.paths.baseline_workspace.join("artifact.txt");
-        let workspace_preserved =
+        let original_workspace_change_preserved =
             fs::read(&artifact).is_ok_and(|bytes| bytes == b"changed-after-application-checkpoint");
+        let restored_workspace_matches_checkpoint =
+            self.baseline_artifact.as_deref().is_some_and(|expected| {
+                fs::read(self.paths.restored_workspace.join("artifact.txt"))
+                    .is_ok_and(|bytes| bytes == expected)
+            });
         self.command_phase(
             "status_after_restore",
             vec!["status".into(), baseline.session_id.clone().into()],
@@ -336,7 +361,8 @@ impl DemoRunner {
                     "session_id": required(value, "/session_id")?,
                     "state": required(value, "/state")?,
                     "current_epoch_id": required(value, "/application/result/current_epoch_id")?,
-                    "workspace_change_preserved": workspace_preserved,
+                    "original_workspace_change_preserved": original_workspace_change_preserved,
+                    "restored_workspace_matches_checkpoint": restored_workspace_matches_checkpoint,
                 }))
             },
         )?;
@@ -440,6 +466,7 @@ fn prepare(config: &DemoConfig) -> Result<DemoPaths, DemoFailure> {
     let workspace_root = config.workspace.join(&run_id);
     let baseline_workspace = workspace_root.join("baseline");
     let variant_workspace = workspace_root.join("variant");
+    let restored_workspace = workspace_root.join("restored-baseline");
     fs::create_dir_all(&run_root).map_err(|error| io_failure(&error))?;
     fs::create_dir_all(&baseline_workspace).map_err(|error| io_failure(&error))?;
     fs::create_dir_all(&variant_workspace).map_err(|error| io_failure(&error))?;
@@ -458,6 +485,7 @@ fn prepare(config: &DemoConfig) -> Result<DemoPaths, DemoFailure> {
         run_root,
         workspace_root,
         baseline_workspace,
+        restored_workspace,
         baseline_manifest,
         variant_manifest,
         executable: std::env::current_exe().map_err(|error| io_failure(&error))?,
@@ -579,6 +607,7 @@ fn write_manifest(
             "--workspace".to_owned(),
             display(workspace),
         ],
+        working_directory: display(workspace),
     };
     let encoded = toml::to_string(&manifest).map_err(|error| DemoFailure {
         code: "manifest_encoding_failed",
@@ -692,28 +721,28 @@ fn required_array<'a>(value: &'a Value, pointer: &str) -> Result<&'a Vec<Value>,
 fn unsupported_sections() -> Vec<UnsupportedSection> {
     vec![
         UnsupportedSection {
-            section: "capabilities",
+            section: "continuation",
             outcome: "unsupported",
-            code: "branch_capability_integration_pending",
-            detail: "branch-bound capability inheritance and revocation are not integrated",
+            code: "autonomous_branch_continuation_pending",
+            detail: "fork lineage is durable but autonomous execution continuation is not registered",
         },
         UnsupportedSection {
             section: "effects",
             outcome: "unsupported",
-            code: "effect_frontier_not_integrated",
-            detail: "effect history is durable but fork frontier reconciliation is not integrated",
+            code: "external_effect_delivery_reconciliation_pending",
+            detail: "effect frontiers are durable but live provider delivery reconciliation is not registered",
         },
         UnsupportedSection {
             section: "isolation",
             outcome: "unsupported",
-            code: "isolation_backend_not_registered",
-            detail: "the demo uses the registered direct execution backend",
+            code: "linux_supervisor_adapter_pending",
+            detail: "the native-tested Linux backend is not composed into the supervisor launch path",
         },
         UnsupportedSection {
-            section: "workspace",
+            section: "process",
             outcome: "unsupported",
-            code: "workspace_checkpoint_backend_not_registered",
-            detail: "the controlled workspace mutation is observed but not rolled back",
+            code: "process_checkpoint_backend_not_registered",
+            detail: "application and workspace state restore without live process memory",
         },
     ]
 }

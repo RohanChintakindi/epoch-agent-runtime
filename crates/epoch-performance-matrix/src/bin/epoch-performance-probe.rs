@@ -47,7 +47,8 @@ fn run() -> Result<(), String> {
     }
     black_box(accumulator);
     black_box(&allocation);
-    fs::write("epoch-performance-probe.txt", b"completed\n").map_err(|error| error.to_string())?;
+    fs::write(probe_workspace_filename(&mode), b"completed\n")
+        .map_err(|error| error.to_string())?;
 
     let compatibility = if mode == "linux" {
         linux_compatibility()?
@@ -75,6 +76,10 @@ fn run() -> Result<(), String> {
         serde_json::to_string(&output).map_err(|error| error.to_string())?
     );
     Ok(())
+}
+
+fn probe_workspace_filename(mode: &str) -> String {
+    format!("epoch-performance-probe-{mode}.txt")
 }
 
 fn timeval_delta_ns(after: nix::sys::time::TimeVal, before: nix::sys::time::TimeVal) -> u64 {

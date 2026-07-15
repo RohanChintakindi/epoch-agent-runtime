@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+clap.workspace = true
 epoch-blob = { path = "../epoch-blob" }
 rusqlite.workspace = true
 serde.workspace = true

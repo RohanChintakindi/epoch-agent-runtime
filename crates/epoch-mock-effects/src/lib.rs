@@ -1,12 +1,15 @@
 //! Durable idempotent mock effects for recovery and replay tests.
 
-use std::{path::Path, time::Duration};
+use std::{io::Read, net::SocketAddr, path::Path, time::Duration};
 
 use epoch_blob::BlobHash;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
+use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
+
+const MAX_HTTP_BODY_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -40,6 +43,27 @@ pub enum DeliveryOutcome {
 #[derive(Debug)]
 pub struct MockEffectStore {
     connection: Connection,
+}
+
+pub struct MockEffectServer {
+    server: Server,
+    local_addr: SocketAddr,
+    store: MockEffectStore,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HandleOutcome {
+    Responded,
+    ResponseWithheld,
+}
+
+#[derive(Debug, Deserialize)]
+struct HttpOperationRequest {
+    operation_id: String,
+    kind: EffectKind,
+    payload: Value,
+    #[serde(default)]
+    withhold_response: bool,
 }
 
 impl MockEffectStore {
@@ -140,6 +164,160 @@ impl MockEffectStore {
     }
 }
 
+impl MockEffectServer {
+    /// Binds a loopback HTTP service backed by a durable mock-effect database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the listener or database cannot be opened.
+    pub fn bind(address: &str, database_path: impl AsRef<Path>) -> Result<Self, MockEffectError> {
+        let server = Server::http(address).map_err(|error| {
+            MockEffectError::Http(format!("failed to bind {address:?}: {error}"))
+        })?;
+        let local_addr = server.server_addr().to_ip().ok_or_else(|| {
+            MockEffectError::Http("mock effect service requires an IP listener".to_owned())
+        })?;
+        let store = MockEffectStore::open(database_path)?;
+        Ok(Self {
+            server,
+            local_addr,
+            store,
+        })
+    }
+
+    #[must_use]
+    pub const fn local_addr(&self) -> SocketAddr {
+        self.local_addr
+    }
+
+    /// Handles one HTTP request, blocking until it arrives.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for listener, response, serialization, or database failures.
+    pub fn handle_one(&mut self) -> Result<HandleOutcome, MockEffectError> {
+        let request = self.server.recv()?;
+        self.handle_request(request)
+    }
+
+    /// Serves requests until the listener fails or the process is terminated.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if accepting or handling a request fails.
+    pub fn serve_forever(&mut self) -> Result<(), MockEffectError> {
+        loop {
+            self.handle_one()?;
+        }
+    }
+
+    fn handle_request(&mut self, mut request: Request) -> Result<HandleOutcome, MockEffectError> {
+        let method = request.method().clone();
+        let path = request.url().to_owned();
+
+        if method == Method::Get && path == "/health" {
+            return respond_json(
+                request,
+                StatusCode(200),
+                &serde_json::json!({"status": "ok"}),
+            );
+        }
+        if method == Method::Get
+            && let Some(operation_id) = path.strip_prefix("/v1/operations/")
+        {
+            return match self.store.lookup(operation_id) {
+                Ok(Some(operation)) => respond_json(request, StatusCode(200), &operation),
+                Ok(None) => respond_json(
+                    request,
+                    StatusCode(404),
+                    &serde_json::json!({"error": "operation_not_found"}),
+                ),
+                Err(MockEffectError::InvalidRequest(message)) => respond_json(
+                    request,
+                    StatusCode(400),
+                    &serde_json::json!({"error": "invalid_request", "message": message}),
+                ),
+                Err(error) => Err(error),
+            };
+        }
+        if method != Method::Post || path != "/v1/operations" {
+            return respond_json(
+                request,
+                StatusCode(404),
+                &serde_json::json!({"error": "route_not_found"}),
+            );
+        }
+
+        let mut body = Vec::new();
+        request
+            .as_reader()
+            .take(u64::try_from(MAX_HTTP_BODY_BYTES + 1).expect("body limit fits u64"))
+            .read_to_end(&mut body)?;
+        if body.len() > MAX_HTTP_BODY_BYTES {
+            return respond_json(
+                request,
+                StatusCode(413),
+                &serde_json::json!({"error": "request_too_large"}),
+            );
+        }
+        let submission: HttpOperationRequest = match serde_json::from_slice(&body) {
+            Ok(value) => value,
+            Err(error) => {
+                return respond_json(
+                    request,
+                    StatusCode(400),
+                    &serde_json::json!({
+                        "error": "invalid_json",
+                        "message": error.to_string()
+                    }),
+                );
+            }
+        };
+        let operation = OperationRequest {
+            operation_id: submission.operation_id,
+            kind: submission.kind,
+            payload: submission.payload,
+        };
+        match self.store.submit(&operation, submission.withhold_response) {
+            Ok(DeliveryOutcome::Respond(committed)) => {
+                respond_json(request, StatusCode(200), &committed)
+            }
+            Ok(DeliveryOutcome::WithholdResponse { .. }) => {
+                drop(request.into_writer());
+                Ok(HandleOutcome::ResponseWithheld)
+            }
+            Err(MockEffectError::OperationConflict { operation_id }) => respond_json(
+                request,
+                StatusCode(409),
+                &serde_json::json!({
+                    "error": "operation_conflict",
+                    "operation_id": operation_id
+                }),
+            ),
+            Err(MockEffectError::InvalidRequest(message)) => respond_json(
+                request,
+                StatusCode(400),
+                &serde_json::json!({"error": "invalid_request", "message": message}),
+            ),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+fn respond_json(
+    request: Request,
+    status: StatusCode,
+    value: &impl Serialize,
+) -> Result<HandleOutcome, MockEffectError> {
+    let content_type = Header::from_bytes("Content-Type", "application/json")
+        .map_err(|()| MockEffectError::Http("invalid static content-type header".to_owned()))?;
+    let response = Response::from_data(serde_json::to_vec(value)?)
+        .with_status_code(status)
+        .with_header(content_type);
+    request.respond(response)?;
+    Ok(HandleOutcome::Responded)
+}
+
 impl EffectKind {
     const fn as_str(self) -> &'static str {
         match self {
@@ -238,6 +416,10 @@ pub enum MockEffectError {
     OperationConflict { operation_id: String },
     #[error("mock effect database is inconsistent: {0}")]
     CorruptStore(String),
+    #[error("mock effect HTTP service failed: {0}")]
+    Http(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]

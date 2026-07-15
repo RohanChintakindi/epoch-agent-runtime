@@ -19,6 +19,12 @@ fn doctor_distinguishes_registered_backends_from_detected_host_tools() {
         "supported"
     );
     assert_eq!(report["backends"]["direct_execution"]["registered"], true);
+    assert_eq!(report["backends"]["linux_isolation"]["backend"], "linux");
+    assert!(matches!(
+        report["backends"]["linux_isolation"]["status"].as_str(),
+        Some("supported" | "unsupported")
+    ));
+    assert!(report["backends"]["linux_isolation"]["diagnostics"].is_array());
     assert_eq!(
         report["backends"]["application_checkpoint"]["status"],
         "supported"

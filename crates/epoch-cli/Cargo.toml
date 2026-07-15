@@ -14,6 +14,7 @@ clap.workspace = true
 epoch-capabilities.workspace = true
 epoch-core = { path = "../epoch-core" }
 epoch-effects.workspace = true
+epoch-sandbox.workspace = true
 epoch-storage.workspace = true
 epoch-supervisor = { path = "../epoch-supervisor" }
 rusqlite.workspace = true

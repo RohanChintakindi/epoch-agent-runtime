@@ -4,6 +4,9 @@ use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use epoch_capabilities::{CapabilityConstraints, CapabilityError, CapabilityService, IssueRequest};
 use epoch_core::{BranchId, CapabilityId, EpochId, SessionId};
 use epoch_effects::{DenyAllAuthorizer, DeterministicLocalDispatcher, EffectGateway};
+use epoch_sandbox::{
+    BackendCapabilities as SandboxBackendCapabilities, ExecutionBackend as _, LinuxBackend,
+};
 use epoch_storage::Store;
 use epoch_supervisor::{
     AgentTermination, ApplicationRestoreMode, DirectSupervisor, EventPageRequest, InspectionError,
@@ -42,6 +45,9 @@ enum Command {
         /// Workload manifest to execute.
         #[arg(long)]
         manifest: PathBuf,
+        /// Execution boundary to select explicitly. Linux never falls back to direct execution.
+        #[arg(long, value_enum, default_value_t = ExecutionBackendSelection::Direct)]
+        backend: ExecutionBackendSelection,
     },
     /// Show the current state of a session.
     Status { session: String },
@@ -133,6 +139,13 @@ enum RestoreMode {
     ForkOnDivergence,
 }
 
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum ExecutionBackendSelection {
+    #[default]
+    Direct,
+    Linux,
+}
+
 #[derive(Debug, Subcommand)]
 enum BranchCommand {
     Promote { branch: String },
@@ -222,6 +235,7 @@ struct HostCapabilities {
 #[derive(Debug, Serialize)]
 struct BackendCapabilities {
     direct_execution: BackendCapability,
+    linux_isolation: SandboxBackendCapabilities,
     application_checkpoint: BackendCapability,
     process_checkpoint: BackendCapability,
     criu_checkpoint: BackendCapability,
@@ -324,7 +338,7 @@ impl HostCapabilities {
 }
 
 impl BackendCapabilities {
-    const fn detect(criu_dependency_detected: bool) -> Self {
+    fn detect(criu_dependency_detected: bool) -> Self {
         Self {
             direct_execution: BackendCapability {
                 status: BackendStatus::Supported,
@@ -334,6 +348,7 @@ impl BackendCapabilities {
                 reason: "the direct process supervisor is compiled and registered",
                 dependency_detected: None,
             },
+            linux_isolation: LinuxBackend::discover().capabilities(),
             application_checkpoint: BackendCapability {
                 status: BackendStatus::Supported,
                 registered: true,
@@ -391,7 +406,7 @@ fn main() -> ExitCode {
 
 fn execute(command: Command) -> ExitCode {
     match command {
-        Command::Run { manifest } => run_manifest(&manifest),
+        Command::Run { manifest, backend } => run_selected_backend(&manifest, backend),
         Command::Status { session } => inspect_status(&session),
         Command::Events {
             session,
@@ -1006,6 +1021,28 @@ fn emit_recovery_json(document: &serde_json::Value, exit: ExitCode) -> ExitCode 
     }
 }
 
+fn run_selected_backend(
+    manifest: &std::path::Path,
+    backend: ExecutionBackendSelection,
+) -> ExitCode {
+    match backend {
+        ExecutionBackendSelection::Direct => run_manifest(manifest),
+        ExecutionBackendSelection::Linux => {
+            let capabilities = LinuxBackend::discover().capabilities();
+            let detail = capabilities.diagnostics.first().map_or_else(
+                || {
+                    "the Linux boundary is available, but the direct supervisor launch adapter \
+                     is not composed with it yet"
+                        .to_owned()
+                },
+                |diagnostic| diagnostic.detail.clone(),
+            );
+            eprintln!("Linux execution was selected and cannot start: {detail}");
+            ExitCode::from(RECOVERY_UNSUPPORTED_EXIT)
+        }
+    }
+}
+
 fn run_manifest(manifest: &std::path::Path) -> ExitCode {
     let supervisor = match DirectSupervisor::open(".epoch") {
         Ok(supervisor) => supervisor,
@@ -1116,6 +1153,14 @@ mod tests {
         );
         assert!(capabilities.backends.direct_execution.registered);
         assert_eq!(
+            capabilities.backends.linux_isolation.backend,
+            epoch_sandbox::BackendKind::Linux
+        );
+        if capabilities.backends.linux_isolation.status == epoch_sandbox::BackendStatus::Unsupported
+        {
+            assert!(!capabilities.backends.linux_isolation.diagnostics.is_empty());
+        }
+        assert_eq!(
             capabilities.backends.application_checkpoint.status,
             BackendStatus::Supported
         );
@@ -1206,6 +1251,14 @@ mod tests {
     fn representative_spec_commands_parse() {
         for arguments in [
             vec!["epoch", "run", "--manifest", "workload.toml"],
+            vec![
+                "epoch",
+                "run",
+                "--backend",
+                "linux",
+                "--manifest",
+                "workload.toml",
+            ],
             vec!["epoch", "events", "session-1", "--branch", "branch-1"],
             vec![
                 "epoch",

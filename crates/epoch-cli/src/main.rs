@@ -1,10 +1,16 @@
-use std::{env, path::PathBuf, process::ExitCode};
+use std::{env, path::PathBuf, process::ExitCode, str::FromStr as _};
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-use epoch_supervisor::{AgentTermination, DirectSupervisor, RunOutcome};
+use epoch_core::{BranchId, EpochId, SessionId};
+use epoch_supervisor::{
+    AgentTermination, ApplicationRestoreMode, DirectSupervisor, RecoveryCode, RecoveryIssue,
+    RecoveryOutcome, RunOutcome,
+};
 use serde::Serialize;
+use serde_json::json;
 
 const SUPERVISOR_FAILURE_EXIT: u8 = 125;
+const RECOVERY_UNSUPPORTED_EXIT: u8 = 3;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -263,6 +269,13 @@ fn main() -> ExitCode {
 fn execute(command: Command) -> ExitCode {
     match command {
         Command::Run { manifest } => run_manifest(&manifest),
+        Command::Checkpoint {
+            session,
+            branch,
+            label,
+        } => checkpoint_application(&session, branch.as_deref(), label.as_deref()),
+        Command::Restore { epoch, mode } => restore_application(&epoch, mode),
+        Command::Status { session } => application_status(&session),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -297,6 +310,166 @@ fn execute(command: Command) -> ExitCode {
         unfinished => {
             eprintln!("epoch {} is not implemented yet", unfinished.command_path());
             ExitCode::from(2)
+        }
+    }
+}
+
+fn checkpoint_application(session: &str, branch: Option<&str>, label: Option<&str>) -> ExitCode {
+    let session_id = match SessionId::from_str(session) {
+        Ok(session_id) => session_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "checkpoint",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid session ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let branch_id = match branch.map(BranchId::from_str).transpose() {
+        Ok(branch_id) => branch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "checkpoint",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid branch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("checkpoint") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery(
+        "checkpoint",
+        supervisor.checkpoint_application(session_id, branch_id, label),
+    )
+}
+
+fn restore_application(epoch: &str, mode: RestoreMode) -> ExitCode {
+    let epoch_id = match EpochId::from_str(epoch) {
+        Ok(epoch_id) => epoch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "restore",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid epoch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let mode = match mode {
+        RestoreMode::Strict => ApplicationRestoreMode::Activate,
+        RestoreMode::Inspect => ApplicationRestoreMode::Inspect,
+        RestoreMode::ForkOnDivergence => {
+            return emit_recovery_issue(
+                "restore",
+                "unsupported",
+                RecoveryCode::UnsupportedMode,
+                "fork-on-divergence requires logical branching and is not application restore"
+                    .to_owned(),
+                ExitCode::from(RECOVERY_UNSUPPORTED_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("restore") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery("restore", supervisor.restore_application(epoch_id, mode))
+}
+
+fn application_status(session: &str) -> ExitCode {
+    let session_id = match SessionId::from_str(session) {
+        Ok(session_id) => session_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "status",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid session ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("status") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery("status", supervisor.application_status(session_id, None))
+}
+
+fn recovery_supervisor(operation: &str) -> Result<DirectSupervisor, ExitCode> {
+    DirectSupervisor::open(".epoch").map_err(|error| {
+        emit_recovery_issue(
+            operation,
+            "failed",
+            RecoveryCode::Persistence,
+            error.to_string(),
+            ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+        )
+    })
+}
+
+fn emit_recovery<T: Serialize>(operation: &str, outcome: RecoveryOutcome<T>) -> ExitCode {
+    match outcome {
+        RecoveryOutcome::Supported(result) => emit_recovery_json(
+            &json!({
+                "operation": operation,
+                "outcome": "supported",
+                "result": result,
+            }),
+            ExitCode::SUCCESS,
+        ),
+        RecoveryOutcome::Unsupported(issue) => emit_recovery_json(
+            &json!({
+                "operation": operation,
+                "outcome": "unsupported",
+                "issue": issue,
+            }),
+            ExitCode::from(RECOVERY_UNSUPPORTED_EXIT),
+        ),
+        RecoveryOutcome::Failed(issue) => emit_recovery_json(
+            &json!({
+                "operation": operation,
+                "outcome": "failed",
+                "issue": issue,
+            }),
+            ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+        ),
+    }
+}
+
+fn emit_recovery_issue(
+    operation: &str,
+    outcome: &str,
+    code: RecoveryCode,
+    detail: String,
+    exit: ExitCode,
+) -> ExitCode {
+    emit_recovery_json(
+        &json!({
+            "operation": operation,
+            "outcome": outcome,
+            "issue": RecoveryIssue { code, detail },
+        }),
+        exit,
+    )
+}
+
+fn emit_recovery_json(document: &serde_json::Value, exit: ExitCode) -> ExitCode {
+    match serde_json::to_string(&document) {
+        Ok(encoded) => {
+            println!("{encoded}");
+            exit
+        }
+        Err(error) => {
+            eprintln!("failed to encode recovery report: {error}");
+            ExitCode::from(SUPERVISOR_FAILURE_EXIT)
         }
     }
 }

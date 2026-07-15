@@ -52,6 +52,7 @@ pub enum RecoveryCode {
     Persistence,
     SchemaVersion,
     Storage,
+    UnsupportedMode,
 }
 
 impl RecoveryCode {
@@ -71,6 +72,7 @@ impl RecoveryCode {
             Self::Persistence => "persistence",
             Self::SchemaVersion => "schema_version",
             Self::Storage => "storage",
+            Self::UnsupportedMode => "unsupported_mode",
         }
     }
 }

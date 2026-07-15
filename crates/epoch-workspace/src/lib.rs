@@ -290,6 +290,12 @@ impl WorkspaceBackend {
         let prepared = self.prepare_files(&manifest)?;
         let target = target.as_ref();
         let parent = validate_restore_target(target)?;
+        let _restore_lock = RestoreLock::acquire(&parent, target)?;
+        if target.try_exists()? {
+            return Err(WorkspaceError::TargetExists {
+                path: target.to_path_buf(),
+            });
+        }
         let staging_name = format!(
             ".epoch-restore-{}-{}",
             target
@@ -933,6 +939,50 @@ fn sync_directory(path: &Path) -> Result<(), WorkspaceError> {
 struct StagingGuard {
     path: PathBuf,
     published: bool,
+}
+
+struct RestoreLock {
+    file: File,
+    path: PathBuf,
+    parent: PathBuf,
+}
+
+impl RestoreLock {
+    fn acquire(parent: &Path, target: &Path) -> Result<Self, WorkspaceError> {
+        let target_hash = BlobHash::digest(target.as_os_str().as_encoded_bytes());
+        let path = parent.join(format!(".epoch-restore-lock-{target_hash}"));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        let file = match options.open(&path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(WorkspaceError::TargetExists {
+                    path: target.to_path_buf(),
+                });
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let mut lock = Self {
+            file,
+            path,
+            parent: parent.to_path_buf(),
+        };
+        lock.file.write_all(b"epoch workspace restore lock\n")?;
+        lock.file.sync_all()?;
+        sync_directory(parent)?;
+        Ok(lock)
+    }
+}
+
+impl Drop for RestoreLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+        let _ = sync_directory(&self.parent);
+    }
 }
 
 impl StagingGuard {

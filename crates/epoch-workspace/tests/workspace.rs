@@ -176,9 +176,12 @@ fn concurrent_empty_restore_has_exactly_one_no_clobber_winner() {
         .map(|handle| handle.join().expect("caller"))
         .collect::<Vec<_>>();
     assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 1);
-    assert!(outcomes.iter().filter(|outcome| outcome.is_err()).all(
-        |outcome| matches!(outcome, Err(WorkspaceError::TargetExists { .. }))
-    ));
+    assert!(
+        outcomes
+            .iter()
+            .filter(|outcome| outcome.is_err())
+            .all(|outcome| matches!(outcome, Err(WorkspaceError::TargetExists { .. })))
+    );
 }
 
 #[test]

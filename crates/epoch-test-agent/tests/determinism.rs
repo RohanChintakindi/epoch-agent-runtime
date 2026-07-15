@@ -5,10 +5,21 @@ use std::{
 };
 
 use epoch_blob::BlobHash;
-use epoch_protocol::{Message, decode_line};
+use epoch_protocol::{
+    BlobReferenceResolver, BlobReferenceStatus, Message, StreamValidator, SupervisorBinding,
+    decode_line,
+};
 use epoch_test_agent::{CrashPoint, Scenario, WorkloadConfig, WorkloadError, run_workload};
 
 static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
+
+struct AllVerified;
+
+impl BlobReferenceResolver for AllVerified {
+    fn status(&self, _hash: &BlobHash) -> BlobReferenceStatus {
+        BlobReferenceStatus::Verified
+    }
+}
 
 struct TestDir(PathBuf);
 
@@ -207,4 +218,33 @@ fn configured_crashes_leave_a_valid_deterministic_partial_trace() {
                 .any(|message| matches!(message, Message::Completion(_)))
         );
     }
+}
+
+#[test]
+fn full_trace_satisfies_supervisor_stream_invariants() {
+    let workspace = TestDir::new("stream-validation");
+    let (trace, _) = run(0x5eed, Scenario::Full, workspace.path());
+    let mut validator = StreamValidator::new(
+        SupervisorBinding::new(
+            "session-full-0000000000005eed",
+            "branch-full-0000000000005eed",
+        )
+        .expect("valid binding"),
+    );
+
+    for line in std::str::from_utf8(&trace)
+        .expect("trace should be UTF-8")
+        .lines()
+    {
+        let envelope = decode_line(line.as_bytes()).expect("valid boundary record");
+        validator
+            .accept(&envelope, &AllVerified)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{} failed stream validation: {error}",
+                    envelope.message.kind()
+                )
+            });
+    }
+    assert!(validator.is_complete());
 }

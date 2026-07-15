@@ -266,3 +266,59 @@ fn concurrent_first_open_is_serialized_and_idempotent() {
         );
     }
 }
+
+#[test]
+fn event_schema_supports_external_payloads_and_rejects_mutation() {
+    let database = TestDatabase::new("append-only-events");
+    let store = Store::open(database.path()).expect("open database");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO sessions (id, state, created_at_unix_ms, updated_at_unix_ms) \
+             VALUES ('session', 'running', 0, 0)",
+            [],
+        )
+        .expect("insert session");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO branches \
+             (id, session_id, state, created_at_unix_ms, updated_at_unix_ms) \
+             VALUES ('branch', 'session', 'running', 0, 0)",
+            [],
+        )
+        .expect("insert branch");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO blobs (hash, byte_length, media_type, created_at_unix_ms) \
+             VALUES (?1, 2, 'application/json', 0)",
+            ["a".repeat(64)],
+        )
+        .expect("insert payload blob");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO events \
+             (id, session_id, branch_id, sequence, monotonic_ns, occurred_at_unix_ms, actor, \
+              kind, status, payload_json, payload_blob_hash) \
+             VALUES ('event', 'session', 'branch', 0, 0, 0, 'supervisor', \
+                     'test.event', 'succeeded', '{}', ?1)",
+            ["a".repeat(64)],
+        )
+        .expect("insert event with external payload");
+
+    for statement in [
+        "UPDATE events SET status = 'failed' WHERE id = 'event'",
+        "DELETE FROM events WHERE id = 'event'",
+    ] {
+        let error = store
+            .connection()
+            .execute(statement, [])
+            .expect_err("event mutation must be rejected");
+        assert_eq!(
+            error.sqlite_error_code(),
+            Some(ErrorCode::ConstraintViolation)
+        );
+    }
+}

@@ -3,6 +3,7 @@ members = [
     "crates/epoch-blob",
     "crates/epoch-cli",
     "crates/epoch-core",
+    "crates/epoch-mock-effects",
     "crates/epoch-protocol",
     "crates/epoch-storage",
 ]

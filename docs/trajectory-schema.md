@@ -43,7 +43,7 @@ pre-register its own outcome rubric.
 
 Each event contains exactly:
 
-- `position`: a contiguous integer starting at zero after terminal-event removal.
+- `position`: a contiguous integer starting at zero within the pre-outcome prefix.
 - `delta_monotonic_ns`: elapsed monotonic nanoseconds since the previous exported event; zero for
   the first event.
 - `actor`: `agent`, `supervisor`, `tool`, `gateway`, or `operator`.

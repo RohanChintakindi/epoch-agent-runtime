@@ -26,7 +26,5 @@ scoring refuse to clobber existing output. It also requires private file and dir
 the model bundle's integrity manifest. A guarded exit trap removes the private temporary root on
 success, failure, or interruption.
 
-This smoke requires both ML integration contracts: the Python reader must implement the Rust
-trajectory schema in `docs/trajectory-schema.md`, and the package must expose the advisory `score`
-command. On a partial integration branch, rejection at the exact Rust JSONL validation or the
-missing `score` command is an expected red gate, not a reason to weaken the smoke.
+The smoke treats any Rust/Python schema mismatch, missing score command, unsafe permission, or
+clobber attempt as a hard failure.

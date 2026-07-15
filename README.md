@@ -54,6 +54,10 @@ The [five-minute interview demo](docs/interview-demo.md) provides the exact repr
 talk track, evidence contract, safety rules, and integration hooks for the implemented vertical
 slice.
 
+The [Week 4 benchmark guide](docs/benchmarking.md) documents the real checkpoint, compatibility,
+COW-memory, and fault suites; frozen thresholds; stable artifacts; safety bounds; and the exact
+Oracle ARM64 evidence command.
+
 ## Development
 
 ```bash

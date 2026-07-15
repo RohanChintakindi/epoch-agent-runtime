@@ -243,9 +243,6 @@
         "syscall": "pipe2"
       },
       {
-        "syscall": "poll"
-      },
-      {
         "syscall": "ppoll"
       },
       {

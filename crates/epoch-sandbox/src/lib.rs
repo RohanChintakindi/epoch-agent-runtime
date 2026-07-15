@@ -484,6 +484,14 @@ impl ExecutionBackend for LinuxBackend {
                 detail: "supported Linux backend has no validated tool set".to_owned(),
             });
         };
+        #[cfg(target_os = "linux")]
+        if let Err(error) = validate_trusted_helper_security(&request.trusted_helper) {
+            return BackendOutcome::Unsupported(UnsupportedBackend {
+                backend: BackendKind::Linux,
+                code: UnsupportedCode::KernelProbeFailed,
+                detail: error.to_string(),
+            });
+        }
         let unit = format!("epoch-{}", Uuid::new_v4().simple());
         match plan_linux_launch(request, tools, &unit) {
             Ok(plan) => BackendOutcome::Supported(plan),
@@ -1014,6 +1022,24 @@ fn validate_unit_name(unit_name: &str) -> Result<(), SandboxError> {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn validate_trusted_helper_security(path: &Path) -> Result<(), SandboxError> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let metadata = fs::metadata(path).map_err(|source| SandboxError::Path {
+        field: "trusted_helper",
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+        Err(SandboxError::InsecureTrustedHelper {
+            path: path.to_path_buf(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
 /// Sandbox validation, lifecycle, or host-control error.
 #[derive(Debug, Error)]
 pub enum SandboxError {
@@ -1048,6 +1074,8 @@ pub enum SandboxError {
     InvalidToolPath { path: PathBuf },
     #[error("invalid transient cgroup unit name")]
     InvalidUnitName,
+    #[error("trusted helper must be root-owned and not group/world-writable: {path}")]
+    InsecureTrustedHelper { path: PathBuf },
     #[error("backend is unsupported on this host")]
     BackendUnsupported,
     #[error("failed to launch {program}: {source}")]

@@ -9,6 +9,7 @@ use tempfile::TempDir;
 const SECRET_PAYLOAD: &str = "secret-customer@example.com";
 const TASK_GROUP: &str = "repo-17.issue-42";
 const COMPONENT_HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const SECRET_SHAPED_KIND: &str = "customer_secret_token_abcdef";
 
 struct Fixture {
     temp: TempDir,
@@ -43,7 +44,7 @@ fn fixture() -> Fixture {
         .execute(
             "INSERT INTO branches
              (id, session_id, state, next_event_sequence, created_at_unix_ms, updated_at_unix_ms)
-             VALUES (?1, ?2, 'completed', 2, 1000, 2000)",
+             VALUES (?1, ?2, 'completed', 3, 1000, 2000)",
             params![root.to_string(), session.to_string()],
         )
         .expect("insert root branch");
@@ -110,6 +111,15 @@ fn fixture() -> Fixture {
         session,
         root,
         1,
+        SECRET_SHAPED_KIND,
+        "succeeded",
+        20,
+    );
+    insert_event(
+        connection,
+        session,
+        root,
+        2,
         "agent.completion",
         "succeeded",
         30,
@@ -237,8 +247,9 @@ fn export_is_deterministic_grouped_labelled_and_payload_free() {
     assert_eq!(success.events[1].delta_monotonic_ns, 25);
     assert_eq!(failed.summary.failed_events, 1);
     assert_eq!(suspended.summary.unknown_events, 1);
-    assert_eq!(root.events.len(), 1);
+    assert_eq!(root.events.len(), 2);
     assert_eq!(root.events[0].kind, "agent.start");
+    assert_eq!(root.events[1].kind, "other");
 
     let encoded = first
         .iter()
@@ -257,6 +268,7 @@ fn export_is_deterministic_grouped_labelled_and_payload_free() {
         "agent.completion",
         "process.exited",
         "supervisor.failure",
+        SECRET_SHAPED_KIND,
     ] {
         assert!(!encoded.contains(forbidden), "leaked {forbidden:?}");
     }

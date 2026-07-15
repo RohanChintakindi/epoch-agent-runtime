@@ -363,7 +363,7 @@ fn read_events(
             position,
             delta_monotonic_ns,
             actor: row.2,
-            kind: row.3,
+            kind: normalized_event_kind(&row.3).to_owned(),
             status: row.4,
             references_epoch: row.5,
             has_causal_parent: row.6,
@@ -416,6 +416,24 @@ fn is_terminal_outcome_kind(kind: &str) -> bool {
         kind,
         "agent.completion" | "process.exited" | "supervisor.failure"
     )
+}
+
+fn normalized_event_kind(kind: &str) -> &'static str {
+    match kind {
+        "agent.start" => "agent.start",
+        "context.update" => "context.update",
+        "model.request" => "model.request",
+        "model.response" => "model.response",
+        "tool.call" => "tool.call",
+        "tool.result" => "tool.result",
+        "safe_point" => "safe_point",
+        "supervisor.run_started" => "supervisor.run_started",
+        "process.started" => "process.started",
+        "process.manifest" => "process.manifest",
+        "process.stderr" => "process.stderr",
+        "application.context_restored" => "application.context_restored",
+        _ => "other",
+    }
 }
 
 fn pseudonym(parts: &[&str]) -> String {

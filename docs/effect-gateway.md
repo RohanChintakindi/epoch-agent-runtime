@@ -74,10 +74,8 @@ The original migration's mutable summary vocabulary remains unchanged for compat
 These naming differences should be removed in a future table-rebuild migration, not by changing
 the checksum of migration 1. Other current integration limits are explicit:
 
-- `Authorizer` is a seam, not A01 capability enforcement. Production wiring must validate current
-  branch-bound authority and must not use a test allow-all authorizer.
-- Capability IDs remain null until A01 supplies validated authority; this crate does not pretend a
-  capability was granted.
+- `Authorizer` is transaction-aware. The production `CapabilityAuthorizer` validates current
+  branch-bound authority and binds its capability ID atomically to the effect intent.
 - Unknown-outcome reconciliation, approval, compensation, and branch suspension are not yet
   implemented.
 - Concurrent callers are suppressed, but a caller racing the active dispatch receives an
@@ -85,7 +83,8 @@ the checksum of migration 1. Other current integration limits are explicit:
 - The event journal is a derived observability projection, not the effect source of truth. A later
   integration may emit effect events after commits, but correctness must depend on the effect
   histories because the current `EventJournal` cannot append in the same SQLite transaction.
-- CLI and supervisor wiring are intentionally outside this isolated library lane.
+- `epoch effects list <session>` exposes deterministic durable summaries; operator resolution is
+  still intentionally unsupported.
 
 The `DeterministicLocalDispatcher` is the local idempotent fixture for tests and demonstrations.
 No commits were cherry-picked from the separate HTTP mock-effects branch.

@@ -9,6 +9,7 @@ use std::{
     fs,
     path::{Component, Path, PathBuf},
     process::{Child, ExitStatus, Stdio},
+    time::Duration,
 };
 
 use nix::{
@@ -536,7 +537,7 @@ impl ExecutionBackend for LinuxBackend {
             stop_linux_unit(process)?;
         }
         process.child.wait()?;
-        Ok(())
+        wait_linux_unit_collected(process)
     }
 }
 
@@ -740,6 +741,32 @@ fn stop_linux_unit(process: &mut SandboxProcess) -> Result<(), SandboxError> {
             unit: unit.clone(),
         })
     }
+}
+
+fn wait_linux_unit_collected(process: &SandboxProcess) -> Result<(), SandboxError> {
+    const ATTEMPTS: usize = 50;
+    const POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+    let program = process
+        .cleanup_program
+        .as_ref()
+        .ok_or(SandboxError::MissingCleanupIdentity)?;
+    let unit = process
+        .cgroup_unit
+        .as_ref()
+        .ok_or(SandboxError::MissingCleanupIdentity)?;
+    for _ in 0..ATTEMPTS {
+        let output = std::process::Command::new(program)
+            .args(["show", "--property", "LoadState", "--value", unit])
+            .env_clear()
+            .output()?;
+        let state = String::from_utf8_lossy(&output.stdout);
+        if state.trim().is_empty() || state.trim() == "not-found" {
+            return Ok(());
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+    Err(SandboxError::UnitCollectionTimeout { unit: unit.clone() })
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -1103,6 +1130,8 @@ pub enum SandboxError {
         operation: &'static str,
         unit: String,
     },
+    #[error("transient cgroup unit {unit} was not collected after cleanup")]
+    UnitCollectionTimeout { unit: String },
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }

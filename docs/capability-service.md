@@ -37,12 +37,10 @@ action/resource, input hash, and policy revision into a capability use, and fail
 error. A committed effect replay is still served by `epoch-effects` without consuming authority
 again.
 
-The current effect authorizer interface returns only allow/deny. It cannot attach the validated
-capability ID to `effect_intents`, so that column remains null. It also commits capability
-consumption immediately before the effect gateway durably creates its intent. A crash in that gap
-can conservatively consume authority without dispatching an effect. It cannot create an
-unauthorized effect, but eliminating the availability gap requires a shared transaction-aware
-authorizer/effect API. The adapter intentionally does not pretend those two commits are atomic.
+The authorizer runs inside the effect gateway's immediate SQLite transaction. An allow carries the
+validated capability ID, and counter consumption, capability audit, effect intent, blob metadata,
+and initial effect history commit or roll back together. Provider dispatch begins only after that
+transaction commits. A failed effect-intent insert therefore cannot burn a one-use capability.
 
 The authoritative capability audit is `capability_decisions`. A later event-journal projection may
 copy decisions for the UI, but correctness must not depend on a cross-table event written after the
@@ -60,9 +58,8 @@ Migration 4, `trusted_capability_authority`, follows the effect gateway's migrat
 - append-only allow/deny decision audit records;
 - database triggers preventing scope mutation, counter increases, deletion, and reactivation.
 
-Integrate the commits on top of effect-gateway commit `fece1c7`. If another integration branch has
-already claimed migration 4, renumber this migration and its compiled migration entry together;
-never edit the SQL or checksum of a migration that has already been applied.
+Migration 6 adds the capability frontier recorded by each composite checkpoint. Restore reads the
+frontier for comparison but never uses it to overwrite current authority.
 
 ## Explicit limitations
 
@@ -78,4 +75,4 @@ never edit the SQL or checksum of a migration that has already been applied.
 - Expiration relies on the trusted host wall clock; distributed clock semantics are out of scope.
 - `Store::connection` remains part of the prototype TCB. Database triggers defend monotonicity and
   append-only history, but file permissions and trusted-component review are still required.
-- There is no CLI or supervisor wiring in this isolated lane.
+- The CLI supports strict-JSON grant, non-secret inspect/revoke-by-ID, and effect history listing.

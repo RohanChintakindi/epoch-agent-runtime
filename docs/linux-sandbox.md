@@ -58,8 +58,9 @@ checking, not proof that the kernel or those trusted components are uncompromise
   host blocks unprivileged namespace creation. There is no setuid helper and no implicit privilege
   escalation.
 - macOS reports `PlatformNotLinux`; it only compiles and exercises the backend contract.
-- The current supervisor/CLI product path has not selected this backend yet. The crate is the tested
-  integration seam; `direct` remains the existing product default until that selection is wired.
+- The CLI exposes `run --backend direct|linux` and structured Linux discovery in `doctor`.
+  `direct` remains the default. Linux selection currently fails closed because its launch adapter
+  is not yet composed into `DirectSupervisor`; it never falls back to a direct process.
 
 CRIU, microVMs, checkpointing, replay, DLP, and secret brokering are separate concerns and are not
 implemented by this crate.
@@ -89,5 +90,5 @@ sudo env \
 The native suite verifies filesystem and namespace boundaries, capability and seccomp state,
 private temporary storage, PID and memory enforcement, unit collection, and direct-versus-sandbox
 launch samples. A validation run on Ubuntu 24.04 ARM64 measured direct launches at about
-0.25–0.96 ms and Linux sandbox launches at about 22–32 ms. These are smoke-test samples, not a
+0.8–2.0 ms and Linux sandbox launches at about 42–97 ms. These are smoke-test samples, not a
 statistically rigorous benchmark.

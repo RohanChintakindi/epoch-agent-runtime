@@ -1,0 +1,12 @@
+schema_version = 1
+name = "epoch-test-agent"
+executable = "../target/debug/epoch-test-agent"
+arguments = [
+    "--seed",
+    "7",
+    "--scenario",
+    "full",
+    "--workspace",
+    "../demo-workspace",
+]
+working_directory = "."

@@ -56,8 +56,13 @@ fn unavailable_criu_preserves_every_row_without_false_success() {
     assert_eq!(evidence.report().schema_version, 1);
     assert_eq!(evidence.report().rows.len(), Scenario::declared().len());
     assert!(evidence.report().rows.iter().all(|row| {
+        let expected_code = if row.scenario == Scenario::ExternalTcp {
+            DiagnosticCode::ExternalTcpUnsupported
+        } else {
+            DiagnosticCode::CriuUnavailable
+        };
         row.status == RowStatus::Unsupported
-            && row.diagnostic.code == DiagnosticCode::CriuUnavailable
+            && row.diagnostic.code == expected_code
             && row.dump.is_none()
             && row.restore.is_none()
     }));

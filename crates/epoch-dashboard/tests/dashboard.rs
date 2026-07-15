@@ -60,9 +60,33 @@ impl Fixture {
             )
             .expect("child branch");
         for (id, branch, sequence, actor, kind, status, payload) in [
-            ("40000000-0000-4000-8000-000000000001", ROOT_BRANCH, 0_i64, "supervisor", "supervisor.run_started", "started", "{}"),
-            ("40000000-0000-4000-8000-000000000002", ROOT_BRANCH, 1, "agent", "application.context_restored", "succeeded", "{}"),
-            ("40000000-0000-4000-8000-000000000003", CHILD_BRANCH, 0, "tool", "tool.output", "failed", &format!("{{\"stderr\":\"{SECRET}\"}}")),
+            (
+                "40000000-0000-4000-8000-000000000001",
+                ROOT_BRANCH,
+                0_i64,
+                "supervisor",
+                "supervisor.run_started",
+                "started",
+                "{}",
+            ),
+            (
+                "40000000-0000-4000-8000-000000000002",
+                ROOT_BRANCH,
+                1,
+                "agent",
+                "application.context_restored",
+                "succeeded",
+                "{}",
+            ),
+            (
+                "40000000-0000-4000-8000-000000000003",
+                CHILD_BRANCH,
+                0,
+                "tool",
+                "tool.output",
+                "failed",
+                &format!("{{\"stderr\":\"{SECRET}\"}}"),
+            ),
         ] {
             connection
                 .execute(
@@ -80,7 +104,12 @@ impl Fixture {
 }
 
 fn json(response: epoch_dashboard::DashboardResponse) -> Value {
-    assert_eq!(response.status, 200, "{}", String::from_utf8_lossy(&response.body));
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
     serde_json::from_slice(&response.body).expect("JSON response")
 }
 
@@ -97,8 +126,16 @@ fn refuses_non_loopback_binds() {
 fn rejects_traversal_and_mutation_and_serves_locked_down_assets() {
     let fixture = Fixture::populated();
     let dashboard = fixture.dashboard();
-    for target in ["/../state.db", "/assets/../state.db", "/%2e%2e/state.db", "/assets%2fapp.js"] {
-        assert!(dashboard.handle("GET", target).status >= 400, "accepted {target}");
+    for target in [
+        "/../state.db",
+        "/assets/../state.db",
+        "/%2e%2e/state.db",
+        "/assets%2fapp.js",
+    ] {
+        assert!(
+            dashboard.handle("GET", target).status >= 400,
+            "accepted {target}"
+        );
     }
     assert_eq!(dashboard.handle("POST", "/api/v1/sessions").status, 405);
     let page = dashboard.handle("GET", "/");
@@ -108,7 +145,11 @@ fn rejects_traversal_and_mutation_and_serves_locked_down_assets() {
     assert!(!html.contains("http://"));
     let script = dashboard.handle("GET", "/assets/app.js");
     assert_eq!(script.status, 200);
-    assert!(!String::from_utf8(script.body).unwrap().contains("innerHTML"));
+    assert!(
+        !String::from_utf8(script.body)
+            .unwrap()
+            .contains("innerHTML")
+    );
 }
 
 #[test]
@@ -123,7 +164,9 @@ fn reports_branch_lineage_and_ordered_filtered_timeline() {
 
     let timeline = json(dashboard.handle(
         "GET",
-        &format!("/api/v1/branches/{ROOT_BRANCH}/timeline?actor=agent&status=succeeded&limit=1&offset=0"),
+        &format!(
+            "/api/v1/branches/{ROOT_BRANCH}/timeline?actor=agent&status=succeeded&limit=1&offset=0"
+        ),
     ));
     assert_eq!(timeline["items"].as_array().unwrap().len(), 1);
     assert_eq!(timeline["items"][0]["sequence"], 1);
@@ -145,8 +188,19 @@ fn pagination_is_bounded_and_continuations_do_not_overlap() {
     ));
     assert_eq!(first["page"]["has_more"], true);
     assert_eq!(first["page"]["next_offset"], 1);
-    assert_ne!(first["items"][0]["event_id"], second["items"][0]["event_id"]);
-    assert_eq!(dashboard.handle("GET", &format!("/api/v1/branches/{ROOT_BRANCH}/timeline?limit=201")).status, 400);
+    assert_ne!(
+        first["items"][0]["event_id"],
+        second["items"][0]["event_id"]
+    );
+    assert_eq!(
+        dashboard
+            .handle(
+                "GET",
+                &format!("/api/v1/branches/{ROOT_BRANCH}/timeline?limit=201")
+            )
+            .status,
+        400
+    );
 }
 
 #[test]
@@ -209,5 +263,8 @@ fn json_and_ui_render_injected_text_as_data() {
     assert_eq!(response.status, 200);
     let body = String::from_utf8(response.body).expect("UTF-8 JSON");
     assert!(!body.contains("<script>"));
-    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["items"][0]["changes"][0]["path"], injected);
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["items"][0]["changes"][0]["path"],
+        injected
+    );
 }

@@ -126,12 +126,7 @@ fn run_linux(config: &CowConfig, environment: BenchmarkEnvironment) -> CowEviden
                         "helper success payload disagreed with process status",
                     );
                 }
-                let expected_dirty_pages = config
-                    .allocation_bytes
-                    .div_ceil(page_size)
-                    .saturating_mul(u64::from(config.dirty_ratio_basis_points))
-                    .div_ceil(10_000);
-                if dirty_pages_per_child != expected_dirty_pages {
+                if !dirty_page_count_matches(config, page_size, dirty_pages_per_child) {
                     return failed(
                         config,
                         environment,
@@ -171,6 +166,16 @@ fn run_linux(config: &CowConfig, environment: BenchmarkEnvironment) -> CowEviden
         samples,
         summary: Some(summary),
     }
+}
+
+#[cfg(target_os = "linux")]
+fn dirty_page_count_matches(config: &CowConfig, page_size: u64, observed: u64) -> bool {
+    let expected = config
+        .allocation_bytes
+        .div_ceil(page_size)
+        .saturating_mul(u64::from(config.dirty_ratio_basis_points))
+        .div_ceil(10_000);
+    observed == expected
 }
 
 #[cfg(target_os = "linux")]

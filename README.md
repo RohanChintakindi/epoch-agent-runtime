@@ -12,6 +12,7 @@ Linux isolation and checkpoint backends are added only after that vertical slice
 
 - `epoch-blob`: atomic, SHA-256-addressed artifact storage with verified reads.
 - `epoch-core`: stable identifiers, lifecycle state machines, and shared domain types.
+- `epoch-events`: append-only execution history with deterministic queries and external payloads.
 - `epoch-protocol`: versioned JSONL messages at the agent/supervisor boundary.
 - `epoch-cli`: command-line entry point and host capability diagnostics.
 

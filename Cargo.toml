@@ -3,6 +3,7 @@ members = [
     "crates/epoch-blob",
     "crates/epoch-cli",
     "crates/epoch-core",
+    "crates/epoch-events",
     "crates/epoch-protocol",
     "crates/epoch-storage",
 ]
@@ -16,6 +17,9 @@ rust-version = "1.85"
 
 [workspace.dependencies]
 clap = { version = "4.5", features = ["derive"] }
+epoch-blob = { path = "crates/epoch-blob" }
+epoch-core = { path = "crates/epoch-core" }
+epoch-storage = { path = "crates/epoch-storage" }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -90,6 +90,7 @@ pub struct Event {
     pub output_hash: Option<String>,
     pub status: EventStatus,
     pub payload_json: String,
+    pub payload_blob_hash: Option<String>,
 }
 
 #[cfg(test)]

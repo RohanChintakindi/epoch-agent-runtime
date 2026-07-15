@@ -65,6 +65,11 @@ impl Store {
         &self.connection
     }
 
+    /// Returns mutable access for trusted components that need an explicit transaction.
+    pub const fn connection_mut(&mut self) -> &mut Connection {
+        &mut self.connection
+    }
+
     /// Returns the most recently applied migration version.
     ///
     /// # Errors

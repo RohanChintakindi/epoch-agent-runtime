@@ -146,6 +146,9 @@ enum CapabilityCommand {
     Revoke {
         capability: String,
     },
+    Inspect {
+        capability: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -956,7 +959,7 @@ mod tests {
         let command = Cli::command();
         for (group, expected) in [
             ("branch", ["abandon", "inspect", "promote"].as_slice()),
-            ("capability", ["grant", "revoke"].as_slice()),
+            ("capability", ["grant", "inspect", "revoke"].as_slice()),
             ("effects", ["list", "resolve"].as_slice()),
             ("bench", ["report", "run"].as_slice()),
             ("fault", ["run"].as_slice()),

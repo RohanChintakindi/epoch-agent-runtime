@@ -223,9 +223,13 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "epoch-blob",
+ "epoch-capabilities",
  "epoch-checkpoint",
  "epoch-core",
+ "epoch-effects",
+ "epoch-storage",
  "epoch-supervisor",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

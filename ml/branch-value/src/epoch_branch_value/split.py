@@ -1,7 +1,8 @@
-"""Leakage-resistant deterministic task-group splits."""
+"""Deterministic labelled-only task-group splits with sibling leakage checks."""
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -25,11 +26,11 @@ class SplitConfig:
     def validate(self) -> None:
         if isinstance(self.seed, bool) or not isinstance(self.seed, int) or self.seed < 0:
             raise ValueError("split seed must be a nonnegative integer")
-        if not 0.0 < self.train_ratio < 1.0:
-            raise ValueError("train_ratio must be between zero and one")
-        if not 0.0 <= self.validation_ratio < 1.0:
-            raise ValueError("validation_ratio must be in [0, 1)")
-        if not 0.0 < self.test_ratio < 1.0:
+        if not math.isfinite(self.train_ratio) or not 0.0 < self.train_ratio < 1.0:
+            raise ValueError("train_ratio must be finite and between zero and one")
+        if not math.isfinite(self.validation_ratio) or not 0.0 <= self.validation_ratio < 1.0:
+            raise ValueError("validation_ratio must be finite and in [0, 1)")
+        if not math.isfinite(self.test_ratio) or not 0.0 < self.test_ratio < 1.0:
             raise ValueError("train, validation, and test ratios must sum to one")
 
     def as_dict(self) -> Dict[str, Any]:
@@ -39,6 +40,31 @@ class SplitConfig:
             "validation_ratio": self.validation_ratio,
             "test_ratio": self.test_ratio,
         }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> SplitConfig:
+        if not isinstance(value, dict) or set(value) != {
+            "seed",
+            "train_ratio",
+            "validation_ratio",
+            "test_ratio",
+        }:
+            raise ValueError("persisted split config is invalid")
+        config = cls(
+            seed=value["seed"],
+            train_ratio=value["train_ratio"],
+            validation_ratio=value["validation_ratio"],
+        )
+        config.validate()
+        persisted_test = value["test_ratio"]
+        if (
+            isinstance(persisted_test, bool)
+            or not isinstance(persisted_test, (int, float))
+            or not math.isfinite(float(persisted_test))
+            or float(persisted_test) != config.test_ratio
+        ):
+            raise ValueError("persisted split test ratio is inconsistent")
+        return config
 
 
 @dataclass(frozen=True)
@@ -77,15 +103,19 @@ def split_by_task_group(records: Sequence[TrajectoryRecord], config: SplitConfig
     config.validate()
     if not records:
         raise ValueError("cannot split an empty dataset")
-    branch_groups: Dict[str, str] = {}
-    task_groups = set()
+    trajectories = set()
+    candidate_tasks: Dict[str, str] = {}
     for record in records:
-        previous = branch_groups.setdefault(record.branch_id, record.task_group_id)
+        if record.trajectory_id in trajectories:
+            raise ValueError(f"duplicate trajectory_id {record.trajectory_id}")
+        trajectories.add(record.trajectory_id)
+        previous = candidate_tasks.setdefault(record.candidate_group_id, record.task_group_id)
         if previous != record.task_group_id:
-            raise ValueError("branch_id appears in multiple task groups")
-        task_groups.add(record.task_group_id)
+            raise ValueError("candidate_group_id appears in multiple task groups")
+    labelled = [record for record in records if record.is_labelled]
+    task_groups = {record.task_group_id for record in labelled}
     if len(task_groups) < 3:
-        raise ValueError("at least three task groups are required for train/validation/test")
+        raise ValueError("at least three labelled task groups are required")
     ordered_groups = sorted(task_groups)
     random.Random(config.seed).shuffle(ordered_groups)
     train_count, validation_count = _partition_counts(len(ordered_groups), config)
@@ -100,9 +130,12 @@ def split_by_task_group(records: Sequence[TrajectoryRecord], config: SplitConfig
         group_assignment[group] = assigned
     assignment = {
         record.trajectory_id: group_assignment[record.task_group_id]
-        for record in sorted(records, key=lambda item: item.trajectory_id)
+        for record in sorted(labelled, key=lambda item: item.trajectory_id)
     }
-    return DatasetSplit(config, assignment, group_assignment)
+    split = DatasetSplit(config, assignment, group_assignment)
+    if any(not split.record_ids(name) for name in SPLIT_NAMES):
+        raise ValueError("labelled task-group split produced an empty partition")
+    return split
 
 
 def records_for_split(

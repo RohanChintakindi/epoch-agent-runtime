@@ -9,10 +9,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .baselines import write_predictions_jsonl
 from .schema import DatasetValidationError, load_jsonl, write_jsonl
 from .split import SplitConfig
 from .synthetic import generate_records
-from .training import TrainConfig, evaluate_model, train_model
+from .training import TrainConfig, evaluate_model, score_model, train_model
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -48,6 +49,13 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("dataset", type=Path)
     evaluate.add_argument("--model-dir", type=Path, required=True)
     evaluate.add_argument("--split", choices=("train", "validation", "test"), default="test")
+
+    score = commands.add_parser(
+        "score", help="write strict score-only JSONL for labelled or unlabelled trajectories"
+    )
+    score.add_argument("dataset", type=Path)
+    score.add_argument("--model-dir", type=Path, required=True)
+    score.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -85,8 +93,9 @@ def _execute(arguments: argparse.Namespace) -> Dict[str, Any]:
         return {
             "schema_version": 1,
             "records": len(records),
+            "labelled_records": sum(record.is_labelled for record in records),
             "task_groups": len({record.task_group_id for record in records}),
-            "steps": sum(len(record.steps) for record in records),
+            "events": sum(len(record.events) for record in records),
         }
     if arguments.command == "train":
         records = load_jsonl(arguments.dataset)
@@ -106,6 +115,16 @@ def _execute(arguments: argparse.Namespace) -> Dict[str, Any]:
     if arguments.command == "evaluate":
         records = load_jsonl(arguments.dataset)
         return evaluate_model(records, arguments.model_dir, split=arguments.split).as_dict()
+    if arguments.command == "score":
+        records = load_jsonl(arguments.dataset)
+        predictions = score_model(records, arguments.model_dir)
+        write_predictions_jsonl(arguments.output, predictions)
+        return {
+            "schema_version": 1,
+            "records": len(predictions),
+            "output": str(arguments.output),
+            "source": predictions[0].source,
+        }
     raise ValueError(f"unsupported command {arguments.command!r}")
 
 

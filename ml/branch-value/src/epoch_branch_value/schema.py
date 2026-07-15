@@ -1,4 +1,4 @@
-"""Strict, text-free trajectory schema and bounded JSONL I/O."""
+"""Strict reader for Epoch's versioned, metadata-only Rust trajectory contract."""
 
 from __future__ import annotations
 
@@ -6,167 +6,235 @@ import json
 import math
 import os
 import re
-import tempfile
-import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 SCHEMA_VERSION = 1
+PRIVACY_PROFILE = "metadata_only"
 MAX_LINE_BYTES = 256 * 1024
 DEFAULT_MAX_RECORDS = 100_000
-MAX_STEPS = 256
-MAX_DURATION_MS = 3_600_000.0
-MAX_TOKEN_COUNT = 1_000_000
-MAX_EFFECT_COUNT = 1_000
-MAX_CAPABILITY_COUNT = 1_000
+MAX_EVENTS = 256
+MAX_U32 = (1 << 32) - 1
+MAX_U64 = (1 << 64) - 1
 
 ACTORS = frozenset({"agent", "supervisor", "tool", "gateway", "operator"})
 STATUSES = frozenset({"started", "succeeded", "failed", "denied", "unknown"})
-KIND_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._]{0,63}$")
-TASK_GROUP_PATTERN = re.compile(r"^tg_[0-9a-f]{16,64}$")
+KINDS = frozenset(
+    {
+        "agent.start",
+        "context.update",
+        "model.request",
+        "model.response",
+        "tool.call",
+        "tool.result",
+        "safe_point",
+        "supervisor.run_started",
+        "process.started",
+        "process.manifest",
+        "process.stderr",
+        "application.context_restored",
+        "other",
+    }
+)
+OPAQUE_ID_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class DatasetValidationError(ValueError):
-    """A bounded dataset failed the versioned schema contract."""
+    """A bounded dataset failed the cross-language trajectory contract."""
 
 
 @dataclass(frozen=True)
-class Step:
-    sequence: int
+class TrajectoryEvent:
+    position: int
+    delta_monotonic_ns: int
     actor: str
     kind: str
     status: str
-    duration_ms: float
-    token_count: int
-    effect_count: int
-    capability_count: int
+    references_epoch: bool
+    has_causal_parent: bool
 
     def __post_init__(self) -> None:
-        _bounded_integer("step.sequence", self.sequence, 0, MAX_STEPS - 1)
+        _bounded_integer("event.position", self.position, 0, MAX_EVENTS - 1)
+        _bounded_integer("event.delta_monotonic_ns", self.delta_monotonic_ns, 0, MAX_U64)
         if self.actor not in ACTORS:
-            raise DatasetValidationError("step.actor is not a supported categorical value")
-        if not isinstance(self.kind, str) or not KIND_PATTERN.fullmatch(self.kind):
-            raise DatasetValidationError("step.kind must be a normalized categorical token")
+            raise DatasetValidationError("event.actor is not a supported categorical value")
+        if self.kind not in KINDS:
+            raise DatasetValidationError("event.kind is not in the finite Rust taxonomy")
         if self.status not in STATUSES:
-            raise DatasetValidationError("step.status is not a supported categorical value")
-        _bounded_number("step.duration_ms", self.duration_ms, 0.0, MAX_DURATION_MS)
-        _bounded_integer("step.token_count", self.token_count, 0, MAX_TOKEN_COUNT)
-        _bounded_integer("step.effect_count", self.effect_count, 0, MAX_EFFECT_COUNT)
-        _bounded_integer(
-            "step.capability_count",
-            self.capability_count,
-            0,
-            MAX_CAPABILITY_COUNT,
-        )
+            raise DatasetValidationError("event.status is not a supported categorical value")
+        _boolean("event.references_epoch", self.references_epoch)
+        _boolean("event.has_causal_parent", self.has_causal_parent)
 
     def as_dict(self) -> Dict[str, Any]:
         return {
-            "sequence": self.sequence,
+            "position": self.position,
+            "delta_monotonic_ns": self.delta_monotonic_ns,
             "actor": self.actor,
             "kind": self.kind,
             "status": self.status,
-            "duration_ms": self.duration_ms,
-            "token_count": self.token_count,
-            "effect_count": self.effect_count,
-            "capability_count": self.capability_count,
+            "references_epoch": self.references_epoch,
+            "has_causal_parent": self.has_causal_parent,
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> Step:
+    def from_dict(cls, value: Mapping[str, Any]) -> TrajectoryEvent:
         _exact_fields(
-            "step",
+            "event",
             value,
             {
-                "sequence",
+                "position",
+                "delta_monotonic_ns",
                 "actor",
                 "kind",
                 "status",
-                "duration_ms",
-                "token_count",
-                "effect_count",
-                "capability_count",
+                "references_epoch",
+                "has_causal_parent",
             },
         )
         return cls(
-            sequence=value["sequence"],
+            position=value["position"],
+            delta_monotonic_ns=value["delta_monotonic_ns"],
             actor=value["actor"],
             kind=value["kind"],
             status=value["status"],
-            duration_ms=value["duration_ms"],
-            token_count=value["token_count"],
-            effect_count=value["effect_count"],
-            capability_count=value["capability_count"],
+            references_epoch=value["references_epoch"],
+            has_causal_parent=value["has_causal_parent"],
         )
 
 
 @dataclass(frozen=True)
-class Label:
-    success: bool
-    value: float
+class TrajectorySummary:
+    event_count: int
+    duration_monotonic_ns: int
+    started_events: int
+    succeeded_events: int
+    failed_events: int
+    denied_events: int
+    unknown_events: int
 
     def __post_init__(self) -> None:
-        if not isinstance(self.success, bool):
-            raise DatasetValidationError("label.success must be a Boolean")
-        _bounded_number("label.value", self.value, 0.0, 1.0)
-
-    def as_dict(self) -> Dict[str, Any]:
-        return {"success": self.success, "value": self.value}
+        for name, value in self.as_dict().items():
+            _bounded_integer(f"summary.{name}", value, 0, MAX_U64)
+        if self.event_count > MAX_EVENTS:
+            raise DatasetValidationError(f"summary.event_count cannot exceed {MAX_EVENTS}")
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> Label:
-        _exact_fields("label", value, {"success", "value"})
-        return cls(success=value["success"], value=value["value"])
+    def from_events(cls, events: Sequence[TrajectoryEvent]) -> TrajectorySummary:
+        counts = {status: 0 for status in STATUSES}
+        duration = 0
+        for event in events:
+            if not isinstance(event, TrajectoryEvent):
+                raise DatasetValidationError("summary requires typed trajectory events")
+            counts[event.status] += 1
+            duration += event.delta_monotonic_ns
+            if duration > MAX_U64:
+                raise DatasetValidationError("summary.duration_monotonic_ns exceeds u64")
+        return cls(
+            event_count=len(events),
+            duration_monotonic_ns=duration,
+            started_events=counts["started"],
+            succeeded_events=counts["succeeded"],
+            failed_events=counts["failed"],
+            denied_events=counts["denied"],
+            unknown_events=counts["unknown"],
+        )
+
+    def as_dict(self) -> Dict[str, int]:
+        return {
+            "event_count": self.event_count,
+            "duration_monotonic_ns": self.duration_monotonic_ns,
+            "started_events": self.started_events,
+            "succeeded_events": self.succeeded_events,
+            "failed_events": self.failed_events,
+            "denied_events": self.denied_events,
+            "unknown_events": self.unknown_events,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> TrajectorySummary:
+        fields = {
+            "event_count",
+            "duration_monotonic_ns",
+            "started_events",
+            "succeeded_events",
+            "failed_events",
+            "denied_events",
+            "unknown_events",
+        }
+        _exact_fields("summary", value, fields)
+        return cls(**{field: value[field] for field in fields})
 
 
 @dataclass(frozen=True)
 class TrajectoryRecord:
     schema_version: int
+    privacy_profile: str
     trajectory_id: str
     task_group_id: str
-    branch_id: str
-    parent_branch_id: Optional[str]
-    steps: Tuple[Step, ...]
-    label: Label
+    session_group_id: str
+    candidate_group_id: str
+    branch_depth: int
+    success_label: Optional[bool]
+    value_label: Optional[float]
+    events: Tuple[TrajectoryEvent, ...]
+    summary: TrajectorySummary
 
     def __post_init__(self) -> None:
         if self.schema_version != SCHEMA_VERSION:
             raise DatasetValidationError(
                 f"schema_version must be {SCHEMA_VERSION}, got {self.schema_version!r}"
             )
-        _uuid4("trajectory_id", self.trajectory_id)
-        if not isinstance(self.task_group_id, str) or not TASK_GROUP_PATTERN.fullmatch(
-            self.task_group_id
+        if self.privacy_profile != PRIVACY_PROFILE:
+            raise DatasetValidationError(f"privacy_profile must be {PRIVACY_PROFILE!r}")
+        for name in (
+            "trajectory_id",
+            "task_group_id",
+            "session_group_id",
+            "candidate_group_id",
         ):
-            raise DatasetValidationError("task_group_id must be an opaque tg_ hexadecimal digest")
-        _uuid4("branch_id", self.branch_id)
-        if self.parent_branch_id is not None:
-            _uuid4("parent_branch_id", self.parent_branch_id)
-            if self.parent_branch_id == self.branch_id:
-                raise DatasetValidationError("parent_branch_id cannot equal branch_id")
-        if not isinstance(self.steps, tuple) or not 1 <= len(self.steps) <= MAX_STEPS:
-            raise DatasetValidationError(f"steps must contain between 1 and {MAX_STEPS} entries")
-        if any(not isinstance(step, Step) for step in self.steps):
-            raise DatasetValidationError("steps must contain typed Step records")
-        if [step.sequence for step in self.steps] != list(range(len(self.steps))):
-            raise DatasetValidationError("step sequences must be contiguous from zero")
-        if not isinstance(self.label, Label):
-            raise DatasetValidationError("label must be a typed Label")
+            _opaque_id(name, getattr(self, name))
+        _bounded_integer("branch_depth", self.branch_depth, 0, MAX_U32)
+        if (self.success_label is None) != (self.value_label is None):
+            raise DatasetValidationError("success/value label pair must both be present or null")
+        if self.success_label is not None:
+            _boolean("success_label", self.success_label)
+            _bounded_number("value_label", self.value_label, 0.0, 1.0)
+        if not isinstance(self.events, tuple) or len(self.events) > MAX_EVENTS:
+            raise DatasetValidationError(f"events must contain between 0 and {MAX_EVENTS} entries")
+        if any(not isinstance(event, TrajectoryEvent) for event in self.events):
+            raise DatasetValidationError("events must contain typed TrajectoryEvent records")
+        if [event.position for event in self.events] != list(range(len(self.events))):
+            raise DatasetValidationError("event positions must be contiguous from zero")
+        if self.events and self.events[0].delta_monotonic_ns != 0:
+            raise DatasetValidationError("first event delta_monotonic_ns must be zero")
+        if not isinstance(self.summary, TrajectorySummary):
+            raise DatasetValidationError("summary must be a typed TrajectorySummary")
+        if self.summary != TrajectorySummary.from_events(self.events):
+            raise DatasetValidationError("summary must exactly match events")
+
+    @property
+    def is_labelled(self) -> bool:
+        return self.success_label is not None
 
     def as_dict(self) -> Dict[str, Any]:
         return {
             "schema_version": self.schema_version,
+            "privacy_profile": self.privacy_profile,
             "trajectory_id": self.trajectory_id,
             "task_group_id": self.task_group_id,
-            "branch_id": self.branch_id,
-            "parent_branch_id": self.parent_branch_id,
-            "steps": [step.as_dict() for step in self.steps],
-            "label": self.label.as_dict(),
+            "session_group_id": self.session_group_id,
+            "candidate_group_id": self.candidate_group_id,
+            "branch_depth": self.branch_depth,
+            "success_label": self.success_label,
+            "value_label": self.value_label,
+            "events": [event.as_dict() for event in self.events],
+            "summary": self.summary.as_dict(),
         }
 
-    def with_label(self, *, success: bool, value: float) -> TrajectoryRecord:
-        return replace(self, label=Label(success=success, value=value))
+    def with_labels(self, *, success: Optional[bool], value: Optional[float]) -> TrajectoryRecord:
+        return replace(self, success_label=success, value_label=value)
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> TrajectoryRecord:
@@ -175,42 +243,58 @@ class TrajectoryRecord:
             value,
             {
                 "schema_version",
+                "privacy_profile",
                 "trajectory_id",
                 "task_group_id",
-                "branch_id",
-                "parent_branch_id",
-                "steps",
-                "label",
+                "session_group_id",
+                "candidate_group_id",
+                "branch_depth",
+                "success_label",
+                "value_label",
+                "events",
+                "summary",
             },
         )
-        raw_steps = value["steps"]
-        if not isinstance(raw_steps, list):
-            raise DatasetValidationError("steps must be a JSON array")
-        raw_label = value["label"]
-        if not isinstance(raw_label, dict):
-            raise DatasetValidationError("label must be a JSON object")
+        raw_events = value["events"]
+        if not isinstance(raw_events, list):
+            raise DatasetValidationError("events must be a JSON array")
+        if len(raw_events) > MAX_EVENTS:
+            raise DatasetValidationError(f"events cannot contain more than {MAX_EVENTS} entries")
+        raw_summary = value["summary"]
+        if not isinstance(raw_summary, dict):
+            raise DatasetValidationError("summary must be a JSON object")
         return cls(
             schema_version=value["schema_version"],
+            privacy_profile=value["privacy_profile"],
             trajectory_id=value["trajectory_id"],
             task_group_id=value["task_group_id"],
-            branch_id=value["branch_id"],
-            parent_branch_id=value["parent_branch_id"],
-            steps=tuple(Step.from_dict(step) for step in raw_steps),
-            label=Label.from_dict(raw_label),
+            session_group_id=value["session_group_id"],
+            candidate_group_id=value["candidate_group_id"],
+            branch_depth=value["branch_depth"],
+            success_label=value["success_label"],
+            value_label=value["value_label"],
+            events=tuple(TrajectoryEvent.from_dict(event) for event in raw_events),
+            summary=TrajectorySummary.from_dict(raw_summary),
         )
 
 
 def load_jsonl(
     path: os.PathLike[str], *, max_records: int = DEFAULT_MAX_RECORDS
 ) -> List[TrajectoryRecord]:
-    """Load a bounded UTF-8 JSONL dataset with duplicate-key and identity checks."""
+    """Read JSONL with a bounded readline so an unterminated line cannot allocate unboundedly."""
 
     if isinstance(max_records, bool) or not isinstance(max_records, int) or max_records < 1:
         raise DatasetValidationError("maximum record count must be a positive integer")
     records: List[TrajectoryRecord] = []
     seen_trajectories = set()
+    candidate_tasks: Dict[str, str] = {}
     with Path(path).open("rb") as source:
-        for line_number, encoded in enumerate(source, start=1):
+        line_number = 0
+        while True:
+            encoded = source.readline(MAX_LINE_BYTES + 1)
+            if encoded == b"":
+                break
+            line_number += 1
             if len(encoded) > MAX_LINE_BYTES:
                 raise DatasetValidationError(
                     f"line {line_number}: record exceeds {MAX_LINE_BYTES} byte limit"
@@ -241,6 +325,13 @@ def load_jsonl(
                 raise DatasetValidationError(
                     f"line {line_number}: duplicate trajectory_id {record.trajectory_id}"
                 )
+            previous_task = candidate_tasks.setdefault(
+                record.candidate_group_id, record.task_group_id
+            )
+            if previous_task != record.task_group_id:
+                raise DatasetValidationError(
+                    f"line {line_number}: candidate_group_id appears in multiple task groups"
+                )
             seen_trajectories.add(record.trajectory_id)
             records.append(record)
     if not records:
@@ -249,50 +340,72 @@ def load_jsonl(
 
 
 def write_jsonl(path: os.PathLike[str], records: Iterable[TrajectoryRecord]) -> None:
-    """Atomically write canonical compact JSONL after revalidating identities."""
+    """Create a canonical private JSONL file and refuse to replace any existing path."""
 
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     materialized = list(records)
-    if not materialized:
-        raise DatasetValidationError("dataset must contain at least one record")
-    seen = set()
-    for record in materialized:
-        if not isinstance(record, TrajectoryRecord):
-            raise DatasetValidationError("writer accepts only typed TrajectoryRecord values")
-        if record.trajectory_id in seen:
-            raise DatasetValidationError(f"duplicate trajectory_id {record.trajectory_id}")
-        seen.add(record.trajectory_id)
-    temporary_name: Optional[str] = None
+    _validate_dataset_identities(materialized)
+    descriptor: Optional[int] = None
+    created = False
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=destination.parent,
-            prefix=f".{destination.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary:
-            temporary_name = temporary.name
+        try:
+            descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            created = True
+        except FileExistsError as error:
+            raise DatasetValidationError(f"output already exists: {destination}") from error
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            descriptor = None
             for record in materialized:
-                temporary.write(
-                    json.dumps(record.as_dict(), sort_keys=True, separators=(",", ":")) + "\n"
+                output.write(
+                    json.dumps(
+                        record.as_dict(),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    )
+                    + "\n"
                 )
-            temporary.flush()
-            os.fsync(temporary.fileno())
-        os.replace(temporary_name, destination)
-        temporary_name = None
-    finally:
-        if temporary_name is not None:
-            Path(temporary_name).unlink(missing_ok=True)
+            output.flush()
+            os.fsync(output.fileno())
+    except Exception:
+        if descriptor is not None:
+            os.close(descriptor)
+        if created:
+            destination.unlink(missing_ok=True)
+        raise
 
 
 def canonical_records(records: Sequence[TrajectoryRecord]) -> bytes:
     ordered = sorted(records, key=lambda record: record.trajectory_id)
     return b"".join(
-        (json.dumps(record.as_dict(), sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+        (
+            json.dumps(record.as_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False)
+            + "\n"
+        ).encode("utf-8")
         for record in ordered
     )
+
+
+def labelled_records(records: Iterable[TrajectoryRecord]) -> Tuple[TrajectoryRecord, ...]:
+    return tuple(record for record in records if record.is_labelled)
+
+
+def _validate_dataset_identities(records: Sequence[TrajectoryRecord]) -> None:
+    if not records:
+        raise DatasetValidationError("dataset must contain at least one record")
+    trajectories = set()
+    candidate_tasks: Dict[str, str] = {}
+    for record in records:
+        if not isinstance(record, TrajectoryRecord):
+            raise DatasetValidationError("writer accepts only typed TrajectoryRecord values")
+        if record.trajectory_id in trajectories:
+            raise DatasetValidationError(f"duplicate trajectory_id {record.trajectory_id}")
+        trajectories.add(record.trajectory_id)
+        previous = candidate_tasks.setdefault(record.candidate_group_id, record.task_group_id)
+        if previous != record.task_group_id:
+            raise DatasetValidationError("candidate_group_id appears in multiple task groups")
 
 
 class _DuplicateKey(ValueError):
@@ -320,15 +433,14 @@ def _exact_fields(name: str, value: Mapping[str, Any], expected: set) -> None:
         raise DatasetValidationError(f"{name} is missing field {sorted(missing)[0]!r}")
 
 
-def _uuid4(name: str, value: Any) -> None:
-    if not isinstance(value, str):
-        raise DatasetValidationError(f"{name} must be a canonical UUIDv4 string")
-    try:
-        parsed = uuid.UUID(value)
-    except (ValueError, AttributeError) as error:
-        raise DatasetValidationError(f"{name} must be a canonical UUIDv4 string") from error
-    if str(parsed) != value or parsed.version != 4:
-        raise DatasetValidationError(f"{name} must be a canonical UUIDv4 string")
+def _opaque_id(name: str, value: Any) -> None:
+    if not isinstance(value, str) or not OPAQUE_ID_PATTERN.fullmatch(value):
+        raise DatasetValidationError(f"{name} must be exactly 64 lowercase hexadecimal characters")
+
+
+def _boolean(name: str, value: Any) -> None:
+    if not isinstance(value, bool):
+        raise DatasetValidationError(f"{name} must be a Boolean")
 
 
 def _bounded_integer(name: str, value: Any, minimum: int, maximum: int) -> None:

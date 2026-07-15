@@ -347,6 +347,8 @@ pub struct DecisionEvidence {
 pub struct CompatibilityReport {
     pub schema_version: u32,
     pub scenario_schema_version: u32,
+    pub code_revision: String,
+    pub code_dirty: bool,
     pub environment: EnvironmentMetadata,
     pub limits: RunLimits,
     pub scaling: ScalingPlan,
@@ -375,6 +377,15 @@ impl CompatibilityReport {
              ## Environment\n\n\
              | Field | Value |\n\
              | --- | --- |\n",
+        );
+        push_markdown_row(
+            &mut output,
+            "Code revision",
+            &format!(
+                "{}{}",
+                self.code_revision,
+                if self.code_dirty { " (dirty)" } else { "" }
+            ),
         );
         push_markdown_row(
             &mut output,
@@ -600,6 +611,7 @@ impl CompatibilityRunner {
     /// Returns an error only when the experiment infrastructure itself cannot create isolated
     /// temporary state. Host/tool incompatibility is evidence, not a runner error.
     pub fn run(&self) -> Result<CompatibilityEvidence, RunError> {
+        let (code_revision, code_dirty) = collect_code_revision();
         let temporary = TempBuilder::new().prefix("epoch-criu-").tempdir()?;
         set_private_run_directory(temporary.path())?;
         let mut artifacts = Vec::new();
@@ -614,6 +626,8 @@ impl CompatibilityRunner {
             report: CompatibilityReport {
                 schema_version: REPORT_SCHEMA_VERSION,
                 scenario_schema_version: Scenario::SCHEMA_VERSION,
+                code_revision,
+                code_dirty,
                 environment: probe.environment,
                 limits: self.config.limits,
                 scaling: self.config.scaling.clone(),
@@ -976,6 +990,32 @@ impl CompatibilityRunner {
             restored_behavior_verified: verified,
         })
     }
+}
+
+fn collect_code_revision() -> (String, bool) {
+    let revision = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|value| value.trim().to_owned())
+        .filter(|value| {
+            value.len() == 40
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        });
+    let Some(revision) = revision else {
+        return ("unavailable".to_owned(), true);
+    };
+    let dirty = Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=no"])
+        .output()
+        .map_or(true, |output| {
+            !output.status.success() || !output.stdout.is_empty()
+        });
+    (revision, dirty)
 }
 
 #[derive(Clone, Copy)]

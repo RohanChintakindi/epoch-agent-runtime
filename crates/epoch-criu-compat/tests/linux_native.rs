@@ -31,7 +31,10 @@ fn real_criu_matrix_preserves_environment_rows_logs_and_verified_success() {
 
     assert_eq!(report.rows.len(), 13);
     assert_eq!(report.code_revision.len(), 40);
-    assert!(!report.code_dirty, "native final evidence requires a clean revision");
+    assert!(
+        !report.code_dirty,
+        "native final evidence requires a clean revision"
+    );
     assert!(
         report
             .environment

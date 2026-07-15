@@ -263,6 +263,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-criu-compat"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "nix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "epoch-diff"
 version = "0.1.0"
 dependencies = [

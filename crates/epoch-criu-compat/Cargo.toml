@@ -13,5 +13,9 @@ serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 
+[[bin]]
+name = "epoch-criu-fixture"
+path = "src/bin/epoch-criu-fixture.rs"
+
 [lints]
 workspace = true

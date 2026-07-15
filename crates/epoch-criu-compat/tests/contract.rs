@@ -63,6 +63,7 @@ fn unavailable_criu_preserves_every_row_without_false_success() {
         };
         row.status == RowStatus::Unsupported
             && row.diagnostic.code == expected_code
+            && row.diagnostic.log_artifact.starts_with("logs/row-")
             && row.dump.is_none()
             && row.restore.is_none()
     }));

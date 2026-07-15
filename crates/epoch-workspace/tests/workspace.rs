@@ -195,7 +195,11 @@ fn blob_state_root_is_excluded_when_nested_and_rejected_when_equal_to_workspace(
             .all(|entry| !entry.path.starts_with("runtime-state"))
     );
 
-    let equal = fixture._temp.path().join("equal-root");
+    let equal = fixture
+        .source
+        .parent()
+        .expect("fixture parent")
+        .join("equal-root");
     fs::create_dir(&equal).expect("equal root");
     fs::set_permissions(&equal, fs::Permissions::from_mode(0o700)).expect("private root");
     let backend = WorkspaceBackend::open(&equal, WorkspaceLimits::default()).expect("backend");
@@ -495,10 +499,12 @@ fn absolute_windows_reserved_and_separator_paths_are_rejected_before_staging() {
             Err(WorkspaceError::UnsafeManifestPath { .. })
         ));
     }
-    assert!(fs::read_dir(&fixture.restore_parent)
-        .expect("parent")
-        .next()
-        .is_none());
+    assert!(
+        fs::read_dir(&fixture.restore_parent)
+            .expect("parent")
+            .next()
+            .is_none()
+    );
 }
 
 #[test]
@@ -526,9 +532,7 @@ fn manifest_structure_and_file_metadata_are_validated_before_staging() {
 
     let mut wrong_metadata = base;
     let EntryKind::Regular {
-        executable,
-        length,
-        ..
+        executable, length, ..
     } = &mut wrong_metadata.entries[0].kind
     else {
         panic!("regular fixture")
@@ -546,10 +550,12 @@ fn manifest_structure_and_file_metadata_are_validated_before_staging() {
         ),
         Err(WorkspaceError::InvalidManifest { .. })
     ));
-    assert!(fs::read_dir(&fixture.restore_parent)
-        .expect("parent")
-        .next()
-        .is_none());
+    assert!(
+        fs::read_dir(&fixture.restore_parent)
+            .expect("parent")
+            .next()
+            .is_none()
+    );
 }
 
 #[test]

@@ -66,6 +66,9 @@ enum Command {
         epoch: String,
         #[arg(long, value_enum, default_value_t = RestoreMode::Strict)]
         mode: RestoreMode,
+        /// New directory where the checkpointed workspace is published without clobbering.
+        #[arg(long)]
+        workspace_target: Option<PathBuf>,
     },
     /// Create a new logical branch from an epoch.
     Fork {
@@ -335,11 +338,11 @@ impl BackendCapabilities {
                 dependency_detected: Some(criu_dependency_detected),
             },
             workspace_checkpoint: BackendCapability {
-                status: BackendStatus::Unsupported,
-                registered: false,
-                backend: None,
-                scope: "workspace_files",
-                reason: "no workspace snapshot backend is registered",
+                status: BackendStatus::Supported,
+                registered: true,
+                backend: Some("full-copy-cas-v1"),
+                scope: "workspace_files_without_process_memory",
+                reason: "the deterministic full-copy CAS workspace backend is registered",
                 dependency_detected: None,
             },
         }
@@ -380,7 +383,11 @@ fn execute(command: Command) -> ExitCode {
             branch,
             label,
         } => checkpoint_application(&session, branch.as_deref(), label.as_deref()),
-        Command::Restore { epoch, mode } => restore_application(&epoch, mode),
+        Command::Restore {
+            epoch,
+            mode,
+            workspace_target,
+        } => restore_application(&epoch, mode, workspace_target.as_deref()),
         Command::Diff {
             left,
             right,
@@ -561,7 +568,11 @@ fn checkpoint_application(session: &str, branch: Option<&str>, label: Option<&st
     )
 }
 
-fn restore_application(epoch: &str, mode: RestoreMode) -> ExitCode {
+fn restore_application(
+    epoch: &str,
+    mode: RestoreMode,
+    workspace_target: Option<&std::path::Path>,
+) -> ExitCode {
     let epoch_id = match EpochId::from_str(epoch) {
         Ok(epoch_id) => epoch_id,
         Err(error) => {
@@ -592,7 +603,10 @@ fn restore_application(epoch: &str, mode: RestoreMode) -> ExitCode {
         Ok(supervisor) => supervisor,
         Err(exit) => return exit,
     };
-    emit_recovery("restore", supervisor.restore_application(epoch_id, mode))
+    emit_recovery(
+        "restore",
+        supervisor.restore_application(epoch_id, mode, workspace_target),
+    )
 }
 
 fn diff_application_epochs(before: &str, after: &str) -> ExitCode {
@@ -815,10 +829,19 @@ mod tests {
         );
         assert!(capabilities.backends.application_checkpoint.registered);
 
+        assert_eq!(
+            capabilities.backends.workspace_checkpoint.status,
+            BackendStatus::Supported
+        );
+        assert!(capabilities.backends.workspace_checkpoint.registered);
+        assert_eq!(
+            capabilities.backends.workspace_checkpoint.backend,
+            Some("full-copy-cas-v1")
+        );
+
         for backend in [
             &capabilities.backends.process_checkpoint,
             &capabilities.backends.criu_checkpoint,
-            &capabilities.backends.workspace_checkpoint,
         ] {
             assert_eq!(backend.status, BackendStatus::Unsupported);
             assert!(!backend.registered);

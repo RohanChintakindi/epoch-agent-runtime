@@ -11,7 +11,7 @@ pub use manifest::{
 pub use recovery::{
     ApplicationCheckpointReport, ApplicationEpochDiffReport, ApplicationRestoreMode,
     ApplicationRestoreReport, ApplicationStatusReport, RecoveryCode, RecoveryIssue,
-    RecoveryOutcome, RestoreScope,
+    RecoveryOutcome, RestoreScope, WorkspaceCheckpointReport, WorkspaceEpochDiff,
 };
 pub use supervisor::{
     AgentTermination, BranchStatus, DirectSupervisor, EventPageReport, EventPageRequest,

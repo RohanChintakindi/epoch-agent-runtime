@@ -32,6 +32,7 @@ fn run_and_checkpoint(
 ) {
     let state_root = fixture.path().join("state");
     let workspace = fixture.path().join(format!("workspace-{seed}"));
+    fs::create_dir(&workspace).expect("create declared workspace");
     let manifest = fixture.path().join(format!("workload-{seed}.toml"));
     let executable = env!("CARGO_BIN_EXE_epoch-test-agent");
     fs::write(
@@ -40,9 +41,10 @@ fn run_and_checkpoint(
             "schema_version = 1\n\
              name = \"epoch-test-agent\"\n\
              executable = \"{executable}\"\n\
+             working_directory = \"{}\"\n\
              arguments = [\"--seed\", \"{seed}\", \"--scenario\", \"files\", \
-                          \"--workspace\", \"{}\"]\n",
-            workspace.display()
+                          \"--workspace\", \".\"]\n",
+            workspace.display(),
         ),
     )
     .expect("write W02 manifest");
@@ -73,22 +75,27 @@ fn three_restart_safe_run_checkpoint_mutate_restore_inspect_cycles_need_no_repai
             run_and_checkpoint(&fixture, seed);
         assert_eq!(
             checkpoint.restore_scope,
-            RestoreScope::ApplicationContextOnly
+            RestoreScope::ApplicationAndWorkspace
         );
         assert_eq!(checkpoint.context_revision, 1);
         assert_eq!(checkpoint.boundary_sequence, 9);
 
         let artifact = workspace.join("artifact.txt");
+        let checkpointed_artifact =
+            fs::read(&artifact).expect("read workspace bytes captured by checkpoint");
         fs::write(&artifact, format!("advanced-after-{seed}"))
             .expect("mutate workspace after checkpoint");
 
         let restarted = DirectSupervisor::open(&state_root).expect("restart supervisor");
-        let restored = supported(
-            restarted.restore_application(checkpoint.epoch_id, ApplicationRestoreMode::Activate),
-        );
+        let restore_target = fixture.path().join(format!("restored-{seed}"));
+        let restored = supported(restarted.restore_application(
+            checkpoint.epoch_id,
+            ApplicationRestoreMode::Activate,
+            Some(&restore_target),
+        ));
         assert!(restored.activated);
         assert!(!restored.process_restored);
-        assert!(!restored.workspace_restored);
+        assert!(restored.workspace_restored);
         assert_eq!(restored.context.safe_point_id, checkpoint.safe_point_id);
         assert_eq!(restored.context.cursors.boundary_sequence, 9);
 
@@ -103,9 +110,9 @@ fn three_restart_safe_run_checkpoint_mutate_restore_inspect_cycles_need_no_repai
             9
         );
         assert_eq!(
-            fs::read_to_string(artifact).expect("read post-restore workspace"),
-            format!("advanced-after-{seed}"),
-            "application restore must not falsely claim workspace rollback"
+            fs::read(restore_target.join("artifact.txt")).expect("read restored workspace"),
+            checkpointed_artifact,
+            "workspace restore must publish the checkpointed bytes to a new target"
         );
     }
 }
@@ -128,9 +135,11 @@ fn restore_rejects_corrupt_and_missing_component_bytes() {
         }
 
         let supervisor = DirectSupervisor::open(&state_root).expect("restart supervisor");
-        let RecoveryOutcome::Failed(issue) =
-            supervisor.restore_application(checkpoint.epoch_id, ApplicationRestoreMode::Activate)
-        else {
+        let RecoveryOutcome::Failed(issue) = supervisor.restore_application(
+            checkpoint.epoch_id,
+            ApplicationRestoreMode::Activate,
+            Some(&fixture.path().join("restore-target")),
+        ) else {
             panic!("invalid component must fail restore")
         };
         assert_eq!(issue.code, expected);
@@ -145,7 +154,8 @@ fn restore_reports_future_component_schema_as_unsupported() {
     let metadata: String = store
         .connection()
         .query_row(
-            "SELECT metadata_json FROM snapshot_components WHERE epoch_id = ?1",
+            "SELECT metadata_json FROM snapshot_components \
+             WHERE epoch_id = ?1 AND kind = 'application_context'",
             [checkpoint.epoch_id.to_string()],
             |row| row.get(0),
         )
@@ -155,7 +165,8 @@ fn restore_reports_future_component_schema_as_unsupported() {
     store
         .connection()
         .execute(
-            "UPDATE snapshot_components SET metadata_json = ?2 WHERE epoch_id = ?1",
+            "UPDATE snapshot_components SET metadata_json = ?2 \
+             WHERE epoch_id = ?1 AND kind = 'application_context'",
             [
                 checkpoint.epoch_id.to_string(),
                 serde_json::to_string(&metadata).expect("encode future metadata"),
@@ -165,9 +176,11 @@ fn restore_reports_future_component_schema_as_unsupported() {
     drop(store);
 
     let supervisor = DirectSupervisor::open(&state_root).expect("restart supervisor");
-    let RecoveryOutcome::Unsupported(issue) =
-        supervisor.restore_application(checkpoint.epoch_id, ApplicationRestoreMode::Activate)
-    else {
+    let RecoveryOutcome::Unsupported(issue) = supervisor.restore_application(
+        checkpoint.epoch_id,
+        ApplicationRestoreMode::Activate,
+        Some(&fixture.path().join("restore-target")),
+    ) else {
         panic!("future schema must be unsupported")
     };
     assert_eq!(issue.code, RecoveryCode::SchemaVersion);
@@ -205,7 +218,7 @@ fn restore_rejects_valid_json_that_is_not_the_canonical_context_encoding() {
         .execute(
             "UPDATE snapshot_components \
              SET blob_hash = ?2, checksum_sha256 = ?2, byte_length = ?3 \
-             WHERE epoch_id = ?1",
+             WHERE epoch_id = ?1 AND kind = 'application_context'",
             (
                 checkpoint.epoch_id.to_string(),
                 replacement.hash.to_string(),
@@ -216,9 +229,11 @@ fn restore_rejects_valid_json_that_is_not_the_canonical_context_encoding() {
     drop(store);
 
     let supervisor = DirectSupervisor::open(&state_root).expect("restart supervisor");
-    let RecoveryOutcome::Failed(issue) =
-        supervisor.restore_application(checkpoint.epoch_id, ApplicationRestoreMode::Activate)
-    else {
+    let RecoveryOutcome::Failed(issue) = supervisor.restore_application(
+        checkpoint.epoch_id,
+        ApplicationRestoreMode::Activate,
+        Some(&fixture.path().join("restore-target")),
+    ) else {
         panic!("noncanonical context must fail restore")
     };
     assert_eq!(issue.code, RecoveryCode::NonCanonical);

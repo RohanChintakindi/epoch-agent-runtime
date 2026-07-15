@@ -260,6 +260,23 @@ impl WorkspaceBackend {
         Ok(manifest)
     }
 
+    /// Validates the manifest and every referenced file blob without mutating a restore target.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for any invalid manifest, missing/corrupt blob, or length mismatch.
+    pub fn validate(&self, snapshot: &WorkspaceSnapshot) -> Result<RestoreReport, WorkspaceError> {
+        let manifest = self.manifest(snapshot)?;
+        let prepared = self.prepare_files(&manifest)?;
+        Ok(RestoreReport {
+            entries: manifest.entries.len(),
+            total_file_bytes: prepared
+                .values()
+                .map(|bytes| u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+                .sum(),
+        })
+    }
+
     /// Restores a snapshot into a new target directory.
     ///
     /// All referenced blobs are loaded and verified before a staging directory is created.

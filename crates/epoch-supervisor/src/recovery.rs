@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    path::{Path, PathBuf},
     str::FromStr as _,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -14,7 +15,11 @@ use epoch_core::{BranchId, EpochId, EventActor, EventKind, EventStatus, SessionI
 use epoch_diff::{ApplicationSemanticDiff, DiffError, DiffErrorKind, diff_application_checkpoints};
 use epoch_events::{EventQuery, NewEvent};
 use epoch_storage::Store;
-use rusqlite::{OptionalExtension as _, Transaction, TransactionBehavior, params};
+use epoch_workspace::{
+    MANIFEST_MEDIA_TYPE, WORKSPACE_SCHEMA_VERSION, WorkspaceBackend, WorkspaceError,
+    WorkspaceLimits, WorkspaceSnapshot,
+};
+use rusqlite::{Connection, OptionalExtension as _, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -22,6 +27,9 @@ use crate::DirectSupervisor;
 
 const APPLICATION_COMPONENT_KIND: &str = "application_context";
 const APPLICATION_BACKEND: &str = "cooperative-w02-v1";
+const WORKSPACE_COMPONENT_KIND: &str = "workspace";
+const WORKSPACE_BACKEND: &str = "full-copy-cas-v1";
+const COMPOSITE_BACKEND: &str = "cooperative-w02-v1+full-copy-cas-v1";
 const MAX_LABEL_BYTES: usize = 255;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -53,6 +61,7 @@ pub enum RecoveryCode {
     Persistence,
     SchemaVersion,
     Storage,
+    TargetExists,
     UnsupportedMode,
 }
 
@@ -73,6 +82,7 @@ impl RecoveryCode {
             Self::Persistence => "persistence",
             Self::SchemaVersion => "schema_version",
             Self::Storage => "storage",
+            Self::TargetExists => "target_exists",
             Self::UnsupportedMode => "unsupported_mode",
         }
     }
@@ -82,6 +92,7 @@ impl RecoveryCode {
 #[serde(rename_all = "snake_case")]
 pub enum RestoreScope {
     ApplicationContextOnly,
+    ApplicationAndWorkspace,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -100,7 +111,17 @@ pub struct ApplicationCheckpointReport {
     pub safe_point_id: String,
     pub context_revision: u64,
     pub boundary_sequence: u64,
+    pub process_checkpointed: bool,
+    pub workspace: WorkspaceCheckpointReport,
     pub restore_scope: RestoreScope,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkspaceCheckpointReport {
+    pub backend: &'static str,
+    pub manifest_hash: BlobHash,
+    pub manifest_length: u64,
+    pub source: PathBuf,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -113,6 +134,8 @@ pub struct ApplicationRestoreReport {
     pub activated: bool,
     pub process_restored: bool,
     pub workspace_restored: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_target: Option<PathBuf>,
     pub restore_scope: RestoreScope,
 }
 
@@ -121,6 +144,14 @@ pub struct ApplicationEpochDiffReport {
     pub before_epoch_id: EpochId,
     pub after_epoch_id: EpochId,
     pub diff: ApplicationSemanticDiff,
+    pub workspace: WorkspaceEpochDiff,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkspaceEpochDiff {
+    pub identical: bool,
+    pub before_manifest_hash: BlobHash,
+    pub after_manifest_hash: BlobHash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -188,11 +219,21 @@ struct StoredApplicationMetadata {
     label: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredWorkspaceMetadata {
+    schema_version: u32,
+    source: PathBuf,
+    restore_scope: RestoreScope,
+}
+
 struct LoadedApplicationEpoch {
     epoch_id: EpochId,
     session_id: SessionId,
     branch_id: BranchId,
     artifact: ApplicationCheckpoint,
+    workspace: WorkspaceSnapshot,
+    workspace_source: PathBuf,
 }
 
 struct ValidatedBoundary {
@@ -216,7 +257,7 @@ impl RecoveryRejection {
 }
 
 impl DirectSupervisor {
-    /// Captures a completed W02 cooperative safe point into a durable application-only epoch.
+    /// Captures a completed cooperative safe point and its declared workspace into one epoch.
     #[must_use]
     pub fn checkpoint_application(
         &self,
@@ -249,10 +290,24 @@ impl DirectSupervisor {
             }
             BackendOutcome::Failed(issue) => return RecoveryOutcome::Failed(map_failure(issue)),
         };
+        let workspace_source = match self.declared_workspace(session_id, branch_id) {
+            Ok(source) => source,
+            Err(rejection) => return rejection.into_outcome(),
+        };
+        let workspace_backend = match self.workspace_backend() {
+            Ok(backend) => backend,
+            Err(issue) => return RecoveryOutcome::Failed(issue),
+        };
+        let workspace = match workspace_backend.snapshot(&workspace_source) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return map_workspace_error(&error),
+        };
         let epoch_id = match self.persist_checkpoint(
             session_id,
             branch_id,
             &artifact,
+            &workspace,
+            &workspace_source,
             label.map(str::to_owned),
         ) {
             Ok(epoch_id) => epoch_id,
@@ -268,16 +323,24 @@ impl DirectSupervisor {
             safe_point_id: artifact.metadata.safe_point_id,
             context_revision: artifact.metadata.context_revision,
             boundary_sequence: artifact.metadata.boundary_sequence,
-            restore_scope: RestoreScope::ApplicationContextOnly,
+            process_checkpointed: false,
+            workspace: WorkspaceCheckpointReport {
+                backend: WORKSPACE_BACKEND,
+                manifest_hash: workspace.manifest_hash().clone(),
+                manifest_length: workspace.manifest_length(),
+                source: workspace_source,
+            },
+            restore_scope: RestoreScope::ApplicationAndWorkspace,
         })
     }
 
-    /// Validates and optionally activates a durable application-only checkpoint.
+    /// Validates and optionally restores a composite checkpoint to an explicit clean target.
     #[must_use]
     pub fn restore_application(
         &self,
         epoch_id: EpochId,
         mode: ApplicationRestoreMode,
+        workspace_target: Option<&Path>,
     ) -> RecoveryOutcome<ApplicationRestoreReport> {
         let loaded = match self.load_epoch(epoch_id) {
             Ok(loaded) => loaded,
@@ -294,8 +357,33 @@ impl DirectSupervisor {
             }
             BackendOutcome::Failed(issue) => return RecoveryOutcome::Failed(map_failure(issue)),
         };
+        let workspace_backend = match self.workspace_backend() {
+            Ok(backend) => backend,
+            Err(issue) => return RecoveryOutcome::Failed(issue),
+        };
+        if let Err(error) = workspace_backend.validate(&loaded.workspace) {
+            return map_workspace_error(&error);
+        }
         let activated = mode == ApplicationRestoreMode::Activate;
-        if activated && let Err(issue) = self.record_activation(&loaded, &context) {
+        let workspace_target = workspace_target.map(Path::to_path_buf);
+        let workspace_restored = if activated {
+            let Some(target) = workspace_target.as_deref() else {
+                return failed(
+                    RecoveryCode::InvalidCapture,
+                    "strict composite restore requires --workspace-target".to_owned(),
+                );
+            };
+            if let Err(error) = workspace_backend.restore(&loaded.workspace, target) {
+                return map_workspace_error(&error);
+            }
+            true
+        } else {
+            false
+        };
+        if activated
+            && let Err(issue) =
+                self.record_activation(&loaded, &context, workspace_target.as_deref())
+        {
             return RecoveryOutcome::Failed(issue);
         }
 
@@ -307,8 +395,9 @@ impl DirectSupervisor {
             context,
             activated,
             process_restored: false,
-            workspace_restored: false,
-            restore_scope: RestoreScope::ApplicationContextOnly,
+            workspace_restored,
+            workspace_target,
+            restore_scope: RestoreScope::ApplicationAndWorkspace,
         })
     }
 
@@ -336,6 +425,11 @@ impl DirectSupervisor {
                 before_epoch_id,
                 after_epoch_id,
                 diff,
+                workspace: WorkspaceEpochDiff {
+                    identical: before.workspace.manifest_hash() == after.workspace.manifest_hash(),
+                    before_manifest_hash: before.workspace.manifest_hash().clone(),
+                    after_manifest_hash: after.workspace.manifest_hash().clone(),
+                },
             }),
             Err(error) => map_diff_error(&error),
         }
@@ -386,7 +480,7 @@ impl DirectSupervisor {
                 session_state,
                 current_epoch_id: None,
                 context: None,
-                restore_scope: RestoreScope::ApplicationContextOnly,
+                restore_scope: RestoreScope::ApplicationAndWorkspace,
             });
         };
         let payload = match self.journal.read_payload(event) {
@@ -403,11 +497,12 @@ impl DirectSupervisor {
                 "restored application event has no valid epoch ID".to_owned(),
             );
         };
-        let restored = match self.restore_application(epoch_id, ApplicationRestoreMode::Inspect) {
-            RecoveryOutcome::Supported(restored) => restored,
-            RecoveryOutcome::Unsupported(issue) => return RecoveryOutcome::Unsupported(issue),
-            RecoveryOutcome::Failed(issue) => return RecoveryOutcome::Failed(issue),
-        };
+        let restored =
+            match self.restore_application(epoch_id, ApplicationRestoreMode::Inspect, None) {
+                RecoveryOutcome::Supported(restored) => restored,
+                RecoveryOutcome::Unsupported(issue) => return RecoveryOutcome::Unsupported(issue),
+                RecoveryOutcome::Failed(issue) => return RecoveryOutcome::Failed(issue),
+            };
         if restored.session_id != session_id || restored.branch_id != branch_id {
             return failed(
                 RecoveryCode::MetadataMismatch,
@@ -420,7 +515,7 @@ impl DirectSupervisor {
             session_state,
             current_epoch_id: Some(epoch_id),
             context: Some(restored.context),
-            restore_scope: RestoreScope::ApplicationContextOnly,
+            restore_scope: RestoreScope::ApplicationAndWorkspace,
         })
     }
 
@@ -428,6 +523,61 @@ impl DirectSupervisor {
         BlobStore::open(&self.blob_root)
             .map(ApplicationCheckpointBackend::new)
             .map_err(|error| issue(RecoveryCode::Storage, error.to_string()))
+    }
+
+    fn workspace_backend(&self) -> Result<WorkspaceBackend, RecoveryIssue> {
+        WorkspaceBackend::open(&self.blob_root, WorkspaceLimits::default())
+            .map_err(|error| issue(RecoveryCode::Storage, error.to_string()))
+    }
+
+    fn declared_workspace(
+        &self,
+        session_id: SessionId,
+        branch_id: BranchId,
+    ) -> Result<PathBuf, RecoveryRejection> {
+        let kind = EventKind::new("supervisor.run_started")
+            .map_err(|error| failed_rejection(RecoveryCode::Persistence, error.to_string()))?;
+        let events = self
+            .journal
+            .query(&EventQuery {
+                session_id,
+                branch_id: Some(branch_id),
+                kind: Some(kind),
+                sequence: None,
+            })
+            .map_err(|error| failed_rejection(RecoveryCode::Persistence, error.to_string()))?;
+        let event = events.first().ok_or_else(|| {
+            failed_rejection(
+                RecoveryCode::InvalidCapture,
+                "run has no declared workload workspace".to_owned(),
+            )
+        })?;
+        if events.len() != 1 {
+            return Err(failed_rejection(
+                RecoveryCode::MetadataMismatch,
+                "run has multiple workspace declarations".to_owned(),
+            ));
+        }
+        let payload = self
+            .journal
+            .read_payload(event)
+            .map_err(|error| failed_rejection(RecoveryCode::Persistence, error.to_string()))?;
+        let source = payload
+            .get("working_directory")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                failed_rejection(
+                    RecoveryCode::InvalidCapture,
+                    "run-start record has no declared workload workspace".to_owned(),
+                )
+            })?;
+        if source.is_empty() || source.contains('\0') {
+            return Err(failed_rejection(
+                RecoveryCode::MetadataMismatch,
+                "declared workload workspace path is invalid".to_owned(),
+            ));
+        }
+        Ok(PathBuf::from(source))
     }
 
     fn resolve_branch(
@@ -657,6 +807,8 @@ impl DirectSupervisor {
         session_id: SessionId,
         branch_id: BranchId,
         artifact: &ApplicationCheckpoint,
+        workspace: &WorkspaceSnapshot,
+        workspace_source: &Path,
         label: Option<String>,
     ) -> Result<EpochId, RecoveryIssue> {
         let timestamp = unix_ms().map_err(|detail| issue(RecoveryCode::Persistence, detail))?;
@@ -668,6 +820,7 @@ impl DirectSupervisor {
             .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
         ensure_completed_scope(&transaction, session_id, branch_id)?;
         register_component_blob(&transaction, artifact, timestamp)?;
+        register_workspace_blob(&transaction, workspace, timestamp)?;
 
         let (sequence, parent_epoch_id) = next_epoch(&transaction, branch_id)?;
         let policy_revision = transaction
@@ -683,14 +836,14 @@ impl DirectSupervisor {
                 "INSERT INTO epochs \
                  (id, session_id, branch_id, parent_epoch_id, sequence, status, backend, \
                   policy_revision, effect_frontier, created_at_unix_ms, committed_at_unix_ms) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'committed', ?6, ?7, 0, ?8, ?8)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'creating', ?6, ?7, 0, ?8, NULL)",
                 params![
                     epoch_id.to_string(),
                     session_id.to_string(),
                     branch_id.to_string(),
                     parent_epoch_id,
                     sequence,
-                    APPLICATION_BACKEND,
+                    COMPOSITE_BACKEND,
                     policy_revision,
                     timestamp,
                 ],
@@ -701,10 +854,35 @@ impl DirectSupervisor {
             safe_point_id: artifact.metadata.safe_point_id.clone(),
             context_revision: artifact.metadata.context_revision,
             boundary_sequence: artifact.metadata.boundary_sequence,
-            restore_scope: RestoreScope::ApplicationContextOnly,
+            restore_scope: RestoreScope::ApplicationAndWorkspace,
             label,
         };
         let metadata_json = serde_json::to_string(&stored_metadata)
+            .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
+        let workspace_metadata = StoredWorkspaceMetadata {
+            schema_version: WORKSPACE_SCHEMA_VERSION,
+            source: workspace_source.to_path_buf(),
+            restore_scope: RestoreScope::ApplicationAndWorkspace,
+        };
+        let workspace_metadata_json = serde_json::to_string(&workspace_metadata)
+            .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
+        transaction
+            .execute(
+                "INSERT INTO snapshot_components \
+                 (epoch_id, kind, status, backend, blob_hash, checksum_sha256, byte_length, \
+                  metadata_json, staged_at_unix_ms, committed_at_unix_ms) \
+                 VALUES (?1, ?2, 'committed', ?3, ?4, ?4, ?5, ?6, ?7, ?7)",
+                params![
+                    epoch_id.to_string(),
+                    WORKSPACE_COMPONENT_KIND,
+                    WORKSPACE_BACKEND,
+                    workspace.manifest_hash().to_string(),
+                    i64::try_from(workspace.manifest_length())
+                        .map_err(|error| issue(RecoveryCode::Persistence, error.to_string(),))?,
+                    workspace_metadata_json,
+                    timestamp,
+                ],
+            )
             .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
         transaction
             .execute(
@@ -724,6 +902,7 @@ impl DirectSupervisor {
                 ],
             )
             .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
+        commit_composite_epoch(&transaction, epoch_id, timestamp)?;
         transaction
             .commit()
             .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
@@ -736,7 +915,7 @@ impl DirectSupervisor {
         let row = store
             .connection()
             .query_row(
-                "SELECT e.session_id, e.branch_id, e.status, c.status, c.backend, c.blob_hash, \
+                "SELECT e.session_id, e.branch_id, e.status, e.backend, c.status, c.backend, c.blob_hash, \
                         c.checksum_sha256, c.byte_length, c.metadata_json, b.byte_length, b.media_type \
                  FROM epochs e \
                  JOIN snapshot_components c ON c.epoch_id = e.id \
@@ -752,10 +931,11 @@ impl DirectSupervisor {
                         row.get::<_, String>(4)?,
                         row.get::<_, String>(5)?,
                         row.get::<_, String>(6)?,
-                        row.get::<_, i64>(7)?,
-                        row.get::<_, String>(8)?,
-                        row.get::<_, i64>(9)?,
-                        row.get::<_, String>(10)?,
+                        row.get::<_, String>(7)?,
+                        row.get::<_, i64>(8)?,
+                        row.get::<_, String>(9)?,
+                        row.get::<_, i64>(10)?,
+                        row.get::<_, String>(11)?,
                     ))
                 },
             )
@@ -765,6 +945,7 @@ impl DirectSupervisor {
             session,
             branch,
             epoch_status,
+            epoch_backend,
             component_status,
             backend,
             blob_hash,
@@ -781,6 +962,7 @@ impl DirectSupervisor {
             ));
         };
         if epoch_status != "committed"
+            || epoch_backend != COMPOSITE_BACKEND
             || component_status != "committed"
             || backend != APPLICATION_BACKEND
             || checksum != blob_hash
@@ -799,20 +981,15 @@ impl DirectSupervisor {
                     format!("invalid component metadata: {error}"),
                 )
             })?;
-        if metadata.restore_scope != RestoreScope::ApplicationContextOnly {
+        if metadata.restore_scope != RestoreScope::ApplicationAndWorkspace {
             return Err(failed_rejection(
                 RecoveryCode::MetadataMismatch,
                 "application epoch has an invalid restore scope".to_owned(),
             ));
         }
-        let session_id = SessionId::from_str(&session)
-            .map_err(|error| failed_rejection(RecoveryCode::MetadataMismatch, error.to_string()))?;
-        let branch_id = BranchId::from_str(&branch)
-            .map_err(|error| failed_rejection(RecoveryCode::MetadataMismatch, error.to_string()))?;
-        let component_hash = BlobHash::from_str(&blob_hash)
-            .map_err(|error| failed_rejection(RecoveryCode::MetadataMismatch, error.to_string()))?;
-        let byte_length = u64::try_from(component_length)
-            .map_err(|error| failed_rejection(RecoveryCode::MetadataMismatch, error.to_string()))?;
+        let (session_id, branch_id, component_hash, byte_length) =
+            parse_application_component(&session, &branch, &blob_hash, component_length)?;
+        let (workspace, workspace_source) = load_workspace_component(store.connection(), epoch_id)?;
         Ok(LoadedApplicationEpoch {
             epoch_id,
             session_id,
@@ -827,6 +1004,8 @@ impl DirectSupervisor {
                     boundary_sequence: metadata.boundary_sequence,
                 },
             ),
+            workspace,
+            workspace_source,
         })
     }
 
@@ -834,6 +1013,7 @@ impl DirectSupervisor {
         &self,
         loaded: &LoadedApplicationEpoch,
         context: &ApplicationContext,
+        workspace_target: Option<&Path>,
     ) -> Result<(), RecoveryIssue> {
         let kind = EventKind::new("application.context_restored")
             .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
@@ -853,17 +1033,112 @@ impl DirectSupervisor {
                 status: EventStatus::Succeeded,
                 payload: json!({
                     "epoch_id": loaded.epoch_id,
-                    "restore_scope": RestoreScope::ApplicationContextOnly,
+                    "restore_scope": RestoreScope::ApplicationAndWorkspace,
                     "safe_point_id": context.safe_point_id,
                     "context_revision": context.context_revision,
                     "boundary_sequence": context.cursors.boundary_sequence,
                     "process_restored": false,
-                    "workspace_restored": false,
+                    "workspace_restored": true,
+                    "workspace_source": loaded.workspace_source,
+                    "workspace_target": workspace_target,
                 }),
             })
             .map(|_| ())
             .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))
     }
+}
+
+fn parse_application_component(
+    session: &str,
+    branch: &str,
+    hash: &str,
+    length: i64,
+) -> Result<(SessionId, BranchId, BlobHash, u64), RecoveryRejection> {
+    let invalid = |detail: String| failed_rejection(RecoveryCode::MetadataMismatch, detail);
+    Ok((
+        SessionId::from_str(session).map_err(|error| invalid(error.to_string()))?,
+        BranchId::from_str(branch).map_err(|error| invalid(error.to_string()))?,
+        BlobHash::from_str(hash).map_err(|error| invalid(error.to_string()))?,
+        u64::try_from(length).map_err(|error| invalid(error.to_string()))?,
+    ))
+}
+
+fn load_workspace_component(
+    connection: &Connection,
+    epoch_id: EpochId,
+) -> Result<(WorkspaceSnapshot, PathBuf), RecoveryRejection> {
+    let component_count = connection
+        .query_row(
+            "SELECT COUNT(*) FROM snapshot_components WHERE epoch_id = ?1",
+            [epoch_id.to_string()],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| failed_rejection(RecoveryCode::Persistence, error.to_string()))?;
+    if component_count != 2 {
+        return Err(failed_rejection(
+            RecoveryCode::MetadataMismatch,
+            "composite epoch must contain exactly application and workspace components".to_owned(),
+        ));
+    }
+    let row = connection
+        .query_row(
+            "SELECT c.status, c.backend, c.blob_hash, c.checksum_sha256, c.byte_length, \
+                    c.metadata_json, b.byte_length, b.media_type \
+             FROM snapshot_components c JOIN blobs b ON b.hash = c.blob_hash \
+             WHERE c.epoch_id = ?1 AND c.kind = ?2",
+            params![epoch_id.to_string(), WORKSPACE_COMPONENT_KIND],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, String>(7)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| failed_rejection(RecoveryCode::Persistence, error.to_string()))?
+        .ok_or_else(|| {
+            failed_rejection(
+                RecoveryCode::MetadataMismatch,
+                "composite epoch has no workspace component".to_owned(),
+            )
+        })?;
+    if row.0 != "committed"
+        || row.1 != WORKSPACE_BACKEND
+        || row.2 != row.3
+        || row.4 != row.6
+        || row.7 != MANIFEST_MEDIA_TYPE
+    {
+        return Err(failed_rejection(
+            RecoveryCode::MetadataMismatch,
+            "workspace epoch metadata is inconsistent".to_owned(),
+        ));
+    }
+    let metadata: StoredWorkspaceMetadata = serde_json::from_str(&row.5).map_err(|error| {
+        failed_rejection(
+            RecoveryCode::MetadataMismatch,
+            format!("invalid workspace component metadata: {error}"),
+        )
+    })?;
+    if metadata.schema_version != WORKSPACE_SCHEMA_VERSION
+        || metadata.restore_scope != RestoreScope::ApplicationAndWorkspace
+        || metadata.source.as_os_str().is_empty()
+    {
+        return Err(failed_rejection(
+            RecoveryCode::MetadataMismatch,
+            "workspace epoch component metadata is invalid".to_owned(),
+        ));
+    }
+    let hash = BlobHash::from_str(&row.2)
+        .map_err(|error| failed_rejection(RecoveryCode::MetadataMismatch, error.to_string()))?;
+    let length = u64::try_from(row.4)
+        .map_err(|error| failed_rejection(RecoveryCode::MetadataMismatch, error.to_string()))?;
+    Ok((WorkspaceSnapshot::new(hash, length), metadata.source))
 }
 
 fn ensure_completed_scope(
@@ -893,6 +1168,28 @@ fn ensure_completed_scope(
             RecoveryCode::NotFound,
             "session branch was not found".to_owned(),
         )),
+    }
+}
+
+fn commit_composite_epoch(
+    transaction: &Transaction<'_>,
+    epoch_id: EpochId,
+    timestamp: i64,
+) -> Result<(), RecoveryIssue> {
+    let committed = transaction
+        .execute(
+            "UPDATE epochs SET status = 'committed', committed_at_unix_ms = ?2 \
+             WHERE id = ?1 AND status = 'creating'",
+            params![epoch_id.to_string(), timestamp],
+        )
+        .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
+    if committed == 1 {
+        Ok(())
+    } else {
+        Err(issue(
+            RecoveryCode::Persistence,
+            "composite epoch did not transition atomically to committed".to_owned(),
+        ))
     }
 }
 
@@ -933,6 +1230,47 @@ fn register_component_blob(
         Err(issue(
             RecoveryCode::MetadataMismatch,
             "registered blob metadata conflicts with checkpoint component".to_owned(),
+        ))
+    }
+}
+
+fn register_workspace_blob(
+    transaction: &Transaction<'_>,
+    snapshot: &WorkspaceSnapshot,
+    timestamp: i64,
+) -> Result<(), RecoveryIssue> {
+    let length = i64::try_from(snapshot.manifest_length())
+        .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
+    transaction
+        .execute(
+            "INSERT INTO blobs (hash, byte_length, media_type, created_at_unix_ms) \
+             VALUES (?1, ?2, ?3, ?4) ON CONFLICT(hash) DO NOTHING",
+            params![
+                snapshot.manifest_hash().to_string(),
+                length,
+                MANIFEST_MEDIA_TYPE,
+                timestamp,
+            ],
+        )
+        .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
+    let matches: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM blobs \
+             WHERE hash = ?1 AND byte_length = ?2 AND media_type = ?3)",
+            params![
+                snapshot.manifest_hash().to_string(),
+                length,
+                MANIFEST_MEDIA_TYPE,
+            ],
+            |row| row.get(0),
+        )
+        .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
+    if matches {
+        Ok(())
+    } else {
+        Err(issue(
+            RecoveryCode::MetadataMismatch,
+            "registered blob metadata conflicts with workspace component".to_owned(),
         ))
     }
 }
@@ -1010,6 +1348,46 @@ fn map_diff_error<T>(error: &DiffError) -> RecoveryOutcome<T> {
             RecoveryOutcome::Unsupported(issue)
         }
         DiffErrorKind::InvalidCheckpoint => RecoveryOutcome::Failed(issue),
+    }
+}
+
+fn map_workspace_error<T>(error: &WorkspaceError) -> RecoveryOutcome<T> {
+    use epoch_blob::BlobError;
+
+    let code = match error {
+        WorkspaceError::TargetExists { .. } => RecoveryCode::TargetExists,
+        WorkspaceError::FutureSchema { .. } | WorkspaceError::UnsupportedSchema { .. } => {
+            RecoveryCode::SchemaVersion
+        }
+        WorkspaceError::Blob(BlobError::NotFound(_)) => RecoveryCode::MissingReference,
+        WorkspaceError::Blob(BlobError::HashMismatch { .. })
+        | WorkspaceError::ManifestLengthMismatch { .. }
+        | WorkspaceError::ReferencedBlobLengthMismatch { .. } => RecoveryCode::Integrity,
+        WorkspaceError::NonCanonicalManifest
+        | WorkspaceError::InvalidManifest { .. }
+        | WorkspaceError::UnsafeManifestPath { .. }
+        | WorkspaceError::UnsafeRestoreTarget { .. } => RecoveryCode::NonCanonical,
+        WorkspaceError::InvalidSourceRoot
+        | WorkspaceError::StateRootOverlapsWorkspace
+        | WorkspaceError::InvalidLimits
+        | WorkspaceError::LimitExceeded { .. }
+        | WorkspaceError::SourceChanged { .. } => RecoveryCode::InvalidCapture,
+        WorkspaceError::Unsupported(_) => RecoveryCode::UnsupportedMode,
+        WorkspaceError::FaultInjected { .. }
+        | WorkspaceError::Blob(_)
+        | WorkspaceError::Json(_)
+        | WorkspaceError::Io(_) => RecoveryCode::Storage,
+    };
+    let issue = issue(code, error.to_string());
+    if matches!(
+        error,
+        WorkspaceError::FutureSchema { .. }
+            | WorkspaceError::UnsupportedSchema { .. }
+            | WorkspaceError::Unsupported(_)
+    ) {
+        RecoveryOutcome::Unsupported(issue)
+    } else {
+        RecoveryOutcome::Failed(issue)
     }
 }
 

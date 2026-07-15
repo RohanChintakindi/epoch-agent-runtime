@@ -291,6 +291,7 @@ dependencies = [
  "epoch-proc",
  "epoch-protocol",
  "epoch-storage",
+ "epoch-workspace",
  "nix",
  "rusqlite",
  "serde",

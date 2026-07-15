@@ -27,6 +27,7 @@ impl Fixture {
 
     fn checkpoint(&self, seed: u64) -> ApplicationCheckpointReport {
         let workspace = self.directory.path().join(format!("workspace-{seed}"));
+        fs::create_dir(&workspace).expect("create declared diff workspace");
         let manifest = self.directory.path().join(format!("workload-{seed}.toml"));
         let executable = env!("CARGO_BIN_EXE_epoch-test-agent");
         fs::write(
@@ -35,9 +36,10 @@ impl Fixture {
                 "schema_version = 1\n\
                  name = \"epoch-test-agent\"\n\
                  executable = \"{executable}\"\n\
+                 working_directory = \"{}\"\n\
                  arguments = [\"--seed\", \"{seed}\", \"--scenario\", \"files\", \
-                              \"--workspace\", \"{}\"]\n",
-                workspace.display()
+                              \"--workspace\", \".\"]\n",
+                workspace.display(),
             ),
         )
         .expect("write diff workload");
@@ -67,6 +69,7 @@ fn durable_epoch_diff_handles_identical_and_changed_validated_contexts() {
         panic!("identical diff must be supported")
     };
     assert!(identical.diff.identical);
+    assert!(identical.workspace.identical);
     assert!(identical.diff.changes.is_empty());
 
     let RecoveryOutcome::Supported(changed) =
@@ -127,7 +130,8 @@ fn epoch_diff_refuses_corrupt_missing_and_future_components() {
                 let metadata: String = store
                     .connection()
                     .query_row(
-                        "SELECT metadata_json FROM snapshot_components WHERE epoch_id = ?1",
+                        "SELECT metadata_json FROM snapshot_components \
+                         WHERE epoch_id = ?1 AND kind = 'application_context'",
                         [checkpoint.epoch_id.to_string()],
                         |row| row.get(0),
                     )
@@ -138,7 +142,8 @@ fn epoch_diff_refuses_corrupt_missing_and_future_components() {
                 store
                     .connection()
                     .execute(
-                        "UPDATE snapshot_components SET metadata_json = ?2 WHERE epoch_id = ?1",
+                        "UPDATE snapshot_components SET metadata_json = ?2 \
+                         WHERE epoch_id = ?1 AND kind = 'application_context'",
                         [
                             checkpoint.epoch_id.to_string(),
                             serde_json::to_string(&metadata).expect("encode metadata"),

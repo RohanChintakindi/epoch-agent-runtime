@@ -115,7 +115,13 @@ fn fixture_manifest(fixture: &TempDir, seed: u64) -> (PathBuf, PathBuf) {
     .expect("write workspace text");
     fs::write(
         workspace.join("nested/data.bin"),
-        [0, 1, 2, 0xff, seed as u8],
+        [
+            0,
+            1,
+            2,
+            0xff,
+            u8::try_from(seed).expect("fixture seed fits one byte"),
+        ],
     )
     .expect("write workspace binary");
     symlink("../answer.txt", workspace.join("nested/answer-link"))
@@ -161,12 +167,11 @@ fn run_fixture(fixture: &TempDir, seed: u64) -> (String, String, PathBuf) {
         .output()
         .expect("run fixture");
     let run = successful_json(&run, "run");
-    let identifiers = (
+    (
         run["session_id"].as_str().expect("session ID").to_owned(),
         run["branch_id"].as_str().expect("branch ID").to_owned(),
         workspace,
-    );
-    identifiers
+    )
 }
 
 fn assert_pre_checkpoint_inspection(fixture: &TempDir, session: &str, branch: &str) {

@@ -28,11 +28,24 @@ fn doctor_distinguishes_registered_backends_from_detected_host_tools() {
         "application_context_only"
     );
 
-    for name in [
-        "process_checkpoint",
-        "criu_checkpoint",
-        "workspace_checkpoint",
-    ] {
+    assert_eq!(
+        report["backends"]["workspace_checkpoint"]["status"],
+        "supported"
+    );
+    assert_eq!(
+        report["backends"]["workspace_checkpoint"]["registered"],
+        true
+    );
+    assert_eq!(
+        report["backends"]["workspace_checkpoint"]["backend"],
+        "full-copy-cas-v1"
+    );
+    assert_eq!(
+        report["backends"]["workspace_checkpoint"]["scope"],
+        "workspace_files_without_process_memory"
+    );
+
+    for name in ["process_checkpoint", "criu_checkpoint"] {
         assert_eq!(report["backends"][name]["status"], "unsupported");
         assert_eq!(report["backends"][name]["registered"], false);
         assert!(report["backends"][name]["backend"].is_null());

@@ -344,6 +344,13 @@ impl DirectSupervisor {
         ids: ExecutionIds,
         started: Instant,
     ) -> Result<RunOutcome, ExecutionError> {
+        let working_directory =
+            manifest
+                .working_directory
+                .to_str()
+                .ok_or_else(|| ExecutionError::Internal {
+                    message: "declared workload workspace is not valid UTF-8".to_owned(),
+                })?;
         self.append_event(
             ids,
             started,
@@ -354,6 +361,7 @@ impl DirectSupervisor {
                 "backend": "direct",
                 "workload": manifest.name,
                 "argument_count": manifest.arguments.len(),
+                "working_directory": working_directory,
             }),
         )?;
 

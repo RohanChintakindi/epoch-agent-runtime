@@ -8,9 +8,9 @@ use std::{
     net::{TcpListener, TcpStream},
     path::PathBuf,
     process::Command,
-    thread,
 };
 
+use clap::ValueEnum;
 use epoch_protocol::{
     AgentStart, Completion, CompletionOutcome, ContextUpdate, Envelope, Extensions, Message,
     ModelRequest, ModelResponse, ProtocolError, SafePoint, ToolCall, ToolOutcome, ToolResult,
@@ -23,7 +23,7 @@ use thiserror::Error;
 pub const DEFAULT_MEMORY_BYTES: usize = 64 * 1024;
 pub const MAX_MEMORY_BYTES: usize = 16 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum Scenario {
     Full,
@@ -52,6 +52,7 @@ pub struct WorkloadConfig {
     pub scenario: Scenario,
     pub workspace: PathBuf,
     pub memory_bytes: usize,
+    pub crash_at: Option<CrashPoint>,
 }
 
 impl WorkloadConfig {
@@ -62,6 +63,26 @@ impl WorkloadConfig {
             scenario,
             workspace,
             memory_bytes: DEFAULT_MEMORY_BYTES,
+            crash_at: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum CrashPoint {
+    AfterModel,
+    AfterFirstTool,
+    AfterSafePoint,
+}
+
+impl CrashPoint {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AfterModel => "after_model",
+            Self::AfterFirstTool => "after_first_tool",
+            Self::AfterSafePoint => "after_safe_point",
         }
     }
 }
@@ -116,8 +137,10 @@ pub enum WorkloadError {
     ModelFixture(String),
     #[error("child process exited unsuccessfully with code {0}")]
     ChildFailed(i32),
-    #[error("loopback fixture thread panicked")]
-    NetworkThreadPanicked,
+    #[error("normalized state cannot be encoded: {0}")]
+    StateEncoding(String),
+    #[error("injected crash at {point:?}")]
+    InjectedCrash { point: CrashPoint },
 }
 
 /// Execute a deterministic workload and write its agent boundary history to `output`.
@@ -172,6 +195,7 @@ pub fn run_workload(
         output_hash: state.model_response_hash.clone(),
         extensions: Extensions::new(),
     }))?;
+    maybe_crash(config, CrashPoint::AfterModel)?;
 
     if runs_files(config.scenario) {
         run_file_tools(config, &mut random, &mut state, &mut emitter)?;
@@ -209,6 +233,7 @@ pub fn run_workload(
         context_hash: state_hash.clone(),
         extensions: Extensions::new(),
     }))?;
+    maybe_crash(config, CrashPoint::AfterSafePoint)?;
     emitter.emit(Message::Completion(Completion {
         outcome: CompletionOutcome::Succeeded,
         output_hash: Some(state_hash.clone()),
@@ -274,6 +299,7 @@ fn run_file_tools<W: Write>(
         output_hash: Some(initial_hash),
         extensions: Extensions::new(),
     }))?;
+    maybe_crash_after_tool(config, state)?;
 
     let mutation = format!("mutation={:016x}\n", random.next_u64());
     emitter.emit(Message::ToolCall(ToolCall {
@@ -298,6 +324,7 @@ fn run_file_tools<W: Write>(
         output_hash: Some(final_hash),
         extensions: Extensions::new(),
     }))?;
+    maybe_crash_after_tool(config, state)?;
     Ok(())
 }
 
@@ -328,6 +355,7 @@ fn run_memory_tool<W: Write>(
         output_hash: Some(content_hash),
         extensions: Extensions::new(),
     }))?;
+    maybe_crash_after_tool(config, state)?;
     Ok(buffer)
 }
 
@@ -365,6 +393,7 @@ fn run_child_tool<W: Write>(
         output_hash: Some(output_hash),
         extensions: Extensions::new(),
     }))?;
+    maybe_crash_after_tool(config, state)?;
     Ok(())
 }
 
@@ -396,41 +425,51 @@ fn run_network_tool<W: Write>(
         output_hash: Some(response_hash),
         extensions: Extensions::new(),
     }))?;
+    maybe_crash_after_tool(config, state)?;
+    Ok(())
+}
+
+fn maybe_crash_after_tool(
+    config: &WorkloadConfig,
+    state: &NormalizedState,
+) -> Result<(), WorkloadError> {
+    if state.completed_tools.len() == 1 {
+        maybe_crash(config, CrashPoint::AfterFirstTool)?;
+    }
+    Ok(())
+}
+
+fn maybe_crash(config: &WorkloadConfig, point: CrashPoint) -> Result<(), WorkloadError> {
+    if config.crash_at == Some(point) {
+        return Err(WorkloadError::InjectedCrash { point });
+    }
     Ok(())
 }
 
 fn loopback_exchange(request: &[u8], response: &[u8]) -> Result<Vec<u8>, WorkloadError> {
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
     let address = listener.local_addr()?;
-    let expected_request = request.to_vec();
-    let fixed_response = response.to_vec();
-    let worker = thread::spawn(move || -> std::io::Result<()> {
-        let (mut connection, _) = listener.accept()?;
-        let mut received = vec![0_u8; expected_request.len()];
-        connection.read_exact(&mut received)?;
-        if received != expected_request {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "loopback request differed from fixture",
-            ));
-        }
-        connection.write_all(&fixed_response)?;
-        Ok(())
-    });
-
     let mut client = TcpStream::connect(address)?;
+    let (mut server, _) = listener.accept()?;
     client.write_all(request)?;
+    let mut received = vec![0_u8; request.len()];
+    server.read_exact(&mut received)?;
+    if received != request {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "loopback request differed from fixture",
+        )
+        .into());
+    }
+    server.write_all(response)?;
     let mut observed = vec![0_u8; response.len()];
     client.read_exact(&mut observed)?;
-    worker
-        .join()
-        .map_err(|_| WorkloadError::NetworkThreadPanicked)??;
     Ok(observed)
 }
 
 fn normalized_state_hash(state: &NormalizedState) -> Result<String, WorkloadError> {
     let encoded = serde_json::to_vec(state)
-        .map_err(|error| WorkloadError::ModelFixture(error.to_string()))?;
+        .map_err(|error| WorkloadError::StateEncoding(error.to_string()))?;
     Ok(sha256(&encoded))
 }
 

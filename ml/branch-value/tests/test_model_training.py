@@ -155,6 +155,28 @@ def test_evaluation_recomputes_and_exactly_validates_the_persisted_split(tmp_pat
         evaluate_model(records, model_dir, split="test")
 
 
+def test_model_metadata_is_strict_and_its_split_config_must_match_split_manifest(tmp_path):
+    records = generate_records(task_groups=8, branches_per_group=2, seed=51)
+    model_dir = tmp_path / "model"
+    train_model(records, model_dir, TrainConfig(seed=4, epochs=1, batch_size=4, hidden_size=8))
+    model_path = model_dir / "model.json"
+    manifest_path = model_dir / "manifest.json"
+    original = json.loads(model_path.read_text(encoding="utf-8"))
+
+    unexpected = {**original, "unexpected": True}
+    model_path.write_text(json.dumps(unexpected), encoding="utf-8")
+    refresh_manifest_hash(manifest_path, model_path)
+    with pytest.raises(ValueError, match="artifact"):
+        score_model(records, model_dir)
+
+    mismatched = json.loads(json.dumps(original))
+    mismatched["training"]["split"]["seed"] += 1
+    model_path.write_text(json.dumps(mismatched), encoding="utf-8")
+    refresh_manifest_hash(manifest_path, model_path)
+    with pytest.raises(ValueError, match="split"):
+        score_model(records, model_dir)
+
+
 @pytest.mark.parametrize("artifact", ["model.pt", "model.json", "split.json", "manifest.json"])
 def test_model_loading_normalizes_empty_truncated_oversized_and_nonregular_artifacts(
     tmp_path, artifact

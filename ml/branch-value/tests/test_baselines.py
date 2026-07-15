@@ -4,6 +4,7 @@ import stat
 import pytest
 
 from epoch_branch_value.baselines import (
+    Prediction,
     constant_baseline,
     heuristic_baseline,
     random_baseline,
@@ -55,6 +56,8 @@ def test_predictions_are_strict_bounded_score_only_records_and_private_no_clobbe
         assert 0.0 <= prediction.value_score <= 1.0
     with pytest.raises(ValueError, match="already exists"):
         write_predictions_jsonl(output, predictions)
+    with pytest.raises(ValueError, match="lowercase hexadecimal"):
+        Prediction("z" * 64, 0.5, 0.5, "sequence_encoder_v1")
 
 
 def test_evaluation_metrics_require_labelled_records_and_are_finite():

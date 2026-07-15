@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .schema import TrajectoryRecord
+from .schema import OPAQUE_ID_PATTERN, TrajectoryRecord
 
 SCORE_SOURCES = frozenset({"sequence_encoder_v1", "random_v1", "heuristic_v1", "constant_train_v1"})
 
@@ -24,8 +24,11 @@ class Prediction:
     source: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.trajectory_id, str) or len(self.trajectory_id) != 64:
-            raise ValueError("prediction trajectory_id must be an opaque 64-character ID")
+        if (
+            not isinstance(self.trajectory_id, str)
+            or OPAQUE_ID_PATTERN.fullmatch(self.trajectory_id) is None
+        ):
+            raise ValueError("prediction trajectory_id must be 64 lowercase hexadecimal characters")
         for name, value in (
             ("success_probability", self.success_probability),
             ("value_score", self.value_score),

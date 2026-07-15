@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Tuple
 import torch
 from torch import nn
 
-from .baselines import constant_baseline, heuristic_baseline, random_baseline
+from .baselines import Prediction, constant_baseline, heuristic_baseline, random_baseline
 from .metrics import Metrics, evaluate_predictions
 from .model import MODEL_SOURCE, BranchValueModel, Vocabulary, collate_records, predict
 from .schema import TrajectoryRecord, canonical_records, labelled_records
@@ -57,13 +57,30 @@ class TrainConfig:
     def validate(self) -> None:
         if isinstance(self.seed, bool) or not isinstance(self.seed, int) or self.seed < 0:
             raise ValueError("training seed must be a nonnegative integer")
-        if not 1 <= self.epochs <= 1_000:
+        if (
+            isinstance(self.epochs, bool)
+            or not isinstance(self.epochs, int)
+            or not 1 <= self.epochs <= 1_000
+        ):
             raise ValueError("epochs must be between 1 and 1000")
-        if not 1 <= self.batch_size <= 4_096:
+        if (
+            isinstance(self.batch_size, bool)
+            or not isinstance(self.batch_size, int)
+            or not 1 <= self.batch_size <= 4_096
+        ):
             raise ValueError("batch_size must be between 1 and 4096")
-        if not math.isfinite(self.learning_rate) or not 0.0 < self.learning_rate <= 1.0:
+        if (
+            isinstance(self.learning_rate, bool)
+            or not isinstance(self.learning_rate, (int, float))
+            or not math.isfinite(self.learning_rate)
+            or not 0.0 < self.learning_rate <= 1.0
+        ):
             raise ValueError("learning_rate must be finite and in (0, 1]")
-        if not 4 <= self.hidden_size <= 512:
+        if (
+            isinstance(self.hidden_size, bool)
+            or not isinstance(self.hidden_size, int)
+            or not 4 <= self.hidden_size <= 512
+        ):
             raise ValueError("hidden_size must be between 4 and 512")
         if self.encoder != "gru":
             raise ValueError("the first experiment registers only the GRU encoder")
@@ -79,6 +96,38 @@ class TrainConfig:
             "encoder": self.encoder,
             "split": self.split.as_dict(),
         }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> TrainConfig:
+        if not isinstance(value, dict) or set(value) != {
+            "seed",
+            "epochs",
+            "batch_size",
+            "learning_rate",
+            "hidden_size",
+            "encoder",
+            "split",
+        }:
+            raise ArtifactValidationError("artifact training metadata fields are invalid")
+        raw_split = value["split"]
+        if not isinstance(raw_split, dict):
+            raise ArtifactValidationError("artifact training split config is invalid")
+        try:
+            config = cls(
+                seed=value["seed"],
+                epochs=value["epochs"],
+                batch_size=value["batch_size"],
+                learning_rate=value["learning_rate"],
+                hidden_size=value["hidden_size"],
+                encoder=value["encoder"],
+                split=SplitConfig.from_dict(raw_split),
+            )
+            config.validate()
+        except (TypeError, ValueError) as error:
+            raise ArtifactValidationError("artifact training metadata is invalid") from error
+        if config.as_dict() != value:
+            raise ArtifactValidationError("artifact training metadata is not canonical")
+        return config
 
 
 @dataclass(frozen=True)
@@ -276,7 +325,9 @@ def evaluate_model(
     )
 
 
-def score_model(records: Sequence[TrajectoryRecord], model_dir: os.PathLike[str]) -> List[Any]:
+def score_model(
+    records: Sequence[TrajectoryRecord], model_dir: os.PathLike[str]
+) -> List[Prediction]:
     """Score labelled or unlabelled records without consulting labels or the training split."""
 
     if not records:
@@ -351,6 +402,30 @@ def _load_model(model_dir: os.PathLike[str]) -> LoadedModel:
         split_document.get("dataset_sha256")
     ):
         raise ArtifactValidationError("artifact split.json contract is invalid")
+    training_config = _training_config(metadata)
+    raw_split = split_document.get("split")
+    if not isinstance(raw_split, dict) or set(raw_split) != {
+        "schema_version",
+        "unit",
+        "config",
+        "group_assignment",
+        "assignment",
+    }:
+        raise ArtifactValidationError("artifact split manifest fields are invalid")
+    if raw_split.get("schema_version") != 1 or raw_split.get("unit") != "task_group_id":
+        raise ArtifactValidationError("artifact split manifest contract is invalid")
+    raw_split_config = raw_split.get("config")
+    if not isinstance(raw_split_config, dict):
+        raise ArtifactValidationError("artifact split manifest config is invalid")
+    try:
+        persisted_split_config = SplitConfig.from_dict(raw_split_config)
+    except ValueError as error:
+        raise ArtifactValidationError("artifact split manifest config is invalid") from error
+    if persisted_split_config.as_dict() != training_config.split.as_dict():
+        raise ArtifactValidationError(
+            "artifact training split config does not match split manifest"
+        )
+    _validate_split_mapping_shape(raw_split)
     vocabulary_raw = metadata.get("vocabulary")
     if not isinstance(vocabulary_raw, dict):
         raise ArtifactValidationError("artifact model vocabulary is invalid")
@@ -375,7 +450,6 @@ def _load_model(model_dir: os.PathLike[str]) -> LoadedModel:
         or parameter_count != model.parameter_count()
     ):
         raise ArtifactValidationError("artifact model parameter count is invalid")
-    _training_seed(metadata)
     _constant_values(metadata)
     return LoadedModel(model, vocabulary, metadata, split_document)
 
@@ -416,21 +490,30 @@ def _load_verified_bundle(root: Path) -> Dict[str, bytes]:
 
 
 def _read_bounded_regular(path: Path, maximum: int) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
-        metadata = path.lstat()
+        descriptor = os.open(path, flags)
     except OSError as error:
         raise ArtifactValidationError(f"artifact {path.name} is unavailable") from error
-    if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
-        raise ArtifactValidationError(f"artifact {path.name} must be a regular file")
-    if not 1 <= metadata.st_size <= maximum:
-        raise ArtifactValidationError(f"artifact {path.name} is empty or exceeds its size bound")
     try:
-        payload = path.read_bytes()
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ArtifactValidationError(f"artifact {path.name} must be a regular file")
+        if not 1 <= metadata.st_size <= maximum:
+            raise ArtifactValidationError(
+                f"artifact {path.name} is empty or exceeds its size bound"
+            )
+        with os.fdopen(descriptor, "rb") as source:
+            descriptor = -1
+            payload = source.read(maximum + 1)
+        if len(payload) != metadata.st_size or len(payload) > maximum:
+            raise ArtifactValidationError(f"artifact {path.name} changed while being read")
+        return payload
     except OSError as error:
         raise ArtifactValidationError(f"artifact {path.name} cannot be read") from error
-    if len(payload) != metadata.st_size:
-        raise ArtifactValidationError(f"artifact {path.name} changed while being read")
-    return payload
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def _publish_bundle(output: Path, payloads: Mapping[str, bytes]) -> None:
@@ -457,10 +540,12 @@ def _publish_bundle(output: Path, payloads: Mapping[str, bytes]) -> None:
         if len(manifest) > MAX_MANIFEST_BYTES:
             raise ValueError("artifact manifest exceeds its size bound")
         _write_private_new(stage / "manifest.json", manifest)
+        _fsync_directory(stage)
         if output.exists():
             raise ValueError("output directory already exists; refusing to clobber model artifacts")
         os.rename(stage, output)
         published = True
+        _fsync_directory(output.parent)
     finally:
         if not published:
             shutil.rmtree(stage, ignore_errors=True)
@@ -494,14 +579,33 @@ def _decode_object(name: str, payload: bytes) -> Dict[str, Any]:
     return value
 
 
-def _training_seed(metadata: Mapping[str, Any]) -> int:
+def _training_config(metadata: Mapping[str, Any]) -> TrainConfig:
     training = metadata.get("training")
     if not isinstance(training, dict):
         raise ArtifactValidationError("artifact training metadata is invalid")
-    seed = training.get("seed")
-    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
-        raise ArtifactValidationError("artifact training seed is invalid")
-    return seed
+    return TrainConfig.from_dict(training)
+
+
+def _training_seed(metadata: Mapping[str, Any]) -> int:
+    return _training_config(metadata).seed
+
+
+def _validate_split_mapping_shape(raw_split: Mapping[str, Any]) -> None:
+    for name in ("group_assignment", "assignment"):
+        mapping = raw_split.get(name)
+        if not isinstance(mapping, dict) or not mapping:
+            raise ArtifactValidationError(f"artifact split {name} is invalid")
+        for identifier, split_name in mapping.items():
+            if not _is_sha256(identifier) or split_name not in {"train", "validation", "test"}:
+                raise ArtifactValidationError(f"artifact split {name} is invalid")
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _constant_values(metadata: Mapping[str, Any]) -> Tuple[float, float]:

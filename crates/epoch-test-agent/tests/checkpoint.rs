@@ -36,3 +36,18 @@ fn completed_w02_run_resumes_from_its_observable_safe_point_cursors() {
     assert_eq!(restored.cursors, context.cursors);
     assert_eq!(restored.safe_point_id, context.safe_point_id);
 }
+
+#[test]
+fn serialized_w02_summary_carries_the_raw_cooperative_checkpoint_context() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let config = WorkloadConfig::new(17, Scenario::Files, temp.path().join("workspace"));
+    let mut trace = Vec::new();
+    let summary = run_workload(&config, &mut trace).expect("run deterministic workload");
+
+    let encoded = serde_json::to_value(&summary).expect("serialize run summary");
+    assert_eq!(
+        encoded["checkpoint_context"],
+        serde_json::to_value(summary.to_application_context().expect("checkpoint context"))
+            .expect("serialize checkpoint context")
+    );
+}

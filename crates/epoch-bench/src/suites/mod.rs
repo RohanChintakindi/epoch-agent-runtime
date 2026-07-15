@@ -655,7 +655,12 @@ pub fn run_suite(
     let faults = matches!(request.suite, SuiteName::Faults | SuiteName::All)
         .then(|| run_fault_matrix(&request.checkpoint.root.join("faults")))
         .transpose()?;
-    let decisions = decisions(checkpoint.as_ref(), cow.as_ref(), &request.thresholds);
+    let decisions = decisions(
+        checkpoint.as_ref(),
+        cow.as_ref(),
+        faults.as_ref(),
+        &request.thresholds,
+    );
     Ok(EvidenceBundle {
         schema_version: 1,
         run_id: format!("bench-{}", Uuid::new_v4()),
@@ -673,6 +678,7 @@ pub fn run_suite(
 fn decisions(
     checkpoint: Option<&CheckpointSuiteEvidence>,
     cow: Option<&CowEvidence>,
+    faults: Option<&FaultMatrix>,
     thresholds: &DecisionThresholds,
 ) -> Vec<DecisionEvidence> {
     let checkpoint_measurement = checkpoint.map(checkpoint_decision_measurement);
@@ -743,17 +749,62 @@ fn decisions(
             ),
             evidence: cow_evidence,
         },
+        effect_decision(faults),
         DecisionEvidence {
             mechanism: "transparent external exactly-once through rollback".to_owned(),
             decision: Decision::Kill,
             threshold: "requires a downstream idempotency/reconciliation API and crash evidence"
                 .to_owned(),
             evidence: vec![
-                "no external effect gateway API is present in this benchmark base".to_owned(),
-                "symbolic stages are reported unsupported, never exactly-once".to_owned(),
+                "the integrated gateway proves durable local duplicate suppression, not a live provider's commit semantics".to_owned(),
+                "live provider reconciliation remains an explicit unsupported matrix row".to_owned(),
             ],
         },
     ]
+}
+
+fn effect_decision(faults: Option<&FaultMatrix>) -> DecisionEvidence {
+    const REQUIRED_STAGES: [&str; 4] = [
+        "effect_replay_100_runs",
+        "effect_unknown_suspends_branch",
+        "capability_revocation_resurrection_blocked",
+        "capability_policy_rollback_blocked",
+    ];
+    let keep = faults.is_some_and(|matrix| {
+        REQUIRED_STAGES.into_iter().all(|stage| {
+            matrix
+                .rows
+                .iter()
+                .find(|row| row.stage == stage)
+                .is_some_and(|row| {
+                    row.evidence_kind == EvidenceKind::Actual
+                        && matches!(row.outcome, SampleOutcome::Succeeded)
+                        && row.containment_verified
+                })
+        })
+    });
+    let evidence = faults.map_or_else(
+        || vec!["fault suite was not requested".to_owned()],
+        |matrix| {
+            REQUIRED_STAGES
+                .iter()
+                .map(|stage| {
+                    let status = matrix
+                        .rows
+                        .iter()
+                        .find(|row| row.stage == *stage)
+                        .map_or("missing", |row| row.outcome.label());
+                    format!("{stage}={status}")
+                })
+                .collect()
+        },
+    );
+    DecisionEvidence {
+        mechanism: "durable effect gateway replay and fail-closed authority".to_owned(),
+        decision: if keep { Decision::Keep } else { Decision::Narrow },
+        threshold: "100 stable replays cause one deterministic dispatch; unknown outcomes suspend; revoked/stale authority stays denied".to_owned(),
+        evidence,
+    }
 }
 
 struct CheckpointDecisionMeasurement {

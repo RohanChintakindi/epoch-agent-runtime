@@ -824,6 +824,17 @@ impl EffectGateway {
             now,
             &detail,
         )?;
+        let suspended = transaction.execute(
+            "UPDATE branches SET state = 'suspended', updated_at_unix_ms = ?2 \
+             WHERE id = (SELECT branch_id FROM effect_intents WHERE id = ?1) \
+               AND state IN ('created', 'running', 'suspended', 'completed')",
+            params![effect_id.to_string(), now],
+        )?;
+        if suspended != 1 {
+            return Err(GatewayError::InvalidStoredValue {
+                field: "effect_intents.branch_id",
+            });
+        }
         transaction.commit()?;
         Ok(())
     }

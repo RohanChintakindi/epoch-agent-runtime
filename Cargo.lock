@@ -181,8 +181,13 @@ name = "epoch-bench"
 version = "0.1.0"
 dependencies = [
  "epoch-blob",
+ "epoch-capabilities",
  "epoch-checkpoint",
+ "epoch-core",
+ "epoch-effects",
+ "epoch-storage",
  "epoch-workspace",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

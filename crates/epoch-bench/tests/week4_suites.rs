@@ -158,9 +158,15 @@ fn fault_matrix_runs_effect_replay_unknown_and_authority_resurrection_campaigns(
         .iter()
         .find(|row| row.stage == "effect_replay_100_runs")
         .expect("replay campaign");
-    assert_eq!(replay.evidence.get("attempts").map(String::as_str), Some("100"));
     assert_eq!(
-        replay.evidence.get("downstream_dispatches").map(String::as_str),
+        replay.evidence.get("attempts").map(String::as_str),
+        Some("100")
+    );
+    assert_eq!(
+        replay
+            .evidence
+            .get("downstream_dispatches")
+            .map(String::as_str),
         Some("1")
     );
     assert!(
@@ -245,5 +251,23 @@ fn all_suite_emits_stable_json_csv_and_threshold_backed_decisions() {
         keep.evidence
             .iter()
             .any(|fact| fact.starts_with("restore_p95_ns="))
+    );
+    let effect = report
+        .decisions
+        .iter()
+        .find(|item| item.mechanism.contains("durable effect gateway"))
+        .expect("effect gateway decision");
+    assert_eq!(effect.decision, Decision::Keep);
+    assert!(
+        effect
+            .evidence
+            .iter()
+            .any(|fact| fact == "effect_replay_100_runs=succeeded")
+    );
+    assert!(
+        !report
+            .to_json()
+            .unwrap()
+            .contains("no external effect gateway API")
     );
 }

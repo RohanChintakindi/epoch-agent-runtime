@@ -6,7 +6,15 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+epoch-blob.workspace = true
+epoch-core.workspace = true
+epoch-events = { path = "../epoch-events" }
+epoch-protocol = { path = "../epoch-protocol" }
+epoch-storage.workspace = true
+nix.workspace = true
+rusqlite.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 

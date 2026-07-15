@@ -198,13 +198,11 @@ fn demo_runs_real_composite_recovery_flow_and_reports_only_current_gaps() {
     );
     assert!(phase(&report, "restore_baseline")["evidence"]["workspace_target"].is_string());
     assert_eq!(
-        phase(&report, "status_after_restore")["evidence"]
-            ["original_workspace_change_preserved"],
+        phase(&report, "status_after_restore")["evidence"]["original_workspace_change_preserved"],
         true
     );
     assert_eq!(
-        phase(&report, "status_after_restore")["evidence"]
-            ["restored_workspace_matches_checkpoint"],
+        phase(&report, "status_after_restore")["evidence"]["restored_workspace_matches_checkpoint"],
         true
     );
     assert_eq!(

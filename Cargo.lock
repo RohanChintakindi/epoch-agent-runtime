@@ -223,6 +223,7 @@ dependencies = [
 name = "epoch-test-agent"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "epoch-protocol",
  "serde",
  "serde_json",

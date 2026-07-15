@@ -6,6 +6,7 @@ members = [
     "crates/epoch-events",
     "crates/epoch-protocol",
     "crates/epoch-storage",
+    "crates/epoch-test-agent",
 ]
 resolver = "2"
 

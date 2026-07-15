@@ -233,6 +233,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-test-agent"
+version = "0.1.0"
+dependencies = [
+ "epoch-protocol",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "errno"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"

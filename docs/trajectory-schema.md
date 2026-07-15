@@ -14,9 +14,10 @@ Event kinds use a finite taxonomy. Known runtime events retain their registered 
 unknown or dynamically named event becomes `other`. This prevents an arbitrary normalized string
 from becoming a covert secret channel or being persisted in the learned vocabulary.
 
-The feature timeline excludes terminal outcome events (`agent.completion`, `process.exited`, and
-`supervisor.failure`) and never includes the terminal branch state. Labels are derived separately
-from trusted terminal state, so changing only a label cannot change the model input.
+The feature timeline stops before the first terminal outcome event (`agent.completion`,
+`process.exited`, or `supervisor.failure`) and never includes that event, anything after it, or the
+terminal branch state. Labels are derived separately from trusted terminal state, so changing only
+a label cannot change the model input.
 
 ## Record contract
 

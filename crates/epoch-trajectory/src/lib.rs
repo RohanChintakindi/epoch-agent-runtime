@@ -349,7 +349,7 @@ fn read_events(
             field: "monotonic_ns",
         })?;
         if is_terminal_outcome_kind(&row.3) {
-            continue;
+            break;
         }
         let delta_monotonic_ns = match previous_monotonic_ns {
             None => 0,

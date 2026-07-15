@@ -44,7 +44,7 @@ fn fixture() -> Fixture {
         .execute(
             "INSERT INTO branches
              (id, session_id, state, next_event_sequence, created_at_unix_ms, updated_at_unix_ms)
-             VALUES (?1, ?2, 'completed', 3, 1000, 2000)",
+             VALUES (?1, ?2, 'completed', 4, 1000, 2000)",
             params![root.to_string(), session.to_string()],
         )
         .expect("insert root branch");
@@ -124,6 +124,7 @@ fn fixture() -> Fixture {
         "succeeded",
         30,
     );
+    insert_event(connection, session, root, 3, "tool.call", "started", 40);
     for (branch, status, offset) in [
         (successful, "succeeded", 100_u64),
         (failed, "failed", 200_u64),

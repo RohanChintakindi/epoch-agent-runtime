@@ -18,10 +18,7 @@ fn doctor_distinguishes_registered_backends_from_detected_host_tools() {
         report["backends"]["direct_execution"]["status"],
         "supported"
     );
-    assert_eq!(
-        report["backends"]["direct_execution"]["registered"],
-        true
-    );
+    assert_eq!(report["backends"]["direct_execution"]["registered"], true);
     assert_eq!(
         report["backends"]["application_checkpoint"]["status"],
         "supported"

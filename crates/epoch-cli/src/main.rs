@@ -183,6 +183,7 @@ struct HostCapabilities {
     os: &'static str,
     architecture: &'static str,
     control_plane: Support,
+    backends: BackendCapabilities,
     linux_execution: Support,
     procfs: Support,
     cgroup_v2: Support,
@@ -192,6 +193,33 @@ struct HostCapabilities {
     strace: Option<PathBuf>,
     perf: Option<PathBuf>,
     unshare: Option<PathBuf>,
+}
+
+#[derive(Debug, Serialize)]
+struct BackendCapabilities {
+    direct_execution: BackendCapability,
+    application_checkpoint: BackendCapability,
+    process_checkpoint: BackendCapability,
+    criu_checkpoint: BackendCapability,
+    workspace_checkpoint: BackendCapability,
+}
+
+#[derive(Debug, Serialize)]
+struct BackendCapability {
+    status: BackendStatus,
+    registered: bool,
+    backend: Option<&'static str>,
+    scope: &'static str,
+    reason: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dependency_detected: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum BackendStatus {
+    Supported,
+    Unsupported,
 }
 
 #[derive(Debug, Serialize)]
@@ -238,13 +266,24 @@ impl std::fmt::Display for Support {
     }
 }
 
+impl std::fmt::Display for BackendStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Supported => formatter.write_str("supported"),
+            Self::Unsupported => formatter.write_str("unsupported"),
+        }
+    }
+}
+
 impl HostCapabilities {
     fn detect() -> Self {
         let linux = cfg!(target_os = "linux");
+        let criu = find_in_path("criu");
         Self {
             os: env::consts::OS,
             architecture: env::consts::ARCH,
             control_plane: Support::Available,
+            backends: BackendCapabilities::detect(criu.is_some()),
             linux_execution: linux.into(),
             procfs: (linux && std::path::Path::new("/proc/self/status").is_file()).into(),
             cgroup_v2: (linux
@@ -252,10 +291,57 @@ impl HostCapabilities {
             .into(),
             overlayfs: (linux && filesystem_lists("overlay", "/proc/filesystems")).into(),
             kvm: (linux && std::path::Path::new("/dev/kvm").exists()).into(),
-            criu: find_in_path("criu"),
+            criu,
             strace: find_in_path("strace"),
             perf: find_in_path("perf"),
             unshare: find_in_path("unshare"),
+        }
+    }
+}
+
+impl BackendCapabilities {
+    const fn detect(criu_dependency_detected: bool) -> Self {
+        Self {
+            direct_execution: BackendCapability {
+                status: BackendStatus::Supported,
+                registered: true,
+                backend: Some("direct-process-v1"),
+                scope: "process_lifecycle",
+                reason: "the direct process supervisor is compiled and registered",
+                dependency_detected: None,
+            },
+            application_checkpoint: BackendCapability {
+                status: BackendStatus::Supported,
+                registered: true,
+                backend: Some("cooperative-w02-v1"),
+                scope: "application_context_only",
+                reason: "the cooperative W02 application checkpoint backend is registered",
+                dependency_detected: None,
+            },
+            process_checkpoint: BackendCapability {
+                status: BackendStatus::Unsupported,
+                registered: false,
+                backend: None,
+                scope: "process_memory",
+                reason: "no process checkpoint backend is registered",
+                dependency_detected: None,
+            },
+            criu_checkpoint: BackendCapability {
+                status: BackendStatus::Unsupported,
+                registered: false,
+                backend: None,
+                scope: "process_tree",
+                reason: "CRIU integration is not registered; tool presence alone is insufficient",
+                dependency_detected: Some(criu_dependency_detected),
+            },
+            workspace_checkpoint: BackendCapability {
+                status: BackendStatus::Unsupported,
+                registered: false,
+                backend: None,
+                scope: "workspace_files",
+                reason: "no workspace snapshot backend is registered",
+                dependency_detected: None,
+            },
         }
     }
 }
@@ -314,6 +400,26 @@ fn execute(command: Command) -> ExitCode {
                 println!("Epoch host diagnostics");
                 println!("  host: {}/{}", capabilities.os, capabilities.architecture);
                 println!("  control plane: {}", capabilities.control_plane);
+                println!(
+                    "  direct execution backend: {}",
+                    capabilities.backends.direct_execution.status
+                );
+                println!(
+                    "  application checkpoint backend: {}",
+                    capabilities.backends.application_checkpoint.status
+                );
+                println!(
+                    "  process checkpoint backend: {}",
+                    capabilities.backends.process_checkpoint.status
+                );
+                println!(
+                    "  CRIU checkpoint backend: {}",
+                    capabilities.backends.criu_checkpoint.status
+                );
+                println!(
+                    "  workspace checkpoint backend: {}",
+                    capabilities.backends.workspace_checkpoint.status
+                );
                 println!("  Linux execution: {}", capabilities.linux_execution);
                 println!("  procfs: {}", capabilities.procfs);
                 println!("  cgroup v2: {}", capabilities.cgroup_v2);

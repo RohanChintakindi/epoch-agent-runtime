@@ -1,0 +1,1018 @@
+{
+  "schema_version": 1,
+  "run_id": "bench-da1681b5-799e-40ac-afdb-dfa37e94328c",
+  "suite": "all",
+  "environment": {
+    "code_revision": "463e130b628bd641cdf4be6dd516f4ef0a4fd75f",
+    "code_dirty": false,
+    "os": "linux",
+    "architecture": "aarch64",
+    "kernel_release": "6.17.0-1018-oracle",
+    "cpu_model": "Neoverse-N1",
+    "cpu_count": 2,
+    "total_memory_bytes": 12506804224,
+    "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+    "extra": {
+      "collector": "epoch-bench-v1",
+      "repository": "/home/ubuntu/epoch-week4-bench-56fcdf8"
+    }
+  },
+  "thresholds": {
+    "checkpoint_capture_p95_ns": 2000000000,
+    "checkpoint_restore_p95_ns": 2000000000,
+    "checkpoint_validation_failures": 0,
+    "cow_pss_ratio_basis_points": 7500
+  },
+  "checkpoint": {
+    "reports": [
+      {
+        "schema_version": 1,
+        "config": {
+          "suite": "application_workspace_checkpoint",
+          "backend": "cooperative-v1+full-copy-cas-v1",
+          "trace_mode": "off",
+          "seed": 24301,
+          "warmups": 2,
+          "repetitions": 10
+        },
+        "environment": {
+          "code_revision": "463e130b628bd641cdf4be6dd516f4ef0a4fd75f",
+          "code_dirty": false,
+          "os": "linux",
+          "architecture": "aarch64",
+          "kernel_release": "6.17.0-1018-oracle",
+          "cpu_model": "Neoverse-N1",
+          "cpu_count": 2,
+          "total_memory_bytes": 12506804224,
+          "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+          "extra": {
+            "collector": "epoch-bench-v1",
+            "repository": "/home/ubuntu/epoch-week4-bench-56fcdf8"
+          }
+        },
+        "samples": [
+          {
+            "ordinal": 0,
+            "seed": 6727192872932819891,
+            "elapsed_ns": 637842478,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 24977435.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 176641.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 456859155.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 127244149.0,
+              "workspace_validation_ns": 28561297.0
+            }
+          },
+          {
+            "ordinal": 1,
+            "seed": 8129731167615341197,
+            "elapsed_ns": 798438595,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 24553393.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 157761.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 517288569.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 228889780.0,
+              "workspace_validation_ns": 27525491.0
+            }
+          },
+          {
+            "ordinal": 2,
+            "seed": 860951788085400693,
+            "elapsed_ns": 651587763,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051902,
+            "bytes_written": 1051902,
+            "metrics": {
+              "application_capture_ns": 28105734.0,
+              "application_checkpoint_bytes": 398.0,
+              "application_restore_ns": 156560.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 473234377.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 115735798.0,
+              "workspace_validation_ns": 34331253.0
+            }
+          },
+          {
+            "ordinal": 3,
+            "seed": 6825197725885693130,
+            "elapsed_ns": 627119251,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 26701966.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 155561.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 453212372.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 118191853.0,
+              "workspace_validation_ns": 28832619.0
+            }
+          },
+          {
+            "ordinal": 4,
+            "seed": 2984990394097172368,
+            "elapsed_ns": 684440647,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 25599559.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 151561.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 495704195.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 133074786.0,
+              "workspace_validation_ns": 29885946.0
+            }
+          },
+          {
+            "ordinal": 5,
+            "seed": 1335781936353846705,
+            "elapsed_ns": 645956208,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 22878382.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 147761.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 464047279.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 127936154.0,
+              "workspace_validation_ns": 30924872.0
+            }
+          },
+          {
+            "ordinal": 6,
+            "seed": 15754294878416903795,
+            "elapsed_ns": 672690094,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 25641199.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 182561.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 491092127.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 128866800.0,
+              "workspace_validation_ns": 26884367.0
+            }
+          },
+          {
+            "ordinal": 7,
+            "seed": 4526273042308876071,
+            "elapsed_ns": 711477815,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 46179167.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 157481.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 513431666.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 122858282.0,
+              "workspace_validation_ns": 28825099.0
+            }
+          },
+          {
+            "ordinal": 8,
+            "seed": 6387777158891554393,
+            "elapsed_ns": 676890240,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 25612439.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 149081.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 493192740.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 123477046.0,
+              "workspace_validation_ns": 34436014.0
+            }
+          },
+          {
+            "ordinal": 9,
+            "seed": 7285346741127956506,
+            "elapsed_ns": 1130058732,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 20588128.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 155081.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 936097329.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 141122955.0,
+              "workspace_validation_ns": 32070639.0
+            }
+          }
+        ],
+        "summary": {
+          "succeeded": 10,
+          "unsupported": 0,
+          "failed": 0,
+          "latency_ns": {
+            "sample_count": 10,
+            "min": 627119251,
+            "p50": 672690094,
+            "p95": 1130058732,
+            "p99": 1130058732,
+            "max": 1130058732
+          }
+        }
+      },
+      {
+        "schema_version": 1,
+        "config": {
+          "suite": "application_workspace_checkpoint",
+          "backend": "cooperative-v1+full-copy-cas-v1",
+          "trace_mode": "on",
+          "seed": 24301,
+          "warmups": 2,
+          "repetitions": 10
+        },
+        "environment": {
+          "code_revision": "463e130b628bd641cdf4be6dd516f4ef0a4fd75f",
+          "code_dirty": false,
+          "os": "linux",
+          "architecture": "aarch64",
+          "kernel_release": "6.17.0-1018-oracle",
+          "cpu_model": "Neoverse-N1",
+          "cpu_count": 2,
+          "total_memory_bytes": 12506804224,
+          "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+          "extra": {
+            "collector": "epoch-bench-v1",
+            "repository": "/home/ubuntu/epoch-week4-bench-56fcdf8"
+          }
+        },
+        "samples": [
+          {
+            "ordinal": 0,
+            "seed": 6727192872932819891,
+            "elapsed_ns": 688468992,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 15731257.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 2537895.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 563271016.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 81832468.0,
+              "workspace_validation_ns": 25062276.0
+            }
+          },
+          {
+            "ordinal": 1,
+            "seed": 8129731167615341197,
+            "elapsed_ns": 390459423,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 15217815.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 4160426.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 268543266.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 77580481.0,
+              "workspace_validation_ns": 24924035.0
+            }
+          },
+          {
+            "ordinal": 2,
+            "seed": 860951788085400693,
+            "elapsed_ns": 416078701,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060020,
+            "bytes_written": 1060020,
+            "metrics": {
+              "application_capture_ns": 27007327.0,
+              "application_checkpoint_bytes": 8516.0,
+              "application_restore_ns": 2697097.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 282632994.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 78878649.0,
+              "workspace_validation_ns": 24829034.0
+            }
+          },
+          {
+            "ordinal": 3,
+            "seed": 6825197725885693130,
+            "elapsed_ns": 427211491,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 18400234.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 2855578.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 300213343.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 80824542.0,
+              "workspace_validation_ns": 24884234.0
+            }
+          },
+          {
+            "ordinal": 4,
+            "seed": 2984990394097172368,
+            "elapsed_ns": 409124739,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 17320348.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 2533855.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 272486971.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 91019845.0,
+              "workspace_validation_ns": 25729640.0
+            }
+          },
+          {
+            "ordinal": 5,
+            "seed": 1335781936353846705,
+            "elapsed_ns": 415835861,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 23824948.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 2568096.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 279590975.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 84892327.0,
+              "workspace_validation_ns": 24925595.0
+            }
+          },
+          {
+            "ordinal": 6,
+            "seed": 15754294878416903795,
+            "elapsed_ns": 386752839,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 17319867.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 4005505.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 249438028.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 86338575.0,
+              "workspace_validation_ns": 29619344.0
+            }
+          },
+          {
+            "ordinal": 7,
+            "seed": 4526273042308876071,
+            "elapsed_ns": 2098531742,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 23213384.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 5859597.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 1938957111.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 86997619.0,
+              "workspace_validation_ns": 43468390.0
+            }
+          },
+          {
+            "ordinal": 8,
+            "seed": 6387777158891554393,
+            "elapsed_ns": 537175533,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 23434706.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 3708263.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 356256690.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 112489938.0,
+              "workspace_validation_ns": 41252376.0
+            }
+          },
+          {
+            "ordinal": 9,
+            "seed": 7285346741127956506,
+            "elapsed_ns": 523272567,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 18973038.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 2744617.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 365992031.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 108554714.0,
+              "workspace_validation_ns": 26972447.0
+            }
+          }
+        ],
+        "summary": {
+          "succeeded": 10,
+          "unsupported": 0,
+          "failed": 0,
+          "latency_ns": {
+            "sample_count": 10,
+            "min": 386752839,
+            "p50": 416078701,
+            "p95": 2098531742,
+            "p99": 2098531742,
+            "max": 2098531742
+          }
+        }
+      }
+    ],
+    "validation_cases": [
+      {
+        "name": "future_application_schema_rejected",
+        "passed": true,
+        "detail": "application context schema 2 is unsupported; expected 1"
+      },
+      {
+        "name": "missing_application_reference_rejected",
+        "passed": true,
+        "detail": "observable context references missing blob 0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "name": "workspace_restore_refuses_clobber",
+        "passed": true,
+        "detail": "target_rejected=true, sentinel_preserved=true"
+      }
+    ]
+  },
+  "compatibility": {
+    "environment": {
+      "code_revision": "463e130b628bd641cdf4be6dd516f4ef0a4fd75f",
+      "code_dirty": false,
+      "os": "linux",
+      "architecture": "aarch64",
+      "kernel_release": "6.17.0-1018-oracle",
+      "cpu_model": "Neoverse-N1",
+      "cpu_count": 2,
+      "total_memory_bytes": 12506804224,
+      "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+      "extra": {
+        "collector": "epoch-bench-v1",
+        "repository": "/home/ubuntu/epoch-week4-bench-56fcdf8"
+      }
+    },
+    "rows": [
+      {
+        "case": "combined_4096_bytes",
+        "component": "application_and_workspace",
+        "configuration": {
+          "fixture_bytes": "4096",
+          "fixture_files": "4"
+        },
+        "outcome": {
+          "status": "succeeded"
+        },
+        "elapsed_ns": 139594386,
+        "evidence": {
+          "bytes_written": "5256",
+          "trace_mode": "off"
+        }
+      },
+      {
+        "case": "combined_65536_bytes",
+        "component": "application_and_workspace",
+        "configuration": {
+          "fixture_bytes": "65536",
+          "fixture_files": "4"
+        },
+        "outcome": {
+          "status": "succeeded"
+        },
+        "elapsed_ns": 146433429,
+        "evidence": {
+          "bytes_written": "66700",
+          "trace_mode": "off"
+        }
+      },
+      {
+        "case": "combined_1048576_bytes",
+        "component": "application_and_workspace",
+        "configuration": {
+          "fixture_bytes": "1048576",
+          "fixture_files": "4"
+        },
+        "outcome": {
+          "status": "succeeded"
+        },
+        "elapsed_ns": 271328484,
+        "evidence": {
+          "bytes_written": "1049744",
+          "trace_mode": "off"
+        }
+      },
+      {
+        "case": "application_future_schema",
+        "component": "application_checkpoint",
+        "configuration": {
+          "schema_version": "2"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "application context schema 2 is unsupported; expected 1"
+        },
+        "elapsed_ns": 11280,
+        "evidence": {
+          "expected": "typed unsupported"
+        }
+      },
+      {
+        "case": "application_missing_reference",
+        "component": "application_checkpoint",
+        "configuration": {
+          "reference": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "outcome": {
+          "status": "failed",
+          "error": "observable context references missing blob 0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "elapsed_ns": 58120,
+        "evidence": {
+          "validation_stage": "capture"
+        }
+      },
+      {
+        "case": "workspace_missing_source",
+        "component": "workspace_checkpoint",
+        "configuration": {
+          "source": "absent"
+        },
+        "outcome": {
+          "status": "failed",
+          "error": "No such file or directory (os error 2)"
+        },
+        "elapsed_ns": 19600,
+        "evidence": {
+          "validation_stage": "capture"
+        }
+      },
+      {
+        "case": "workspace_special_file",
+        "component": "workspace_checkpoint",
+        "configuration": {
+          "entry": "unix_socket"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "SpecialFile { path: \"socket\", kind: \"socket\" }"
+        },
+        "elapsed_ns": 47641,
+        "evidence": {
+          "policy": "special files require cooperation"
+        }
+      },
+      {
+        "case": "process_threads",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "threads"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      },
+      {
+        "case": "process_child_processes",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "child_processes"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      },
+      {
+        "case": "process_pipes",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "pipes"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      },
+      {
+        "case": "process_unix_sockets",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "unix_sockets"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      },
+      {
+        "case": "process_tcp_connections",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "tcp_connections"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      },
+      {
+        "case": "process_timers_signals",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "timers_signals"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      }
+    ]
+  },
+  "cow": {
+    "config": {
+      "allocation_bytes": 67108864,
+      "child_fanout": 4,
+      "dirty_ratio_basis_points": 2500,
+      "repetitions": 5
+    },
+    "environment": {
+      "code_revision": "463e130b628bd641cdf4be6dd516f4ef0a4fd75f",
+      "code_dirty": false,
+      "os": "linux",
+      "architecture": "aarch64",
+      "kernel_release": "6.17.0-1018-oracle",
+      "cpu_model": "Neoverse-N1",
+      "cpu_count": 2,
+      "total_memory_bytes": 12506804224,
+      "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+      "extra": {
+        "collector": "epoch-bench-v1",
+        "repository": "/home/ubuntu/epoch-week4-bench-56fcdf8"
+      }
+    },
+    "outcome": {
+      "status": "succeeded"
+    },
+    "samples": [
+      {
+        "ordinal": 0,
+        "elapsed_ns": 261777065,
+        "minor_faults": 16439,
+        "major_faults": 0,
+        "cow_pss_bytes": 145445888,
+        "cow_rss_bytes": 381423616,
+        "full_copy_bytes": 268435456,
+        "full_copy_ns": 120818629
+      },
+      {
+        "ordinal": 1,
+        "elapsed_ns": 215250015,
+        "minor_faults": 16439,
+        "major_faults": 0,
+        "cow_pss_bytes": 145447936,
+        "cow_rss_bytes": 381366272,
+        "full_copy_bytes": 268435456,
+        "full_copy_ns": 104765330
+      },
+      {
+        "ordinal": 2,
+        "elapsed_ns": 243208590,
+        "minor_faults": 16439,
+        "major_faults": 0,
+        "cow_pss_bytes": 145495040,
+        "cow_rss_bytes": 381480960,
+        "full_copy_bytes": 268435456,
+        "full_copy_ns": 105103692
+      },
+      {
+        "ordinal": 3,
+        "elapsed_ns": 411299072,
+        "minor_faults": 16439,
+        "major_faults": 0,
+        "cow_pss_bytes": 145507328,
+        "cow_rss_bytes": 381358080,
+        "full_copy_bytes": 268435456,
+        "full_copy_ns": 224788995
+      },
+      {
+        "ordinal": 4,
+        "elapsed_ns": 212341238,
+        "minor_faults": 16439,
+        "major_faults": 0,
+        "cow_pss_bytes": 145496064,
+        "cow_rss_bytes": 381313024,
+        "full_copy_bytes": 268435456,
+        "full_copy_ns": 100785266
+      }
+    ],
+    "summary": {
+      "elapsed_ns": {
+        "sample_count": 5,
+        "min": 212341238,
+        "p50": 243208590,
+        "p95": 411299072,
+        "p99": 411299072,
+        "max": 411299072
+      },
+      "cow_pss_bytes": {
+        "sample_count": 5,
+        "min": 145445888,
+        "p50": 145495040,
+        "p95": 145507328,
+        "p99": 145507328,
+        "max": 145507328
+      },
+      "full_copy_bytes": {
+        "sample_count": 5,
+        "min": 268435456,
+        "p50": 268435456,
+        "p95": 268435456,
+        "p99": 268435456,
+        "max": 268435456
+      },
+      "minor_faults": {
+        "sample_count": 5,
+        "min": 16439,
+        "p50": 16439,
+        "p95": 16439,
+        "p99": 16439,
+        "max": 16439
+      },
+      "major_faults": {
+        "sample_count": 5,
+        "min": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      },
+      "pss_to_full_copy_basis_points": 5419
+    }
+  },
+  "faults": {
+    "rows": [
+      {
+        "stage": "workspace_restore_after_staging",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "fault": "AfterStagingCreated",
+          "staging_clean": "true",
+          "target_absent": "true"
+        }
+      },
+      {
+        "stage": "workspace_restore_after_first_entry",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "fault": "AfterFirstEntry",
+          "staging_clean": "true",
+          "target_absent": "true"
+        }
+      },
+      {
+        "stage": "workspace_restore_before_publish",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "fault": "BeforePublish",
+          "staging_clean": "true",
+          "target_absent": "true"
+        }
+      },
+      {
+        "stage": "application_capture_missing_reference",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "diagnostic": "observable context references missing blob ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "validation_stage": "capture"
+        }
+      },
+      {
+        "stage": "composite_after_application_before_workspace",
+        "evidence_kind": "symbolic",
+        "outcome": {
+          "status": "unsupported",
+          "reason": "the composite checkpoint coordinator has no stage injection API on this revision"
+        },
+        "containment_verified": false,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "api": "unavailable",
+          "claim": "unsupported"
+        }
+      },
+      {
+        "stage": "effect_after_downstream_commit_before_local_record",
+        "evidence_kind": "symbolic",
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no downstream effect gateway/reconciliation API is present on this revision"
+        },
+        "containment_verified": false,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "api": "unavailable",
+          "claim": "unsupported"
+        }
+      },
+      {
+        "stage": "effect_retry_after_restore",
+        "evidence_kind": "symbolic",
+        "outcome": {
+          "status": "unsupported",
+          "reason": "rollback evidence cannot establish downstream idempotency or exactly-once delivery"
+        },
+        "containment_verified": false,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "api": "unavailable",
+          "claim": "unsupported"
+        }
+      }
+    ]
+  },
+  "decisions": [
+    {
+      "mechanism": "cooperative application + full-copy workspace checkpoint",
+      "decision": "keep",
+      "threshold": "zero unsupported/failed samples and <= 0 validation failures",
+      "evidence": [
+        "successful_samples=20",
+        "validation_failures=0",
+        "capture_p95_ns=956685457",
+        "restore_p95_ns=173348675"
+      ]
+    },
+    {
+      "mechanism": "fork COW process-memory optimization",
+      "decision": "narrow",
+      "threshold": "PSS/full-copy <= 7500 bp and Linux compatibility only",
+      "evidence": [
+        "5 Linux raw samples; pss_to_full_copy_basis_points=5419; scope remains process-memory compatibility only"
+      ]
+    },
+    {
+      "mechanism": "transparent external exactly-once through rollback",
+      "decision": "kill",
+      "threshold": "requires a downstream idempotency/reconciliation API and crash evidence",
+      "evidence": [
+        "no external effect gateway API is present in this benchmark base",
+        "symbolic stages are reported unsupported, never exactly-once"
+      ]
+    }
+  ]
+}

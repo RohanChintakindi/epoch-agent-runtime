@@ -207,6 +207,30 @@ fn all_suite_emits_stable_json_csv_and_threshold_backed_decisions() {
     };
     let report = run_suite(&request, environment()).expect("all suite");
 
+    let cow_matrix = report.cow.as_ref().expect("COW matrix");
+    assert!(cow_matrix.points.len() >= 4);
+    assert!(
+        cow_matrix
+            .points
+            .iter()
+            .any(|point| point.config.dirty_ratio_basis_points == 0)
+    );
+    assert!(
+        cow_matrix
+            .points
+            .iter()
+            .any(|point| point.config.dirty_ratio_basis_points == 10_000)
+    );
+    assert!(
+        cow_matrix
+            .points
+            .iter()
+            .map(|point| point.config.allocation_bytes)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            >= 2
+    );
+
     assert_eq!(report.to_json().unwrap(), report.to_json().unwrap());
     let csv = report.to_csv().unwrap();
     assert!(csv.starts_with("schema_version,run_id,section,case,status"));

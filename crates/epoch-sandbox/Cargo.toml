@@ -11,6 +11,9 @@ serde.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+seccompiler = { version = "0.5", features = ["json"] }
+
 [dev-dependencies]
 tempfile.workspace = true
 

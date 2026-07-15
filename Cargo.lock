@@ -286,6 +286,7 @@ dependencies = [
  "epoch-blob",
  "epoch-checkpoint",
  "epoch-core",
+ "epoch-diff",
  "epoch-events",
  "epoch-proc",
  "epoch-protocol",

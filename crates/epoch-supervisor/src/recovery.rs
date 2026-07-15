@@ -11,6 +11,7 @@ use epoch_checkpoint::{
     CheckpointFailure, CheckpointUnsupported, FailureCode, UnsupportedCode,
 };
 use epoch_core::{BranchId, EpochId, EventActor, EventKind, EventStatus, SessionId};
+use epoch_diff::{ApplicationSemanticDiff, DiffError, DiffErrorKind, diff_application_checkpoints};
 use epoch_events::{EventQuery, NewEvent};
 use epoch_storage::Store;
 use rusqlite::{OptionalExtension as _, Transaction, TransactionBehavior, params};
@@ -113,6 +114,13 @@ pub struct ApplicationRestoreReport {
     pub process_restored: bool,
     pub workspace_restored: bool,
     pub restore_scope: RestoreScope,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ApplicationEpochDiffReport {
+    pub before_epoch_id: EpochId,
+    pub after_epoch_id: EpochId,
+    pub diff: ApplicationSemanticDiff,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -302,6 +310,35 @@ impl DirectSupervisor {
             workspace_restored: false,
             restore_scope: RestoreScope::ApplicationContextOnly,
         })
+    }
+
+    /// Compares two durable application epochs after validating both checkpoint components.
+    #[must_use]
+    pub fn diff_application_epochs(
+        &self,
+        before_epoch_id: EpochId,
+        after_epoch_id: EpochId,
+    ) -> RecoveryOutcome<ApplicationEpochDiffReport> {
+        let before = match self.load_epoch(before_epoch_id) {
+            Ok(loaded) => loaded,
+            Err(rejection) => return rejection.into_outcome(),
+        };
+        let after = match self.load_epoch(after_epoch_id) {
+            Ok(loaded) => loaded,
+            Err(rejection) => return rejection.into_outcome(),
+        };
+        let backend = match self.application_backend() {
+            Ok(backend) => backend,
+            Err(issue) => return RecoveryOutcome::Failed(issue),
+        };
+        match diff_application_checkpoints(&backend, &before.artifact, &after.artifact) {
+            Ok(diff) => RecoveryOutcome::Supported(ApplicationEpochDiffReport {
+                before_epoch_id,
+                after_epoch_id,
+                diff,
+            }),
+            Err(error) => map_diff_error(&error),
+        }
     }
 
     /// Inspects the latest activated application context for one session branch.
@@ -950,6 +987,37 @@ fn map_failure(value: CheckpointFailure) -> RecoveryIssue {
         },
         value.detail,
     )
+}
+
+fn map_diff_error<T>(error: &DiffError) -> RecoveryOutcome<T> {
+    let code = match error.code {
+        "cooperation_required" => RecoveryCode::NoCooperativeSafePoint,
+        "decode" => RecoveryCode::Decode,
+        "integrity" => RecoveryCode::Integrity,
+        "metadata_mismatch" => RecoveryCode::MetadataMismatch,
+        "missing_reference" => RecoveryCode::MissingReference,
+        "non_canonical" => RecoveryCode::NonCanonical,
+        "schema_version" => RecoveryCode::SchemaVersion,
+        "storage" => RecoveryCode::Storage,
+        _ => RecoveryCode::InvalidContext,
+    };
+    let issue = issue(
+        code,
+        format!("{} checkpoint: {}", diff_side(error.side), error.detail),
+    );
+    match error.kind {
+        DiffErrorKind::UnsupportedSchema | DiffErrorKind::UnsupportedCheckpoint => {
+            RecoveryOutcome::Unsupported(issue)
+        }
+        DiffErrorKind::InvalidCheckpoint => RecoveryOutcome::Failed(issue),
+    }
+}
+
+const fn diff_side(side: epoch_diff::DiffSide) -> &'static str {
+    match side {
+        epoch_diff::DiffSide::Before => "before",
+        epoch_diff::DiffSide::After => "after",
+    }
 }
 
 fn issue(code: RecoveryCode, detail: String) -> RecoveryIssue {

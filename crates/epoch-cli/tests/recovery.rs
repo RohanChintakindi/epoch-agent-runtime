@@ -198,11 +198,15 @@ fn cli_run_checkpoint_restore_status_is_restart_safe_json() {
     let status = epoch(&fixture, &["status", session]);
     assert!(status.status.success());
     let status: serde_json::Value = serde_json::from_slice(&status.stdout).expect("status JSON");
-    assert_eq!(status["operation"], "status");
-    assert_eq!(status["outcome"], "supported");
-    assert_eq!(status["result"]["current_epoch_id"], epoch_id);
+    assert_eq!(status["session_id"], session);
+    assert_eq!(status["state"], "completed");
+    assert_eq!(status["application"]["outcome"], "supported");
     assert_eq!(
-        status["result"]["context"]["cursors"]["boundary_sequence"],
+        status["application"]["result"]["current_epoch_id"],
+        epoch_id
+    );
+    assert_eq!(
+        status["application"]["result"]["context"]["cursors"]["boundary_sequence"],
         2
     );
 }

@@ -154,7 +154,7 @@ fn epoch_diff_refuses_corrupt_missing_and_future_components() {
         match (expected_outcome, outcome) {
             ("failed", RecoveryOutcome::Failed(issue))
             | ("unsupported", RecoveryOutcome::Unsupported(issue)) => {
-                assert_eq!(issue.code, expected_code)
+                assert_eq!(issue.code, expected_code);
             }
             (_, unexpected) => panic!("unexpected diff outcome: {unexpected:?}"),
         }

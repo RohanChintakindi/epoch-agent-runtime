@@ -4,7 +4,7 @@ use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use epoch_core::{BranchId, EpochId, SessionId};
 use epoch_supervisor::{
     AgentTermination, ApplicationRestoreMode, DirectSupervisor, EventPageRequest, InspectionError,
-    RecoveryCode, RecoveryIssue, RecoveryOutcome, RunOutcome,
+    RecoveryCode, RecoveryIssue, RecoveryOutcome, RunOutcome, SessionStatusReport,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -205,6 +205,13 @@ struct RunReport {
     stderr_bytes: usize,
 }
 
+#[derive(Debug, Serialize)]
+struct IntegratedStatusReport {
+    #[serde(flatten)]
+    execution: SessionStatusReport,
+    application: serde_json::Value,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Support {
@@ -288,6 +295,11 @@ fn execute(command: Command) -> ExitCode {
             label,
         } => checkpoint_application(&session, branch.as_deref(), label.as_deref()),
         Command::Restore { epoch, mode } => restore_application(&epoch, mode),
+        Command::Diff {
+            left,
+            right,
+            json: _,
+        } => diff_application_epochs(&left, &right),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -336,7 +348,10 @@ fn inspect_status(raw_session: &str) -> ExitCode {
         Err(error) => return report_inspection_error(&error),
     };
     match supervisor.session_status(session_id) {
-        Ok(report) => print_json(&report),
+        Ok(execution) => print_json(&IntegratedStatusReport {
+            execution,
+            application: recovery_value(supervisor.application_status(session_id, None)),
+        }),
         Err(error) => report_inspection_error(&error),
     }
 }
@@ -474,6 +489,41 @@ fn restore_application(epoch: &str, mode: RestoreMode) -> ExitCode {
     emit_recovery("restore", supervisor.restore_application(epoch_id, mode))
 }
 
+fn diff_application_epochs(before: &str, after: &str) -> ExitCode {
+    let before_epoch_id = match EpochId::from_str(before) {
+        Ok(epoch_id) => epoch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "diff",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid before epoch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let after_epoch_id = match EpochId::from_str(after) {
+        Ok(epoch_id) => epoch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "diff",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid after epoch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("diff") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery(
+        "diff",
+        supervisor.diff_application_epochs(before_epoch_id, after_epoch_id),
+    )
+}
+
 fn recovery_supervisor(operation: &str) -> Result<DirectSupervisor, ExitCode> {
     DirectSupervisor::open(".epoch").map_err(|error| {
         emit_recovery_issue(
@@ -487,31 +537,30 @@ fn recovery_supervisor(operation: &str) -> Result<DirectSupervisor, ExitCode> {
 }
 
 fn emit_recovery<T: Serialize>(operation: &str, outcome: RecoveryOutcome<T>) -> ExitCode {
+    let exit = match &outcome {
+        RecoveryOutcome::Supported(_) => ExitCode::SUCCESS,
+        RecoveryOutcome::Unsupported(_) => ExitCode::from(RECOVERY_UNSUPPORTED_EXIT),
+        RecoveryOutcome::Failed(_) => ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+    };
+    let mut document = recovery_value(outcome);
+    document["operation"] = json!(operation);
+    emit_recovery_json(&document, exit)
+}
+
+fn recovery_value<T: Serialize>(outcome: RecoveryOutcome<T>) -> serde_json::Value {
     match outcome {
-        RecoveryOutcome::Supported(result) => emit_recovery_json(
-            &json!({
-                "operation": operation,
-                "outcome": "supported",
-                "result": result,
-            }),
-            ExitCode::SUCCESS,
-        ),
-        RecoveryOutcome::Unsupported(issue) => emit_recovery_json(
-            &json!({
-                "operation": operation,
-                "outcome": "unsupported",
-                "issue": issue,
-            }),
-            ExitCode::from(RECOVERY_UNSUPPORTED_EXIT),
-        ),
-        RecoveryOutcome::Failed(issue) => emit_recovery_json(
-            &json!({
-                "operation": operation,
-                "outcome": "failed",
-                "issue": issue,
-            }),
-            ExitCode::from(SUPERVISOR_FAILURE_EXIT),
-        ),
+        RecoveryOutcome::Supported(result) => json!({
+            "outcome": "supported",
+            "result": result,
+        }),
+        RecoveryOutcome::Unsupported(issue) => json!({
+            "outcome": "unsupported",
+            "issue": issue,
+        }),
+        RecoveryOutcome::Failed(issue) => json!({
+            "outcome": "failed",
+            "issue": issue,
+        }),
     }
 }
 

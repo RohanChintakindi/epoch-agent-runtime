@@ -237,10 +237,28 @@ impl StreamValidator {
         envelope: &Envelope,
         resolver: &impl BlobReferenceResolver,
     ) -> Result<(), IngestError> {
+        let mut candidate = self.clone();
+        candidate.accept_claims(envelope)?;
+        validate_referenced_blobs(envelope, resolver)?;
+        *self = candidate;
+        Ok(())
+    }
+
+    /// Validate protocol structure, supervisor binding, and causal stream state while retaining
+    /// content hashes only as untrusted claims.
+    ///
+    /// This method deliberately does not resolve or acknowledge blob references. A caller may
+    /// persist the canonical envelope for debugging, but must not copy its claimed hashes into
+    /// trusted blob-reference fields unless the corresponding bytes are independently captured
+    /// and verified.
+    ///
+    /// # Errors
+    ///
+    /// Returns an ingest error when protocol or stream semantics are invalid.
+    pub fn accept_claims(&mut self, envelope: &Envelope) -> Result<(), IngestError> {
         validate(envelope)?;
         let mut candidate = self.clone();
         candidate.accept_stream(envelope)?;
-        validate_referenced_blobs(envelope, resolver)?;
         *self = candidate;
         Ok(())
     }

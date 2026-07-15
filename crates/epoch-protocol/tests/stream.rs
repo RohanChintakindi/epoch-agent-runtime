@@ -29,6 +29,27 @@ fn envelope(sequence: u64, message: Message) -> Envelope {
     Envelope::new(sequence, message)
 }
 
+#[test]
+fn claims_only_ingest_validates_stream_without_claiming_blob_verification() {
+    let binding = SupervisorBinding::new("session", "branch").expect("valid binding");
+    let mut validator = StreamValidator::new(binding);
+    validator
+        .accept_claims(&start(0, "session", "branch"))
+        .expect("bound start is accepted");
+    validator
+        .accept_claims(&context(1, 0, hash("not-uploaded")))
+        .expect("untrusted hash claim does not require a trusted blob");
+
+    let wrong_binding = SupervisorBinding::new("session", "other").expect("valid binding");
+    let mut wrong = StreamValidator::new(wrong_binding);
+    assert!(matches!(
+        wrong.accept_claims(&start(0, "session", "branch")),
+        Err(IngestError::Stream(
+            StreamError::BranchBindingMismatch { .. }
+        ))
+    ));
+}
+
 fn start(sequence: u64, session_id: &str, branch_id: &str) -> Envelope {
     envelope(
         sequence,

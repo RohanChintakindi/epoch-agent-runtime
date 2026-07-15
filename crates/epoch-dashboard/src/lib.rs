@@ -18,6 +18,7 @@ const MAX_TARGET_BYTES: usize = 2_048;
 const MAX_QUERY_BYTES: usize = 1_024;
 const MAX_QUERY_PAIRS: usize = 12;
 const MAX_OFFSET: u64 = 1_000_000;
+const MAX_JSON_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 
 const SECURITY_HEADERS: [(&str, &str); 8] = [
     ("Cache-Control", "no-store"),
@@ -242,6 +243,10 @@ pub fn serve(config: DashboardConfig) -> Result<(), DashboardError> {
     let dashboard = Dashboard::open(config.state_root, config.results_root)?;
     let server =
         Server::http(config.bind).map_err(|error| DashboardError::Server(error.to_string()))?;
+    eprintln!(
+        "Epoch dashboard listening at http://{} (local, read-only, no authentication)",
+        config.bind
+    );
     for request in server.incoming_requests() {
         let method = match request.method() {
             Method::Get => "GET",
@@ -292,7 +297,14 @@ fn static_response(content_type: &'static str, body: &'static str) -> DashboardR
 
 fn json_response(value: &impl Serialize) -> DashboardResponse {
     match safe_json(value) {
-        Ok(body) => response(200, "application/json; charset=utf-8", body),
+        Ok(body) if body.len() <= MAX_JSON_RESPONSE_BYTES => {
+            response(200, "application/json; charset=utf-8", body)
+        }
+        Ok(_) => json_error(
+            503,
+            "response_limit_exceeded",
+            "The bounded dashboard response limit was exceeded",
+        ),
         Err(()) => json_error(
             500,
             "serialization_failed",

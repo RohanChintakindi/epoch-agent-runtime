@@ -125,13 +125,9 @@ impl Fixture {
 }
 
 fn json(response: epoch_dashboard::DashboardResponse) -> Value {
-    assert_eq!(
-        response.status,
-        200,
-        "{}",
-        String::from_utf8_lossy(&response.body)
-    );
-    serde_json::from_slice(&response.body).expect("JSON response")
+    let epoch_dashboard::DashboardResponse { status, body, .. } = response;
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
+    serde_json::from_slice(&body).expect("JSON response")
 }
 
 #[test]

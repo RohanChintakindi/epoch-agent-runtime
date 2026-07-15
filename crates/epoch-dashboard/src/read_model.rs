@@ -15,10 +15,11 @@ pub const MAX_STANDARD_PAGE: usize = 100;
 const MAX_BRANCHES_PER_SESSION: usize = 512;
 const MAX_COMPONENTS_PER_EPOCH: usize = 64;
 const MAX_RESTORES_PER_EPOCH: usize = 16;
-const MAX_DIFF_CHANGES: usize = 100;
+const MAX_DIFF_CHANGES: usize = 40;
 const MAX_DIFF_BYTES: usize = 256 * 1024;
-const MAX_EFFECT_ATTEMPTS: usize = 32;
-const MAX_EFFECT_HISTORY: usize = 64;
+const MAX_EFFECTS: usize = 32;
+const MAX_EFFECT_ATTEMPTS: usize = 8;
+const MAX_EFFECT_HISTORY: usize = 16;
 
 #[derive(Clone, Debug)]
 pub struct ReadModel {
@@ -450,7 +451,7 @@ impl ReadModel {
              FROM effect_intents WHERE session_id = ?1 \
              ORDER BY prepared_at_unix_ms DESC, id ASC LIMIT ?2",
         )?;
-        let mut rows = statement.query(params![session_id, sql_bound(MAX_STANDARD_PAGE)?])?;
+        let mut rows = statement.query(params![session_id, sql_bound(MAX_EFFECTS)?])?;
         let mut intents = Vec::new();
         while let Some(row) = rows.next()? {
             let effect_id = checked_uuid(row.get(0)?, "effect.id")?;
@@ -485,7 +486,7 @@ impl ReadModel {
             .and_then(|value| usize_count(value, "effect.count"))?;
         Ok(EffectView {
             intents,
-            truncated: count > MAX_STANDARD_PAGE,
+            truncated: count > MAX_EFFECTS,
             provider_content_exposed: false,
         })
     }
@@ -691,7 +692,7 @@ fn parse_diff_summary(encoded: &str) -> Result<ParsedDiff, StateError> {
             path: checked_text(
                 value_string(change.get("path"), "diff.change.path")?,
                 "diff.change.path",
-                1_024,
+                512,
             )?,
             classification: checked_text(
                 value_string(change.get("classification"), "diff.change.classification")?,

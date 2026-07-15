@@ -87,17 +87,14 @@ fn read_card(path: &Path) -> Option<BenchmarkCard> {
         succeeded: summary.get("succeeded")?.as_u64()?,
         unsupported: summary.get("unsupported")?.as_u64()?,
         failed: summary.get("failed")?.as_u64()?,
-        p50_ns: optional_u64(latency.get("p50"))?,
-        p95_ns: optional_u64(latency.get("p95"))?,
-        p99_ns: optional_u64(latency.get("p99"))?,
+        p50_ns: optional_u64(latency.get("p50")),
+        p95_ns: optional_u64(latency.get("p95")),
+        p99_ns: optional_u64(latency.get("p99")),
     })
 }
 
-fn optional_u64(value: Option<&Value>) -> Option<Option<u64>> {
-    match value {
-        Some(Value::Null) | None => Some(None),
-        Some(value) => value.as_u64().map(Some),
-    }
+fn optional_u64(value: Option<&Value>) -> Option<u64> {
+    value.and_then(Value::as_u64)
 }
 
 fn bounded_string(value: &Value, maximum: usize) -> Option<String> {

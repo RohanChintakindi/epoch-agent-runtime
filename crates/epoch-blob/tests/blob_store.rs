@@ -1,4 +1,10 @@
-use std::{fs, str::FromStr, sync::Arc, thread};
+use std::{
+    fs::{self, FileTimes, OpenOptions},
+    str::FromStr,
+    sync::Arc,
+    thread,
+    time::{Duration, SystemTime},
+};
 
 use epoch_blob::{BlobError, BlobHash, BlobStore};
 use tempfile::TempDir;
@@ -101,6 +107,82 @@ fn interrupted_temp_write_never_appears_as_a_valid_blob() {
 
     assert!(matches!(store.read(&hash), Err(BlobError::NotFound(found)) if found == hash));
     assert!(!store.blob_path(&hash).exists());
+}
+
+fn managed_temp_name(bytes: &[u8]) -> String {
+    format!("{}.{}.tmp", BlobHash::digest(bytes), uuid::Uuid::new_v4())
+}
+
+#[test]
+fn explicit_cleanup_removes_only_managed_temporary_files() {
+    let (directory, store) = store();
+    let temp_directory = directory.path().join("blobs/sha256/.tmp");
+    let managed = temp_directory.join(managed_temp_name(b"managed"));
+    let unrelated = temp_directory.join("operator-note.txt");
+    fs::write(&managed, b"partial").expect("write managed temporary file");
+    fs::write(&unrelated, b"keep").expect("write unrelated file");
+
+    assert_eq!(
+        store
+            .cleanup_stale_temporary_files(Duration::ZERO)
+            .expect("clean stale files"),
+        1
+    );
+    assert!(!managed.exists());
+    assert_eq!(fs::read(unrelated).expect("read unrelated file"), b"keep");
+}
+
+#[test]
+fn opening_a_store_cleans_only_old_managed_temporary_files() {
+    let directory = TempDir::new().expect("create test directory");
+    let root = directory.path().join("blobs");
+    let store = BlobStore::open(&root).expect("open blob store");
+    let temp_directory = root.join("sha256/.tmp");
+    let stale = temp_directory.join(managed_temp_name(b"stale"));
+    let fresh = temp_directory.join(managed_temp_name(b"fresh"));
+    fs::write(&stale, b"stale").expect("write stale file");
+    fs::write(&fresh, b"fresh").expect("write fresh file");
+    let old = SystemTime::now()
+        .checked_sub(Duration::from_secs(48 * 60 * 60))
+        .expect("represent old timestamp");
+    OpenOptions::new()
+        .write(true)
+        .open(&stale)
+        .expect("open stale file")
+        .set_times(FileTimes::new().set_modified(old))
+        .expect("age stale file");
+    drop(store);
+
+    BlobStore::open(&root).expect("reopen blob store");
+
+    assert!(
+        !stale.exists(),
+        "old managed temporary file should be removed"
+    );
+    assert!(
+        fresh.exists(),
+        "a possibly live temporary file must be retained"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn temporary_cleanup_rejects_symlinks_without_touching_the_target() {
+    let (directory, store) = store();
+    let target = directory.path().join("target");
+    fs::write(&target, b"do not delete").expect("write target");
+    let temp_link = directory
+        .path()
+        .join("blobs/sha256/.tmp")
+        .join(managed_temp_name(b"link"));
+    symlink(&target, &temp_link).expect("create temporary symlink");
+
+    assert!(matches!(
+        store.cleanup_stale_temporary_files(Duration::ZERO),
+        Err(BlobError::UnsafeSymlink { .. })
+    ));
+    assert_eq!(fs::read(target).expect("read target"), b"do not delete");
+    assert!(fs::symlink_metadata(temp_link).is_ok());
 }
 
 #[test]

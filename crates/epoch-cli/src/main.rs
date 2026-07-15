@@ -975,6 +975,17 @@ mod tests {
             ],
             vec!["epoch", "effects", "resolve", "effect-1", "--committed"],
             vec!["epoch", "branch", "inspect", "branch-1"],
+            vec![
+                "epoch",
+                "demo",
+                "--agent",
+                "/tmp/epoch-test-agent",
+                "--root",
+                "/tmp/epoch-demo",
+                "--workspace",
+                "/tmp/epoch-demo/workspaces",
+                "--json",
+            ],
             vec!["epoch", "serve", "--bind", "127.0.0.1:9090"],
         ] {
             Cli::try_parse_from(arguments).expect("specified command must parse");

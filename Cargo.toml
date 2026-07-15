@@ -2,6 +2,7 @@
 members = [
     "crates/epoch-blob",
     "crates/epoch-checkpoint",
+    "crates/epoch-criu-compat",
     "crates/epoch-cli",
     "crates/epoch-core",
     "crates/epoch-diff",

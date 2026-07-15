@@ -196,7 +196,7 @@ def train_model(
 ) -> TrainingResult:
     config.validate()
     output = Path(output_dir)
-    if output.exists():
+    if os.path.lexists(output):
         raise ValueError("output directory already exists; refusing to clobber model artifacts")
     split = split_by_task_group(records, config.split)
     train_records = records_for_split(records, split, "train")
@@ -520,7 +520,7 @@ def _publish_bundle(output: Path, payloads: Mapping[str, bytes]) -> None:
     if set(payloads) != set(ARTIFACT_LIMITS):
         raise ValueError("model bundle payload set is invalid")
     output.parent.mkdir(parents=True, exist_ok=True)
-    if output.exists():
+    if os.path.lexists(output):
         raise ValueError("output directory already exists; refusing to clobber model artifacts")
     stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
     os.chmod(stage, 0o700)
@@ -541,7 +541,7 @@ def _publish_bundle(output: Path, payloads: Mapping[str, bytes]) -> None:
             raise ValueError("artifact manifest exceeds its size bound")
         _write_private_new(stage / "manifest.json", manifest)
         _fsync_directory(stage)
-        if output.exists():
+        if os.path.lexists(output):
             raise ValueError("output directory already exists; refusing to clobber model artifacts")
         os.rename(stage, output)
         published = True

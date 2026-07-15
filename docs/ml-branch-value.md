@@ -60,7 +60,12 @@ seven values and rejects any mismatch.
 This allowlist cannot represent prompts, reasoning text, payloads, tool arguments or results,
 paths, URLs, email addresses, blob hashes, capability handles, effect arguments, credentials, raw
 runtime IDs, branch state, or arbitrary metadata. A pseudonym is still sensitive linkable data;
-experiments should default to synthetic or explicitly consented, access-controlled records.
+experiments should default to synthetic or explicitly consented, access-controlled records. In
+particular, a predictable low-entropy task token may still be guessed from its digest.
+
+Rust and Python both load `crates/epoch-trajectory/tests/fixtures/schema-v1.jsonl`, containing one
+labelled nonempty trajectory and one unlabelled empty trajectory. This makes wire drift fail in
+both language test suites.
 
 ## Labels, grouping, and leakage controls
 

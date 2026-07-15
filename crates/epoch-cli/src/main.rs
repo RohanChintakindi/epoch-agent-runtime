@@ -130,6 +130,7 @@ enum RestoreMode {
 enum BranchCommand {
     Promote { branch: String },
     Abandon { branch: String },
+    Inspect { branch: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -386,6 +387,8 @@ fn execute(command: Command) -> ExitCode {
             right,
             json: _,
         } => diff_application_epochs(&left, &right),
+        Command::Fork { epoch, name } => fork_application_epoch(&epoch, &name),
+        Command::Branch { command } => execute_branch_command(command),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -628,6 +631,68 @@ fn diff_application_epochs(before: &str, after: &str) -> ExitCode {
         "diff",
         supervisor.diff_application_epochs(before_epoch_id, after_epoch_id),
     )
+}
+
+fn fork_application_epoch(epoch: &str, name: &str) -> ExitCode {
+    let epoch_id = match EpochId::from_str(epoch) {
+        Ok(epoch_id) => epoch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "fork",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid epoch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("fork") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery("fork", supervisor.fork_application_epoch(epoch_id, name))
+}
+
+fn execute_branch_command(command: BranchCommand) -> ExitCode {
+    match command {
+        BranchCommand::Inspect { branch } => inspect_fork_branch(&branch),
+        BranchCommand::Promote { branch } => emit_recovery_issue(
+            "branch.promote",
+            "unsupported",
+            RecoveryCode::UnsupportedMode,
+            format!(
+                "branch {branch} cannot be promoted until canonical-branch compare-and-swap is implemented"
+            ),
+            ExitCode::from(RECOVERY_UNSUPPORTED_EXIT),
+        ),
+        BranchCommand::Abandon { branch } => emit_recovery_issue(
+            "branch.abandon",
+            "unsupported",
+            RecoveryCode::UnsupportedMode,
+            format!("branch {branch} abandonment is not implemented"),
+            ExitCode::from(RECOVERY_UNSUPPORTED_EXIT),
+        ),
+    }
+}
+
+fn inspect_fork_branch(branch: &str) -> ExitCode {
+    let branch_id = match BranchId::from_str(branch) {
+        Ok(branch_id) => branch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "branch.inspect",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid branch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("branch.inspect") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery("branch.inspect", supervisor.inspect_fork_branch(branch_id))
 }
 
 fn recovery_supervisor(operation: &str) -> Result<DirectSupervisor, ExitCode> {

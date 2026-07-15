@@ -133,21 +133,20 @@ impl BenchmarkEnvironment {
 fn collect_cpu_model() -> Result<String, EnvironmentError> {
     #[cfg(target_os = "linux")]
     {
+        if let Ok(lscpu) = command_text(Command::new("lscpu"), "cpu_model")
+            && let Some(model) = parse_cpu_model(&lscpu)
+        {
+            return Ok(model);
+        }
         let cpuinfo =
             fs::read_to_string("/proc/cpuinfo").map_err(|error| EnvironmentError::Command {
                 command: "cpu_model",
                 detail: bounded(&error.to_string()),
             })?;
-        for key in ["model name", "Hardware", "Processor"] {
-            if let Some(value) = cpuinfo.lines().find_map(|line| {
-                let (name, value) = line.split_once(':')?;
-                (name.trim() == key).then(|| value.trim())
-            }) && !value.is_empty()
-            {
-                return Ok(bounded(value));
-            }
-        }
-        Ok("linux-cpu-model-unreported".to_owned())
+        parse_cpu_model(&cpuinfo).ok_or_else(|| EnvironmentError::Command {
+            command: "cpu_model",
+            detail: "Linux CPU metadata omitted model and implementer/part identifiers".to_owned(),
+        })
     }
     #[cfg(target_os = "macos")]
     {
@@ -161,6 +160,27 @@ fn collect_cpu_model() -> Result<String, EnvironmentError> {
     {
         Ok(format!("{}-cpu", std::env::consts::ARCH))
     }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn parse_cpu_model(contents: &str) -> Option<String> {
+    for key in ["Model name", "model name", "Hardware", "Processor"] {
+        if let Some(value) = field(contents, key) {
+            return Some(bounded(value));
+        }
+    }
+    let implementer = field(contents, "CPU implementer")?;
+    let part = field(contents, "CPU part")?;
+    Some(format!("ARM implementer {implementer} part {part}"))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn field<'a>(contents: &'a str, expected: &str) -> Option<&'a str> {
+    contents.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        let value = value.trim();
+        (name.trim() == expected && !value.is_empty()).then_some(value)
+    })
 }
 
 fn collect_memory_bytes() -> Option<u64> {

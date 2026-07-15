@@ -2,6 +2,7 @@
 members = [
     "crates/epoch-cli",
     "crates/epoch-core",
+    "crates/epoch-protocol",
 ]
 resolver = "2"
 
@@ -24,4 +25,3 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = "warn"
 pedantic = "warn"
-

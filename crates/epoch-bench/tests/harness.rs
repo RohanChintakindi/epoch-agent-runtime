@@ -35,9 +35,11 @@ impl BenchmarkScenario for FixtureScenario {
 fn environment() -> BenchmarkEnvironment {
     BenchmarkEnvironment {
         code_revision: "abc123".to_owned(),
+        code_dirty: false,
         os: "linux".to_owned(),
         architecture: "aarch64".to_owned(),
         kernel_release: "6.17.0-test".to_owned(),
+        cpu_model: "fixture cpu".to_owned(),
         cpu_count: 4,
         total_memory_bytes: Some(8 * 1024 * 1024 * 1024),
         runtime_version: "epoch-test".to_owned(),

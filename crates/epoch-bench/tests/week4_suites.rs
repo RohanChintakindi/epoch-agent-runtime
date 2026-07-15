@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use epoch_bench::{
     BenchmarkEnvironment, CheckpointSuiteConfig, CowConfig, Decision, DecisionThresholds,
@@ -18,7 +18,7 @@ fn environment() -> BenchmarkEnvironment {
         cpu_count: 4,
         total_memory_bytes: Some(8 * 1024 * 1024 * 1024),
         runtime_version: "rustc test".to_owned(),
-        extra: Default::default(),
+        extra: BTreeMap::default(),
     }
 }
 
@@ -51,11 +51,14 @@ fn collects_and_validates_real_environment_metadata() {
 #[test]
 fn real_checkpoint_suite_separates_trace_modes_and_validates_restores() {
     let temp = TempDir::new().expect("temp");
-    let report = run_checkpoint_suite(&checkpoint_config(temp.path()), environment())
+    let report = run_checkpoint_suite(&checkpoint_config(temp.path()), &environment())
         .expect("checkpoint suite");
 
     assert_eq!(report.reports.len(), 2);
-    assert_ne!(report.reports[0].config.trace_mode, report.reports[1].config.trace_mode);
+    assert_ne!(
+        report.reports[0].config.trace_mode,
+        report.reports[1].config.trace_mode
+    );
     for benchmark in &report.reports {
         assert_eq!(benchmark.samples.len(), 2);
         assert_eq!(benchmark.summary.succeeded, 2);
@@ -83,9 +86,24 @@ fn compatibility_matrix_preserves_supported_unsupported_and_failed_rows() {
     let matrix = run_compatibility_matrix(&checkpoint_config(temp.path()), environment())
         .expect("compatibility matrix");
 
-    assert!(matrix.rows.iter().any(|row| matches!(row.outcome, SampleOutcome::Succeeded)));
-    assert!(matrix.rows.iter().any(|row| matches!(row.outcome, SampleOutcome::Unsupported { .. })));
-    assert!(matrix.rows.iter().any(|row| matches!(row.outcome, SampleOutcome::Failed { .. })));
+    assert!(
+        matrix
+            .rows
+            .iter()
+            .any(|row| matches!(row.outcome, SampleOutcome::Succeeded))
+    );
+    assert!(
+        matrix
+            .rows
+            .iter()
+            .any(|row| matches!(row.outcome, SampleOutcome::Unsupported { .. }))
+    );
+    assert!(
+        matrix
+            .rows
+            .iter()
+            .any(|row| matches!(row.outcome, SampleOutcome::Failed { .. }))
+    );
     assert!(matrix.rows.iter().all(|row| !row.configuration.is_empty()));
     assert!(matrix.rows.iter().all(|row| !row.evidence.is_empty()));
 }
@@ -112,15 +130,37 @@ fn fault_matrix_distinguishes_actual_injection_from_symbolic_effect_boundaries()
     let temp = TempDir::new().expect("temp");
     let matrix = run_fault_matrix(temp.path()).expect("fault matrix");
 
-    assert!(matrix.rows.iter().any(|row| row.evidence_kind == EvidenceKind::Actual));
-    assert!(matrix.rows.iter().any(|row| row.evidence_kind == EvidenceKind::Symbolic));
-    assert!(matrix.rows.iter().filter(|row| row.evidence_kind == EvidenceKind::Actual).all(|row| {
-        matches!(row.outcome, SampleOutcome::Succeeded) && row.containment_verified
-    }));
-    assert!(matrix.rows.iter().filter(|row| row.evidence_kind == EvidenceKind::Symbolic).all(
-        |row| matches!(row.outcome, SampleOutcome::Unsupported { .. })
-            && !row.claims_external_exactly_once
-    ));
+    assert!(
+        matrix
+            .rows
+            .iter()
+            .any(|row| row.evidence_kind == EvidenceKind::Actual)
+    );
+    assert!(
+        matrix
+            .rows
+            .iter()
+            .any(|row| row.evidence_kind == EvidenceKind::Symbolic)
+    );
+    assert!(
+        matrix
+            .rows
+            .iter()
+            .filter(|row| row.evidence_kind == EvidenceKind::Actual)
+            .all(|row| {
+                matches!(row.outcome, SampleOutcome::Succeeded) && row.containment_verified
+            })
+    );
+    assert!(
+        matrix
+            .rows
+            .iter()
+            .filter(|row| row.evidence_kind == EvidenceKind::Symbolic)
+            .all(
+                |row| matches!(row.outcome, SampleOutcome::Unsupported { .. })
+                    && !row.claims_external_exactly_once
+            )
+    );
 }
 
 #[test]
@@ -140,8 +180,28 @@ fn all_suite_emits_stable_json_csv_and_threshold_backed_decisions() {
     assert!(csv.contains("unsupported"));
     let markdown = report.to_markdown();
     assert!(markdown.contains("## Keep / narrow / kill"));
-    assert!(report.decisions.iter().any(|item| item.decision == Decision::Keep));
-    assert!(report.decisions.iter().any(|item| item.decision == Decision::Narrow));
-    assert!(report.decisions.iter().any(|item| item.decision == Decision::Kill));
-    assert!(report.decisions.iter().all(|item| !item.evidence.is_empty()));
+    assert!(
+        report
+            .decisions
+            .iter()
+            .any(|item| item.decision == Decision::Keep)
+    );
+    assert!(
+        report
+            .decisions
+            .iter()
+            .any(|item| item.decision == Decision::Narrow)
+    );
+    assert!(
+        report
+            .decisions
+            .iter()
+            .any(|item| item.decision == Decision::Kill)
+    );
+    assert!(
+        report
+            .decisions
+            .iter()
+            .all(|item| !item.evidence.is_empty())
+    );
 }

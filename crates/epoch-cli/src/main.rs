@@ -551,62 +551,67 @@ fn execute(command: Command) -> ExitCode {
             results_root,
             bind,
         } => serve_dashboard(state_root, results_root, &bind),
-        Command::Doctor { json } => {
-            let capabilities = HostCapabilities::detect();
-            if json {
-                match serde_json::to_string_pretty(&capabilities) {
-                    Ok(output) => println!("{output}"),
-                    Err(error) => {
-                        eprintln!("failed to serialize diagnostics: {error}");
-                        return ExitCode::FAILURE;
-                    }
-                }
-            } else {
-                println!("Epoch host diagnostics");
-                println!("  host: {}/{}", capabilities.os, capabilities.architecture);
-                println!("  control plane: {}", capabilities.control_plane);
-                println!(
-                    "  direct execution backend: {}",
-                    capabilities.backends.direct_execution.status
-                );
-                println!(
-                    "  application checkpoint backend: {}",
-                    capabilities.backends.application_checkpoint.status
-                );
-                println!(
-                    "  process checkpoint backend: {}",
-                    capabilities.backends.process_checkpoint.status
-                );
-                println!(
-                    "  CRIU checkpoint backend: {}",
-                    capabilities.backends.criu_checkpoint.status
-                );
-                println!(
-                    "  workspace checkpoint backend: {}",
-                    capabilities.backends.workspace_checkpoint.status
-                );
-                println!("  Linux execution: {}", capabilities.linux_execution);
-                println!("  procfs: {}", capabilities.procfs);
-                println!("  cgroup v2: {}", capabilities.cgroup_v2);
-                println!("  OverlayFS: {}", capabilities.overlayfs);
-                println!("  KVM: {}", capabilities.kvm);
-                println!("  CRIU: {}", display_path(capabilities.criu.as_ref()));
-                println!("  strace: {}", display_path(capabilities.strace.as_ref()));
-                println!("  perf: {}", display_path(capabilities.perf.as_ref()));
-                println!("  unshare: {}", display_path(capabilities.unshare.as_ref()));
-                if capabilities.linux_execution == Support::Unavailable {
-                    println!(
-                        "\nThis host can build the control plane, but real isolation and checkpoint tests require Linux."
-                    );
-                }
-            }
-            ExitCode::SUCCESS
-        }
+        Command::Doctor { json } => report_doctor(json),
         unfinished => {
             eprintln!("epoch {} is not implemented yet", unfinished.command_path());
             ExitCode::from(2)
         }
     }
+}
+
+fn report_doctor(json_output: bool) -> ExitCode {
+    let capabilities = HostCapabilities::detect();
+    if json_output {
+        return match serde_json::to_string_pretty(&capabilities) {
+            Ok(output) => {
+                println!("{output}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("failed to serialize diagnostics: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    println!("Epoch host diagnostics");
+    println!("  host: {}/{}", capabilities.os, capabilities.architecture);
+    println!("  control plane: {}", capabilities.control_plane);
+    println!(
+        "  direct execution backend: {}",
+        capabilities.backends.direct_execution.status
+    );
+    println!(
+        "  application checkpoint backend: {}",
+        capabilities.backends.application_checkpoint.status
+    );
+    println!(
+        "  process checkpoint backend: {}",
+        capabilities.backends.process_checkpoint.status
+    );
+    println!(
+        "  CRIU checkpoint backend: {}",
+        capabilities.backends.criu_checkpoint.status
+    );
+    println!(
+        "  workspace checkpoint backend: {}",
+        capabilities.backends.workspace_checkpoint.status
+    );
+    println!("  Linux execution: {}", capabilities.linux_execution);
+    println!("  procfs: {}", capabilities.procfs);
+    println!("  cgroup v2: {}", capabilities.cgroup_v2);
+    println!("  OverlayFS: {}", capabilities.overlayfs);
+    println!("  KVM: {}", capabilities.kvm);
+    println!("  CRIU: {}", display_path(capabilities.criu.as_ref()));
+    println!("  strace: {}", display_path(capabilities.strace.as_ref()));
+    println!("  perf: {}", display_path(capabilities.perf.as_ref()));
+    println!("  unshare: {}", display_path(capabilities.unshare.as_ref()));
+    if capabilities.linux_execution == Support::Unavailable {
+        println!(
+            "\nThis host can build the control plane, but real isolation and checkpoint tests require Linux."
+        );
+    }
+    ExitCode::SUCCESS
 }
 
 fn execute_ml_command(command: MlCommand) -> ExitCode {

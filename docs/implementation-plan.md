@@ -888,7 +888,48 @@ Parallel work that must not block the critical path:
 - Dashboard is optional; CLI is sufficient.
 - Project is frozen several days before the interview.
 
-## 15. Suggested four-week schedule
+## 15. Product gates and scope protection
+
+The project must become a usable vertical product before the final two weeks. Calendar progress
+alone does not advance a gate.
+
+### End-of-Week-1 gate — Observable execution
+
+- `epoch run` launches the deterministic agent through the direct supervisor.
+- Session, root branch, lifecycle, stdout/stderr, and typed boundary events are durable.
+- `epoch status` and `epoch events` remain useful after the supervisor restarts.
+- macOS control-plane tests and Linux CI pass; the dedicated Linux host is ready for privileged
+  validation.
+
+### End-of-Week-2 gate — Usable recovery product
+
+- `epoch run`, `status`, `events`, `checkpoint`, `restore`, and `diff` work from the CLI.
+- Application context and workspace checkpoints work without CRIU; CRIU is an additional backend,
+  not the only product path.
+- A corrupted or partial checkpoint is rejected before restore.
+- At least one isolation backend and the direct backend expose explicit capability discovery.
+- The deterministic run-checkpoint-mutate-restore-inspect flow completes three times without manual
+  database or filesystem repair.
+
+If this gate is not met, Week 3 branching, replay, and capability breadth is narrowed until the
+recovery product is complete. Dashboard work, live LLM integration, Firecracker, and visual polish
+cannot displace this gate.
+
+### End-of-Week-3 gate — Security and branching depth
+
+- Fork/replay behavior is demonstrable from a committed epoch.
+- Restoring old execution state cannot restore revoked authority or erase committed effect history.
+- Semantic diff explains workspace, context, capability, and effect changes.
+- Linux isolation and checkpoint limits are measured and documented with structured unsupported
+  cases.
+
+### Week 4 rule — Freeze, evidence, and rehearsal
+
+No interview-critical product feature is scheduled to first appear in Week 4. Week 4 is reserved
+for fault tests, benchmarks, documentation, scope cuts, compatibility evidence, and repeated demo
+rehearsal. A late feature may enter only if all earlier gates remain green.
+
+## 16. Suggested four-week schedule
 
 ### Week 1
 
@@ -919,7 +960,7 @@ Parallel work that must not block the critical path:
 The schedule assumes tasks can overlap where dependencies allow. If work is strictly sequential,
 P1 and P2 tasks must be dropped before any P0 acceptance criterion.
 
-## 16. First implementation slice
+## 17. First implementation slice
 
 Begin with these tasks only:
 

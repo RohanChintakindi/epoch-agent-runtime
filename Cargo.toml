@@ -17,6 +17,7 @@ members = [
     "crates/epoch-storage",
     "crates/epoch-supervisor",
     "crates/epoch-test-agent",
+    "crates/epoch-trajectory",
     "crates/epoch-workspace",
 ]
 resolver = "2"
@@ -38,6 +39,7 @@ epoch-effects = { path = "crates/epoch-effects" }
 epoch-performance-matrix = { path = "crates/epoch-performance-matrix" }
 epoch-sandbox = { path = "crates/epoch-sandbox" }
 epoch-storage = { path = "crates/epoch-storage" }
+epoch-trajectory = { path = "crates/epoch-trajectory" }
 epoch-workspace = { path = "crates/epoch-workspace" }
 getrandom = "0.4"
 nix = { version = "0.30", features = ["process", "signal"] }

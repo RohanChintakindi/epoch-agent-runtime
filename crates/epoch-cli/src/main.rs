@@ -1,5 +1,6 @@
 mod bench;
 mod demo;
+mod ml;
 
 use std::{env, path::PathBuf, process::ExitCode, str::FromStr as _, sync::Arc};
 
@@ -120,6 +121,11 @@ enum Command {
         #[command(subcommand)]
         command: BenchCommand,
     },
+    /// Export trajectories and run advisory learned-policy workflows.
+    Ml {
+        #[command(subcommand)]
+        command: MlCommand,
+    },
     /// Run a reproducible fault scenario.
     Fault {
         #[command(subcommand)]
@@ -188,6 +194,29 @@ enum CapabilityCommand {
 enum EffectsCommand {
     List { session: String },
     Resolve(ResolveEffect),
+}
+
+#[derive(Debug, Subcommand)]
+enum MlCommand {
+    /// Export privacy-safe, metadata-only branch trajectories as JSONL.
+    Export {
+        /// Epoch trusted-state root containing state.db.
+        #[arg(long, default_value = ".epoch")]
+        state_root: PathBuf,
+        /// Session whose complete branch group will be exported together.
+        #[arg(long)]
+        session: String,
+        /// Stable lowercase task/repository group used to prevent split leakage.
+        #[arg(long)]
+        task_group: String,
+        /// New private JSONL file; existing paths are never overwritten.
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = epoch_trajectory::DEFAULT_MAX_BRANCHES)]
+        max_branches: usize,
+        #[arg(long, default_value_t = epoch_trajectory::DEFAULT_MAX_EVENTS_PER_BRANCH)]
+        max_events_per_branch: usize,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -508,6 +537,7 @@ fn execute(command: Command) -> ExitCode {
             json,
         }),
         Command::Bench { command } => execute_bench(command),
+        Command::Ml { command } => execute_ml_command(command),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -563,6 +593,26 @@ fn execute(command: Command) -> ExitCode {
             eprintln!("epoch {} is not implemented yet", unfinished.command_path());
             ExitCode::from(2)
         }
+    }
+}
+
+fn execute_ml_command(command: MlCommand) -> ExitCode {
+    match command {
+        MlCommand::Export {
+            state_root,
+            session,
+            task_group,
+            output,
+            max_branches,
+            max_events_per_branch,
+        } => ml::export(&ml::ExportOptions {
+            state_root,
+            session,
+            task_group,
+            output,
+            max_branches,
+            max_events_per_branch,
+        }),
     }
 }
 
@@ -1228,6 +1278,7 @@ impl Command {
             Self::Capability { .. } => "capability",
             Self::Effects { .. } => "effects",
             Self::Bench { .. } => "bench",
+            Self::Ml { .. } => "ml",
             Self::Fault { .. } => "fault",
             Self::Serve { .. } => "serve",
             Self::Demo { .. } => "demo",
@@ -1328,6 +1379,7 @@ mod tests {
             "fault",
             "fork",
             "init",
+            "ml",
             "restore",
             "resume",
             "run",
@@ -1349,6 +1401,7 @@ mod tests {
             ("capability", ["grant", "inspect", "revoke"].as_slice()),
             ("effects", ["list", "resolve"].as_slice()),
             ("bench", ["report", "run"].as_slice()),
+            ("ml", ["export"].as_slice()),
             ("fault", ["run"].as_slice()),
         ] {
             let subcommands = command

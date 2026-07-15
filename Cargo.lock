@@ -251,6 +251,7 @@ dependencies = [
  "epoch-sandbox",
  "epoch-storage",
  "epoch-supervisor",
+ "epoch-trajectory",
  "rusqlite",
  "serde",
  "serde_json",
@@ -415,6 +416,20 @@ dependencies = [
  "epoch-supervisor",
  "serde",
  "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "epoch-trajectory"
+version = "0.1.0"
+dependencies = [
+ "epoch-core",
+ "epoch-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
 ]

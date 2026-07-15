@@ -10,9 +10,10 @@ use std::{
 
 use epoch_core::{BranchId, SessionId};
 use epoch_effects::{
-    AuthorizationDecision, AuthorizationRequest, Authorizer, CanonicalIntent, DispatchOutcome,
-    DispatchRequest, DispatchResult, EffectDispatcher, EffectGateway, EffectState, FaultPoint,
-    FaultSafety, GatewayError,
+    AttemptState, AuthorizationDecision, AuthorizationRequest, Authorizer, CanonicalIntent,
+    DeterministicLocalDispatcher, DispatchFailureCode, DispatchOutcome, DispatchRequest,
+    DispatchResult, EffectDispatcher, EffectGateway, EffectState, FaultPoint, FaultSafety,
+    GatewayError,
 };
 use epoch_storage::Store;
 use rusqlite::params;
@@ -400,6 +401,146 @@ fn transition_history_is_database_enforced_append_only() {
             )
             .is_err()
     );
+}
+
+struct InspectingDispatcher {
+    database: PathBuf,
+    observed_durable_boundary: Mutex<bool>,
+}
+
+impl EffectDispatcher for InspectingDispatcher {
+    fn dispatch(&self, request: &DispatchRequest<'_>) -> DispatchOutcome {
+        let store = Store::open(&self.database).expect("dispatcher can reopen trusted DB");
+        let observation: (String, i64, i64) = store
+            .connection()
+            .query_row(
+                "SELECT state, \
+                        (SELECT COUNT(*) FROM effect_transition_history h \
+                         WHERE h.effect_id = i.id AND h.state = 'requested'), \
+                        (SELECT COUNT(*) FROM effect_attempts a \
+                         WHERE a.effect_id = i.id AND a.state = 'started') \
+                 FROM effect_intents i WHERE operation_id = ?1",
+                [request.operation_id().as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("intent is durable before provider invocation");
+        *self.observed_durable_boundary.lock().expect("observation") =
+            observation == ("dispatched".to_owned(), 1, 1);
+        DispatchOutcome::Committed(DispatchResult {
+            bytes: b"observed".to_vec(),
+            media_type: "text/plain".to_owned(),
+            downstream_reference: None,
+        })
+    }
+}
+
+#[test]
+fn intent_and_started_attempt_are_durable_before_dispatcher_invocation() {
+    let fixture = Fixture::new();
+    let dispatcher = Arc::new(InspectingDispatcher {
+        database: fixture.database.clone(),
+        observed_durable_boundary: Mutex::new(false),
+    });
+    let gateway = fixture.gateway(Arc::new(AllowAuthorizer::default()), dispatcher.clone());
+    gateway
+        .execute(&fixture.intent(json!({"body": "inspect"})), FaultPoint::None)
+        .expect("dispatch");
+    assert!(
+        *dispatcher
+            .observed_durable_boundary
+            .lock()
+            .expect("observation")
+    );
+}
+
+struct FailingDispatcher;
+
+impl EffectDispatcher for FailingDispatcher {
+    fn dispatch(&self, _request: &DispatchRequest<'_>) -> DispatchOutcome {
+        DispatchOutcome::Failed(DispatchFailureCode::Unavailable)
+    }
+}
+
+#[test]
+fn bounded_dispatch_failure_is_durable_in_transition_and_attempt_history() {
+    let fixture = Fixture::new();
+    let gateway = fixture.gateway(Arc::new(AllowAuthorizer::default()), Arc::new(FailingDispatcher));
+    let intent = fixture.intent(json!({"body": "fail"}));
+    assert!(matches!(
+        gateway.execute(&intent, FaultPoint::None),
+        Err(GatewayError::DispatchFailed {
+            code: DispatchFailureCode::Unavailable,
+            ..
+        })
+    ));
+    assert_eq!(
+        gateway.inspect(intent.operation_id()).expect("inspect").state,
+        EffectState::Failed
+    );
+    assert_eq!(
+        gateway
+            .attempt_history(intent.operation_id())
+            .expect("attempt history")
+            .into_iter()
+            .map(|entry| entry.state)
+            .collect::<Vec<_>>(),
+        [AttemptState::Started, AttemptState::Failed]
+    );
+}
+
+#[test]
+fn supplied_deterministic_dispatcher_is_idempotent_and_gateway_replays_it() {
+    let fixture = Fixture::new();
+    let dispatcher = Arc::new(DeterministicLocalDispatcher::default());
+    let gateway = fixture.gateway(Arc::new(AllowAuthorizer::default()), dispatcher.clone());
+    let intent = fixture.intent(json!({"body": "fixture"}));
+    let first = gateway
+        .execute(&intent, FaultPoint::None)
+        .expect("first execution");
+    let second = gateway
+        .execute(&intent, FaultPoint::None)
+        .expect("replay");
+    assert_eq!(first.result, second.result);
+    assert_eq!(dispatcher.dispatch_count(), 1);
+}
+
+#[test]
+fn duplicate_suppression_holds_across_independent_gateway_connections() {
+    const CALLERS: usize = 16;
+    let fixture = Fixture::new();
+    let dispatcher = Arc::new(IdempotentDispatcher::default());
+    let barrier = Arc::new(Barrier::new(CALLERS));
+    let handles = (0..CALLERS)
+        .map(|_| {
+            let database = fixture.database.clone();
+            let blobs = fixture.blobs.clone();
+            let dispatcher = dispatcher.clone();
+            let barrier = barrier.clone();
+            let intent = fixture.intent(json!({"body": "cross-connection"}));
+            thread::spawn(move || {
+                let gateway = EffectGateway::open(
+                    database,
+                    blobs,
+                    Arc::new(AllowAuthorizer::default()),
+                    dispatcher,
+                )
+                .expect("gateway connection");
+                barrier.wait();
+                gateway.execute(&intent, FaultPoint::None)
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let outcomes = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("caller"))
+        .collect::<Vec<_>>();
+    assert!(outcomes.iter().any(Result::is_ok));
+    assert!(outcomes.iter().all(|outcome| {
+        outcome.is_ok()
+            || matches!(outcome, Err(GatewayError::UnresolvedOperation { .. }))
+    }));
+    assert_eq!(dispatcher.calls.load(Ordering::SeqCst), 1);
 }
 
 fn path_contains(root: &Path, needle: &[u8]) -> bool {

@@ -28,9 +28,7 @@ impl Fixture {
         let task = store
             .put(b"task-one", "application/json")
             .expect("task blob");
-        let summary = store
-            .put(b"summary", "text/plain")
-            .expect("summary blob");
+        let summary = store.put(b"summary", "text/plain").expect("summary blob");
         let before = ApplicationContext {
             schema_version: APPLICATION_CONTEXT_SCHEMA_VERSION,
             safe_point_id: "safe-point-1".to_owned(),
@@ -128,12 +126,9 @@ fn reports_cursor_task_memory_and_reference_changes_with_json_pointer_paths() {
 
     let before_checkpoint = fixture.capture(&fixture.before);
     let after_checkpoint = fixture.capture(&after);
-    let diff = diff_application_checkpoints(
-        &fixture.backend,
-        &before_checkpoint,
-        &after_checkpoint,
-    )
-    .expect("valid diff");
+    let diff =
+        diff_application_checkpoints(&fixture.backend, &before_checkpoint, &after_checkpoint)
+            .expect("valid diff");
 
     assert!(!diff.identical);
     let paths = diff
@@ -183,23 +178,14 @@ fn classifies_added_removed_and_changed_keyed_state_deterministically() {
 
     let before_checkpoint = fixture.capture(&fixture.before);
     let after_checkpoint = fixture.capture(&after);
-    let diff = diff_application_checkpoints(
-        &fixture.backend,
-        &before_checkpoint,
-        &after_checkpoint,
-    )
-    .expect("valid diff");
+    let diff =
+        diff_application_checkpoints(&fixture.backend, &before_checkpoint, &after_checkpoint)
+            .expect("valid diff");
 
     let summary = diff
         .changes
         .iter()
-        .map(|change| {
-            (
-                change.path.as_str(),
-                change.classification,
-                change.section,
-            )
-        })
+        .map(|change| (change.path.as_str(), change.classification, change.section))
         .collect::<Vec<_>>();
     assert_eq!(
         summary,

@@ -1,9 +1,11 @@
 //! Bounded, diagnostic-rich semantic collection from Linux procfs.
 
+mod collector;
 mod kernel;
 mod model;
 mod parse;
 
+pub use collector::{ProcCollector, collect_live};
 pub use kernel::{
     normalize_fd_target, parse_inet_table, parse_namespace_target, summarize_fd_targets,
 };

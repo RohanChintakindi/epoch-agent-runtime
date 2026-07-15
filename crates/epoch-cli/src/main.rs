@@ -512,7 +512,6 @@ fn serve_dashboard(state_root: PathBuf, results_root: Option<PathBuf>, raw_bind:
             return ExitCode::from(2);
         }
     };
-    eprintln!("Epoch dashboard listening at http://{bind} (local, read-only, no authentication)");
     match serve(DashboardConfig {
         state_root,
         results_root,

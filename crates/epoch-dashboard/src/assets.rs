@@ -167,7 +167,7 @@ td.kind { white-space: normal; min-width: 170px; }
 }
 "#;
 
-pub const APP_JS: &str = r#"'use strict';
+pub const APP_JS: &str = r"'use strict';
 
 const POLL_MS = 5000;
 const TIMELINE_LIMIT = 50;
@@ -446,4 +446,4 @@ loadSessions();
 loadBackends();
 loadBenchmarks();
 setInterval(() => { if (!document.hidden) { loadSessions(true); refreshSession(); } }, POLL_MS);
-"#;
+";

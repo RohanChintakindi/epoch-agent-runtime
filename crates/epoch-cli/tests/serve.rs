@@ -104,9 +104,10 @@ fn serve_exposes_read_only_json_with_security_headers_on_loopback() {
     let mut child = ChildGuard(child);
 
     let mut stream = (0..100)
-        .find_map(|_| match TcpStream::connect(address) {
-            Ok(stream) => Some(stream),
-            Err(_) => {
+        .find_map(|_| {
+            if let Ok(stream) = TcpStream::connect(address) {
+                Some(stream)
+            } else {
                 assert!(
                     child.0.try_wait().expect("server state").is_none(),
                     "dashboard exited before accepting connections"

@@ -149,6 +149,10 @@ fn display_path(path: Option<&PathBuf>) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use clap::CommandFactory;
+
     use super::*;
 
     #[test]
@@ -160,5 +164,90 @@ mod tests {
     fn support_display_is_unambiguous() {
         assert_eq!(Support::Available.to_string(), "available");
         assert_eq!(Support::Unavailable.to_string(), "unavailable");
+    }
+
+    #[test]
+    fn command_tree_exposes_the_complete_runtime_spec_surface() {
+        let command = Cli::command();
+        let actual = command
+            .get_subcommands()
+            .map(|subcommand| subcommand.get_name())
+            .collect::<BTreeSet<_>>();
+        let expected = [
+            "bench",
+            "branch",
+            "capability",
+            "checkpoint",
+            "demo",
+            "diff",
+            "doctor",
+            "effects",
+            "events",
+            "fault",
+            "fork",
+            "init",
+            "restore",
+            "resume",
+            "run",
+            "serve",
+            "status",
+            "suspend",
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn nested_command_groups_match_the_runtime_spec() {
+        let command = Cli::command();
+        for (group, expected) in [
+            ("branch", ["abandon", "promote"].as_slice()),
+            ("capability", ["grant", "revoke"].as_slice()),
+            ("effects", ["list", "resolve"].as_slice()),
+            ("bench", ["report", "run"].as_slice()),
+            ("fault", ["run"].as_slice()),
+        ] {
+            let subcommands = command
+                .find_subcommand(group)
+                .expect("command group exists")
+                .get_subcommands()
+                .map(|subcommand| subcommand.get_name())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                subcommands,
+                expected.iter().copied().collect(),
+                "unexpected {group} command surface"
+            );
+        }
+    }
+
+    #[test]
+    fn representative_spec_commands_parse() {
+        for arguments in [
+            vec!["epoch", "run", "--manifest", "workload.toml"],
+            vec!["epoch", "events", "session-1", "--branch", "branch-1"],
+            vec![
+                "epoch",
+                "checkpoint",
+                "session-1",
+                "--branch",
+                "branch-1",
+                "--label",
+                "before-edit",
+            ],
+            vec![
+                "epoch",
+                "restore",
+                "epoch-1",
+                "--mode",
+                "fork-on-divergence",
+            ],
+            vec!["epoch", "effects", "resolve", "effect-1", "--committed"],
+            vec!["epoch", "serve", "--bind", "127.0.0.1:9090"],
+        ] {
+            Cli::try_parse_from(arguments).expect("specified command must parse");
+        }
     }
 }

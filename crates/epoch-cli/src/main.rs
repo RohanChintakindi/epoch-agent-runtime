@@ -1,7 +1,13 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
-use clap::{Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
+use epoch_core::{BranchId, SessionId};
+use epoch_supervisor::{
+    AgentTermination, DirectSupervisor, EventPageRequest, InspectionError, RunOutcome,
+};
 use serde::Serialize;
+
+const SUPERVISOR_FAILURE_EXIT: u8 = 125;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -16,12 +22,157 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Initialize an Epoch state directory.
+    Init,
     /// Inspect host support for Epoch's execution mechanisms.
     Doctor {
         /// Emit machine-readable JSON.
         #[arg(long)]
         json: bool,
     },
+    /// Run a workload under the selected execution backend.
+    Run {
+        /// Workload manifest to execute.
+        #[arg(long)]
+        manifest: PathBuf,
+    },
+    /// Show the current state of a session.
+    Status { session: String },
+    /// List the typed event timeline for a session or branch.
+    Events {
+        session: String,
+        #[arg(long)]
+        branch: Option<String>,
+        /// Number of events to skip in stable branch/sequence order.
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        /// Maximum number of events to return (1 through 1000).
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+    },
+    /// Commit a composite execution checkpoint.
+    Checkpoint {
+        session: String,
+        #[arg(long)]
+        branch: Option<String>,
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// Restore a committed epoch.
+    Restore {
+        epoch: String,
+        #[arg(long, value_enum, default_value_t = RestoreMode::Strict)]
+        mode: RestoreMode,
+    },
+    /// Create a new logical branch from an epoch.
+    Fork {
+        epoch: String,
+        #[arg(long)]
+        name: String,
+    },
+    /// Suspend a branch at a safe boundary.
+    Suspend { branch: String },
+    /// Resume a suspended branch.
+    Resume { branch: String },
+    /// Manage branch promotion and abandonment.
+    Branch {
+        #[command(subcommand)]
+        command: BranchCommand,
+    },
+    /// Compare two epochs or branches semantically.
+    Diff {
+        left: String,
+        right: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manage branch-bound capabilities.
+    Capability {
+        #[command(subcommand)]
+        command: CapabilityCommand,
+    },
+    /// Inspect and reconcile external effects.
+    Effects {
+        #[command(subcommand)]
+        command: EffectsCommand,
+    },
+    /// Run and report benchmark suites.
+    Bench {
+        #[command(subcommand)]
+        command: BenchCommand,
+    },
+    /// Run a reproducible fault scenario.
+    Fault {
+        #[command(subcommand)]
+        command: FaultCommand,
+    },
+    /// Serve the local read-only inspection API.
+    Serve {
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        bind: String,
+    },
+    /// Run the complete deterministic interview demonstration.
+    Demo,
+}
+
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum RestoreMode {
+    #[default]
+    Strict,
+    Inspect,
+    ForkOnDivergence,
+}
+
+#[derive(Debug, Subcommand)]
+enum BranchCommand {
+    Promote { branch: String },
+    Abandon { branch: String },
+}
+
+#[derive(Debug, Subcommand)]
+enum CapabilityCommand {
+    Grant {
+        branch: String,
+        action: String,
+        constraints: Option<String>,
+    },
+    Revoke {
+        capability: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum EffectsCommand {
+    List { session: String },
+    Resolve(ResolveEffect),
+}
+
+#[derive(Debug, Args)]
+#[command(group(
+    ArgGroup::new("resolution")
+        .required(true)
+        .multiple(false)
+        .args(["committed", "failed", "compensate"])
+))]
+struct ResolveEffect {
+    effect: String,
+    #[arg(long)]
+    committed: bool,
+    #[arg(long)]
+    failed: bool,
+    #[arg(long)]
+    compensate: bool,
+}
+
+#[derive(Debug, Subcommand)]
+enum BenchCommand {
+    Run { suite: String },
+    Report { run: String },
+}
+
+#[derive(Debug, Subcommand)]
+enum FaultCommand {
+    Run { scenario: String },
 }
 
 #[derive(Debug, Serialize)]
@@ -38,6 +189,17 @@ struct HostCapabilities {
     strace: Option<PathBuf>,
     perf: Option<PathBuf>,
     unshare: Option<PathBuf>,
+}
+
+#[derive(Debug, Serialize)]
+struct RunReport {
+    session_id: String,
+    branch_id: String,
+    termination: &'static str,
+    exit_code: Option<i32>,
+    signal: Option<i32>,
+    protocol_records: usize,
+    stderr_bytes: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -104,8 +266,19 @@ fn find_in_path(binary: &str) -> Option<PathBuf> {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    match cli.command {
+    execute(Cli::parse().command)
+}
+
+fn execute(command: Command) -> ExitCode {
+    match command {
+        Command::Run { manifest } => run_manifest(&manifest),
+        Command::Status { session } => inspect_status(&session),
+        Command::Events {
+            session,
+            branch,
+            offset,
+            limit,
+        } => inspect_events(&session, branch.as_deref(), offset, limit),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -137,6 +310,163 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
+        unfinished => {
+            eprintln!("epoch {} is not implemented yet", unfinished.command_path());
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn inspect_status(raw_session: &str) -> ExitCode {
+    let session_id = match parse_session_id(raw_session) {
+        Ok(session_id) => session_id,
+        Err(status) => return status,
+    };
+    let supervisor = match DirectSupervisor::open_existing(".epoch") {
+        Ok(supervisor) => supervisor,
+        Err(error) => return report_inspection_error(&error),
+    };
+    match supervisor.session_status(session_id) {
+        Ok(report) => print_json(&report),
+        Err(error) => report_inspection_error(&error),
+    }
+}
+
+fn inspect_events(
+    raw_session: &str,
+    raw_branch: Option<&str>,
+    offset: u64,
+    limit: usize,
+) -> ExitCode {
+    let session_id = match parse_session_id(raw_session) {
+        Ok(session_id) => session_id,
+        Err(status) => return status,
+    };
+    let branch_id = match raw_branch {
+        Some(value) => {
+            let Ok(branch_id) = value.parse::<BranchId>() else {
+                eprintln!("invalid branch ID: {value:?}");
+                return ExitCode::from(2);
+            };
+            Some(branch_id)
+        }
+        None => None,
+    };
+    let supervisor = match DirectSupervisor::open_existing(".epoch") {
+        Ok(supervisor) => supervisor,
+        Err(error) => return report_inspection_error(&error),
+    };
+    match supervisor.events(EventPageRequest {
+        session_id,
+        branch_id,
+        offset,
+        limit,
+    }) {
+        Ok(report) => print_json(&report),
+        Err(error) => report_inspection_error(&error),
+    }
+}
+
+fn parse_session_id(value: &str) -> Result<SessionId, ExitCode> {
+    value.parse().map_err(|_| {
+        eprintln!("invalid session ID: {value:?}");
+        ExitCode::from(2)
+    })
+}
+
+fn report_inspection_error(error: &InspectionError) -> ExitCode {
+    eprintln!("{error}");
+    if error.is_user_error() {
+        ExitCode::from(2)
+    } else {
+        ExitCode::from(SUPERVISOR_FAILURE_EXIT)
+    }
+}
+
+fn print_json(value: &impl Serialize) -> ExitCode {
+    match serde_json::to_string(value) {
+        Ok(encoded) => {
+            println!("{encoded}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("failed to encode inspection report: {error}");
+            ExitCode::from(SUPERVISOR_FAILURE_EXIT)
+        }
+    }
+}
+
+fn run_manifest(manifest: &std::path::Path) -> ExitCode {
+    let supervisor = match DirectSupervisor::open(".epoch") {
+        Ok(supervisor) => supervisor,
+        Err(error) => {
+            eprintln!("supervisor initialization failed: {error}");
+            return ExitCode::from(SUPERVISOR_FAILURE_EXIT);
+        }
+    };
+    match supervisor.run_manifest(manifest) {
+        Ok(outcome) => report_run(&outcome),
+        Err(error) => {
+            eprintln!("supervisor failed: {error}");
+            ExitCode::from(SUPERVISOR_FAILURE_EXIT)
+        }
+    }
+}
+
+fn report_run(outcome: &RunOutcome) -> ExitCode {
+    let (termination, exit_code, signal, status) = match outcome.termination {
+        AgentTermination::Succeeded { code } => ("succeeded", Some(code), None, ExitCode::SUCCESS),
+        AgentTermination::NonZero { code, signal } => {
+            ("nonzero", code, signal, nonzero_exit_code(code))
+        }
+    };
+    let report = RunReport {
+        session_id: outcome.session_id.to_string(),
+        branch_id: outcome.branch_id.to_string(),
+        termination,
+        exit_code,
+        signal,
+        protocol_records: outcome.protocol_records,
+        stderr_bytes: outcome.stderr.len(),
+    };
+    match serde_json::to_string(&report) {
+        Ok(encoded) => println!("{encoded}"),
+        Err(error) => {
+            eprintln!("failed to encode run report: {error}");
+            return ExitCode::from(SUPERVISOR_FAILURE_EXIT);
+        }
+    }
+    status
+}
+
+fn nonzero_exit_code(code: Option<i32>) -> ExitCode {
+    code.and_then(|value| u8::try_from(value).ok())
+        .filter(|value| *value != 0)
+        .map_or_else(|| ExitCode::from(1), ExitCode::from)
+}
+
+impl Command {
+    const fn command_path(&self) -> &'static str {
+        match self {
+            Self::Init => "init",
+            Self::Doctor { .. } => "doctor",
+            Self::Run { .. } => "run",
+            Self::Status { .. } => "status",
+            Self::Events { .. } => "events",
+            Self::Checkpoint { .. } => "checkpoint",
+            Self::Restore { .. } => "restore",
+            Self::Fork { .. } => "fork",
+            Self::Suspend { .. } => "suspend",
+            Self::Resume { .. } => "resume",
+            Self::Branch { .. } => "branch",
+            Self::Diff { .. } => "diff",
+            Self::Capability { .. } => "capability",
+            Self::Effects { .. } => "effects",
+            Self::Bench { .. } => "bench",
+            Self::Fault { .. } => "fault",
+            Self::Serve { .. } => "serve",
+            Self::Demo => "demo",
+        }
     }
 }
 
@@ -149,6 +479,10 @@ fn display_path(path: Option<&PathBuf>) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use clap::CommandFactory;
+
     use super::*;
 
     #[test]
@@ -160,5 +494,111 @@ mod tests {
     fn support_display_is_unambiguous() {
         assert_eq!(Support::Available.to_string(), "available");
         assert_eq!(Support::Unavailable.to_string(), "unavailable");
+    }
+
+    #[test]
+    fn command_tree_exposes_the_complete_runtime_spec_surface() {
+        let command = Cli::command();
+        let actual = command
+            .get_subcommands()
+            .map(clap::Command::get_name)
+            .collect::<BTreeSet<_>>();
+        let expected = [
+            "bench",
+            "branch",
+            "capability",
+            "checkpoint",
+            "demo",
+            "diff",
+            "doctor",
+            "effects",
+            "events",
+            "fault",
+            "fork",
+            "init",
+            "restore",
+            "resume",
+            "run",
+            "serve",
+            "status",
+            "suspend",
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn nested_command_groups_match_the_runtime_spec() {
+        let command = Cli::command();
+        for (group, expected) in [
+            ("branch", ["abandon", "promote"].as_slice()),
+            ("capability", ["grant", "revoke"].as_slice()),
+            ("effects", ["list", "resolve"].as_slice()),
+            ("bench", ["report", "run"].as_slice()),
+            ("fault", ["run"].as_slice()),
+        ] {
+            let subcommands = command
+                .find_subcommand(group)
+                .expect("command group exists")
+                .get_subcommands()
+                .map(clap::Command::get_name)
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                subcommands,
+                expected.iter().copied().collect(),
+                "unexpected {group} command surface"
+            );
+        }
+    }
+
+    #[test]
+    fn representative_spec_commands_parse() {
+        for arguments in [
+            vec!["epoch", "run", "--manifest", "workload.toml"],
+            vec!["epoch", "events", "session-1", "--branch", "branch-1"],
+            vec![
+                "epoch",
+                "checkpoint",
+                "session-1",
+                "--branch",
+                "branch-1",
+                "--label",
+                "before-edit",
+            ],
+            vec![
+                "epoch",
+                "restore",
+                "epoch-1",
+                "--mode",
+                "fork-on-divergence",
+            ],
+            vec!["epoch", "effects", "resolve", "effect-1", "--committed"],
+            vec!["epoch", "serve", "--bind", "127.0.0.1:9090"],
+        ] {
+            Cli::try_parse_from(arguments).expect("specified command must parse");
+        }
+    }
+
+    #[test]
+    fn unfinished_commands_return_an_explicit_failure() {
+        assert_ne!(execute(Command::Init), ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn effect_resolution_requires_exactly_one_outcome() {
+        assert!(Cli::try_parse_from(["epoch", "effects", "resolve", "effect-1"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "epoch",
+                "effects",
+                "resolve",
+                "effect-1",
+                "--committed",
+                "--failed",
+            ])
+            .is_err()
+        );
     }
 }

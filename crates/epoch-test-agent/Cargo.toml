@@ -1,22 +1,20 @@
 [package]
-name = "epoch-cli"
+name = "epoch-test-agent"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "epoch"
-path = "src/main.rs"
-
 [dependencies]
 clap.workspace = true
-epoch-core = { path = "../epoch-core" }
-epoch-supervisor = { path = "../epoch-supervisor" }
+epoch-blob = { path = "../epoch-blob" }
+epoch-protocol = { path = "../epoch-protocol" }
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
+epoch-supervisor = { path = "../epoch-supervisor" }
 tempfile.workspace = true
 
 [lints]

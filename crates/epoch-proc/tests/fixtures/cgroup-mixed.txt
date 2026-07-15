@@ -1,0 +1,4 @@
+0::/user.slice/user-1000.slice/session-9.scope
+5:cpu,cpuacct:/agent.slice
+7:memory:/agent.slice
+malformed

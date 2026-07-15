@@ -1,22 +1,18 @@
 [package]
-name = "epoch-cli"
+name = "epoch-blob"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "epoch"
-path = "src/main.rs"
-
 [dependencies]
-clap.workspace = true
-epoch-core = { path = "../epoch-core" }
-epoch-supervisor = { path = "../epoch-supervisor" }
 serde.workspace = true
-serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 tempfile.workspace = true
 
 [lints]

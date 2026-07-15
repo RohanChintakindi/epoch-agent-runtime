@@ -1,0 +1,11 @@
+Name:	epoch-agent
+Name:	duplicate
+State:	?
+Pid:	not-a-pid
+PPid:	4000
+Uid:	1000	1001
+Gid:	bad	2001	2002	2003
+VmRSS:	4096 MB
+Threads:	0
+CapEff:	zzzz
+NoNewPrivs:	maybe

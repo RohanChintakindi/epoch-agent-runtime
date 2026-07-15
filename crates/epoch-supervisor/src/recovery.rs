@@ -48,10 +48,12 @@ pub struct RecoveryIssue {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecoveryCode {
+    BranchNameConflict,
     BranchRequired,
     Decode,
     Integrity,
     InvalidCapture,
+    InvalidBranchName,
     InvalidContext,
     MetadataMismatch,
     MissingReference,
@@ -69,10 +71,12 @@ impl RecoveryCode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::BranchNameConflict => "branch_name_conflict",
             Self::BranchRequired => "branch_required",
             Self::Decode => "decode",
             Self::Integrity => "integrity",
             Self::InvalidCapture => "invalid_capture",
+            Self::InvalidBranchName => "invalid_branch_name",
             Self::InvalidContext => "invalid_context",
             Self::MetadataMismatch => "metadata_mismatch",
             Self::MissingReference => "missing_reference",
@@ -161,6 +165,7 @@ pub struct ApplicationStatusReport {
     pub session_state: String,
     pub current_epoch_id: Option<EpochId>,
     pub context: Option<ApplicationContext>,
+    pub inherited_from_parent: bool,
     pub restore_scope: RestoreScope,
 }
 
@@ -234,6 +239,24 @@ struct LoadedApplicationEpoch {
     artifact: ApplicationCheckpoint,
     workspace: WorkspaceSnapshot,
     workspace_source: PathBuf,
+    effect_frontier: u64,
+}
+
+pub(crate) struct ValidatedApplicationSource {
+    pub epoch_id: EpochId,
+    pub session_id: SessionId,
+    pub branch_id: BranchId,
+    pub component_hash: BlobHash,
+    pub context: ApplicationContext,
+    pub effect_frontier: u64,
+}
+
+struct StoredApplicationBranch {
+    session_state: String,
+    parent_branch_id: Option<String>,
+    fork_epoch_id: Option<String>,
+    fork_point_sequence: Option<i64>,
+    fork_component_hash: Option<String>,
 }
 
 struct ValidatedBoundary {
@@ -435,6 +458,35 @@ impl DirectSupervisor {
         }
     }
 
+    pub(crate) fn validated_application_source(
+        &self,
+        epoch_id: EpochId,
+    ) -> RecoveryOutcome<ValidatedApplicationSource> {
+        let loaded = match self.load_epoch(epoch_id) {
+            Ok(loaded) => loaded,
+            Err(rejection) => return rejection.into_outcome(),
+        };
+        let backend = match self.application_backend() {
+            Ok(backend) => backend,
+            Err(issue) => return RecoveryOutcome::Failed(issue),
+        };
+        let context = match backend.restore(&loaded.artifact) {
+            BackendOutcome::Supported(context) => context,
+            BackendOutcome::Unsupported(issue) => {
+                return RecoveryOutcome::Unsupported(map_unsupported(issue));
+            }
+            BackendOutcome::Failed(issue) => return RecoveryOutcome::Failed(map_failure(issue)),
+        };
+        RecoveryOutcome::Supported(ValidatedApplicationSource {
+            epoch_id,
+            session_id: loaded.session_id,
+            branch_id: loaded.branch_id,
+            component_hash: loaded.artifact.component_hash,
+            context,
+            effect_frontier: loaded.effect_frontier,
+        })
+    }
+
     /// Inspects the latest activated application context for one session branch.
     #[must_use]
     pub fn application_status(
@@ -450,12 +502,23 @@ impl DirectSupervisor {
             Ok(store) => store,
             Err(error) => return failed(RecoveryCode::Persistence, error.to_string()),
         };
-        let session_state = match store.connection().query_row(
-            "SELECT state FROM sessions WHERE id = ?1",
-            [session_id.to_string()],
-            |row| row.get::<_, String>(0),
+        let stored_branch = match store.connection().query_row(
+            "SELECT s.state, b.parent_branch_id, b.fork_epoch_id, b.fork_point_sequence, \
+                    b.fork_component_hash \
+             FROM sessions s JOIN branches b ON b.session_id = s.id \
+             WHERE s.id = ?1 AND b.id = ?2",
+            params![session_id.to_string(), branch_id.to_string()],
+            |row| {
+                Ok(StoredApplicationBranch {
+                    session_state: row.get(0)?,
+                    parent_branch_id: row.get(1)?,
+                    fork_epoch_id: row.get(2)?,
+                    fork_point_sequence: row.get(3)?,
+                    fork_component_hash: row.get(4)?,
+                })
+            },
         ) {
-            Ok(state) => state,
+            Ok(value) => value,
             Err(error) => return failed(RecoveryCode::Persistence, error.to_string()),
         };
         drop(store);
@@ -474,14 +537,7 @@ impl DirectSupervisor {
             Err(error) => return failed(RecoveryCode::Persistence, error.to_string()),
         };
         let Some(event) = events.last() else {
-            return RecoveryOutcome::Supported(ApplicationStatusReport {
-                session_id,
-                branch_id,
-                session_state,
-                current_epoch_id: None,
-                context: None,
-                restore_scope: RestoreScope::ApplicationAndWorkspace,
-            });
+            return self.status_without_activation(session_id, branch_id, stored_branch);
         };
         let payload = match self.journal.read_payload(event) {
             Ok(payload) => payload,
@@ -512,9 +568,73 @@ impl DirectSupervisor {
         RecoveryOutcome::Supported(ApplicationStatusReport {
             session_id,
             branch_id,
-            session_state,
+            session_state: stored_branch.session_state,
             current_epoch_id: Some(epoch_id),
             context: Some(restored.context),
+            inherited_from_parent: false,
+            restore_scope: RestoreScope::ApplicationAndWorkspace,
+        })
+    }
+
+    fn status_without_activation(
+        &self,
+        session_id: SessionId,
+        branch_id: BranchId,
+        branch: StoredApplicationBranch,
+    ) -> RecoveryOutcome<ApplicationStatusReport> {
+        let lineage = (
+            branch.parent_branch_id,
+            branch.fork_epoch_id,
+            branch.fork_point_sequence,
+            branch.fork_component_hash,
+        );
+        let (Some(parent), Some(epoch), Some(point), Some(component)) = lineage else {
+            if lineage != (None, None, None, None) {
+                return failed(
+                    RecoveryCode::MetadataMismatch,
+                    "branch has partial fork lineage".to_owned(),
+                );
+            }
+            return RecoveryOutcome::Supported(ApplicationStatusReport {
+                session_id,
+                branch_id,
+                session_state: branch.session_state,
+                current_epoch_id: None,
+                context: None,
+                inherited_from_parent: false,
+                restore_scope: RestoreScope::ApplicationAndWorkspace,
+            });
+        };
+        let epoch_id = match EpochId::from_str(&epoch) {
+            Ok(epoch_id) => epoch_id,
+            Err(error) => return failed(RecoveryCode::MetadataMismatch, error.to_string()),
+        };
+        let source = match self.validated_application_source(epoch_id) {
+            RecoveryOutcome::Supported(source) => source,
+            RecoveryOutcome::Unsupported(issue) => return RecoveryOutcome::Unsupported(issue),
+            RecoveryOutcome::Failed(issue) => return RecoveryOutcome::Failed(issue),
+        };
+        let expected_point = match u64::try_from(point) {
+            Ok(point) => point,
+            Err(error) => return failed(RecoveryCode::MetadataMismatch, error.to_string()),
+        };
+        if source.session_id != session_id
+            || source.branch_id.to_string() != parent
+            || source.component_hash.to_string() != component
+            || source.context.cursors.boundary_sequence != expected_point
+        {
+            return failed(
+                RecoveryCode::MetadataMismatch,
+                "fork lineage does not match its validated application checkpoint".to_owned(),
+            );
+        }
+        RecoveryOutcome::Supported(ApplicationStatusReport {
+            session_id,
+            branch_id,
+            session_state: branch.session_state,
+            current_epoch_id: Some(epoch_id),
+            context: Some(source.context),
+            inherited_from_parent: true,
             restore_scope: RestoreScope::ApplicationAndWorkspace,
         })
     }
@@ -915,8 +1035,10 @@ impl DirectSupervisor {
         let row = store
             .connection()
             .query_row(
-                "SELECT e.session_id, e.branch_id, e.status, e.backend, c.status, c.backend, c.blob_hash, \
-                        c.checksum_sha256, c.byte_length, c.metadata_json, b.byte_length, b.media_type \
+                "SELECT e.session_id, e.branch_id, e.status, e.backend, e.effect_frontier, \
+                        c.status, c.backend, \
+                        c.blob_hash, c.checksum_sha256, c.byte_length, c.metadata_json, \
+                        b.byte_length, b.media_type \
                  FROM epochs e \
                  JOIN snapshot_components c ON c.epoch_id = e.id \
                  JOIN blobs b ON b.hash = c.blob_hash \
@@ -928,14 +1050,15 @@ impl DirectSupervisor {
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
                         row.get::<_, String>(3)?,
-                        row.get::<_, String>(4)?,
+                        row.get::<_, i64>(4)?,
                         row.get::<_, String>(5)?,
                         row.get::<_, String>(6)?,
                         row.get::<_, String>(7)?,
-                        row.get::<_, i64>(8)?,
-                        row.get::<_, String>(9)?,
-                        row.get::<_, i64>(10)?,
-                        row.get::<_, String>(11)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, i64>(9)?,
+                        row.get::<_, String>(10)?,
+                        row.get::<_, i64>(11)?,
+                        row.get::<_, String>(12)?,
                     ))
                 },
             )
@@ -946,6 +1069,7 @@ impl DirectSupervisor {
             branch,
             epoch_status,
             epoch_backend,
+            effect_frontier,
             component_status,
             backend,
             blob_hash,
@@ -990,6 +1114,8 @@ impl DirectSupervisor {
         let (session_id, branch_id, component_hash, byte_length) =
             parse_application_component(&session, &branch, &blob_hash, component_length)?;
         let (workspace, workspace_source) = load_workspace_component(store.connection(), epoch_id)?;
+        let effect_frontier = u64::try_from(effect_frontier)
+            .map_err(|error| failed_rejection(RecoveryCode::MetadataMismatch, error.to_string()))?;
         Ok(LoadedApplicationEpoch {
             epoch_id,
             session_id,
@@ -1006,6 +1132,7 @@ impl DirectSupervisor {
             ),
             workspace,
             workspace_source,
+            effect_frontier,
         })
     }
 

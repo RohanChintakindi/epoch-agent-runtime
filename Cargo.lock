@@ -343,6 +343,7 @@ dependencies = [
  "epoch-checkpoint",
  "epoch-core",
  "epoch-diff",
+ "epoch-events",
  "epoch-protocol",
  "epoch-storage",
  "epoch-supervisor",

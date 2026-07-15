@@ -1,10 +1,15 @@
 //! Direct-process supervision for observable Epoch workloads.
 
+mod fork;
 mod manifest;
 mod recovery;
 mod stream;
 mod supervisor;
 
+pub use fork::{
+    BoundaryOutcome, EffectFrontierBoundary, ForkBranchReport, RecordedModelResult,
+    RecordedReplayResults, RecordedToolResult, ReplayReport, UnsupportedBoundary,
+};
 pub use manifest::{
     MAX_ARGUMENT_BYTES, MAX_ARGUMENTS, MAX_MANIFEST_BYTES, ManifestError, WorkloadManifest,
 };

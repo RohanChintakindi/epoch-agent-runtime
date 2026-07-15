@@ -1,13 +1,12 @@
 use std::{
-    fmt::Write as _,
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use epoch_blob::BlobHash;
 use epoch_protocol::{Message, decode_line};
 use epoch_test_agent::{CrashPoint, Scenario, WorkloadConfig, WorkloadError, run_workload};
-use sha2::{Digest, Sha256};
 
 static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
 
@@ -55,16 +54,12 @@ fn messages(trace: &[u8]) -> Vec<Message> {
         .collect()
 }
 
-fn sha256(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut encoded = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        write!(&mut encoded, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-    encoded
+fn sha256(bytes: &[u8]) -> BlobHash {
+    BlobHash::digest(bytes)
 }
 
-fn is_canonical_sha256(value: &str) -> bool {
+fn is_canonical_sha256(value: &BlobHash) -> bool {
+    let value = value.as_str();
     value.len() == 64
         && value
             .bytes()

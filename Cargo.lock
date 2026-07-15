@@ -218,8 +218,10 @@ dependencies = [
 name = "epoch-protocol"
 version = "0.1.0"
 dependencies = [
+ "epoch-blob",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
 ]
 
@@ -247,10 +249,10 @@ name = "epoch-test-agent"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "epoch-blob",
  "epoch-protocol",
  "serde",
  "serde_json",
- "sha2",
  "thiserror",
 ]
 

@@ -1,11 +1,18 @@
 //! Versioned JSONL messages exchanged between an agent and the Epoch supervisor.
 
+mod unique_json;
+
+use epoch_blob::{BlobHash, BlobStore};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
 pub const CURRENT_PROTOCOL_VERSION: u16 = 1;
 pub const MAX_JSONL_BYTES: usize = 1024 * 1024;
+pub const MAX_SEQUENCE: u64 = i64::MAX as u64;
+pub const MAX_CONTEXT_REVISION: u64 = i64::MAX as u64;
+pub const MAX_IDENTIFIER_BYTES: usize = 255;
+pub const MAX_NAME_BYTES: usize = 128;
 
 pub type Extensions = Map<String, Value>;
 
@@ -27,6 +34,72 @@ impl Envelope {
             extensions: Extensions::new(),
         }
     }
+
+    /// Returns every content-addressed blob referenced by this record.
+    #[must_use]
+    pub fn referenced_hashes(&self) -> Vec<&BlobHash> {
+        match &self.message {
+            Message::AgentStart(_) => Vec::new(),
+            Message::ContextUpdate(payload) => vec![&payload.context_hash],
+            Message::ModelRequest(payload) => vec![&payload.input_hash],
+            Message::ModelResponse(payload) => vec![&payload.output_hash],
+            Message::ToolCall(payload) => vec![&payload.input_hash],
+            Message::ToolResult(payload) => payload.output_hash.iter().collect(),
+            Message::SafePoint(payload) => vec![&payload.context_hash],
+            Message::Completion(payload) => payload.output_hash.iter().collect(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BlobReferenceStatus {
+    Missing,
+    Unverified,
+    Verified,
+}
+
+/// Trusted lookup used immediately before a supervisor acknowledges a boundary record.
+pub trait BlobReferenceResolver {
+    fn status(&self, hash: &BlobHash) -> BlobReferenceStatus;
+}
+
+impl BlobReferenceResolver for BlobStore {
+    fn status(&self, hash: &BlobHash) -> BlobReferenceStatus {
+        match self.read(hash) {
+            Ok(_) => BlobReferenceStatus::Verified,
+            Err(epoch_blob::BlobError::NotFound(_)) => BlobReferenceStatus::Missing,
+            Err(_) => BlobReferenceStatus::Unverified,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum ReferenceError {
+    #[error("referenced blob {0} is missing")]
+    Missing(BlobHash),
+    #[error("referenced blob {0} failed integrity verification")]
+    Unverified(BlobHash),
+}
+
+/// Require all hashes in a boundary record to resolve to integrity-checked trusted blobs.
+///
+/// # Errors
+///
+/// Returns the first missing or unverified reference.
+pub fn validate_referenced_blobs(
+    envelope: &Envelope,
+    resolver: &impl BlobReferenceResolver,
+) -> Result<(), ReferenceError> {
+    for hash in envelope.referenced_hashes() {
+        match resolver.status(hash) {
+            BlobReferenceStatus::Missing => return Err(ReferenceError::Missing(hash.clone())),
+            BlobReferenceStatus::Unverified => {
+                return Err(ReferenceError::Unverified(hash.clone()));
+            }
+            BlobReferenceStatus::Verified => {}
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -75,34 +148,34 @@ payload!(AgentStart {
 });
 payload!(ContextUpdate {
     revision: u64,
-    context_hash: String,
+    context_hash: BlobHash,
 });
 payload!(ModelRequest {
     request_id: String,
     model: String,
-    input_hash: String,
+    input_hash: BlobHash,
 });
 payload!(ModelResponse {
     request_id: String,
-    output_hash: String,
+    output_hash: BlobHash,
 });
 payload!(ToolCall {
     call_id: String,
     tool: String,
-    input_hash: String,
+    input_hash: BlobHash,
 });
 payload!(ToolResult {
     call_id: String,
     outcome: ToolOutcome,
-    output_hash: Option<String>,
+    output_hash: Option<BlobHash>,
 });
 payload!(SafePoint {
     safe_point_id: String,
-    context_hash: String,
+    context_hash: BlobHash,
 });
 payload!(Completion {
     outcome: CompletionOutcome,
-    output_hash: Option<String>,
+    output_hash: Option<BlobHash>,
 });
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -129,6 +202,10 @@ pub enum ProtocolError {
     LineTooLarge { actual: usize, maximum: usize },
     #[error("input contains more than one JSONL record")]
     MultipleRecords,
+    #[error("input contains a bare carriage return")]
+    BareCarriageReturn,
+    #[error("JSON object contains duplicate key `{key}`")]
+    DuplicateKey { key: String },
     #[error("malformed JSON at line {line}, column {column}: {message}")]
     MalformedJson {
         line: usize,
@@ -165,11 +242,14 @@ pub fn decode_line(input: &[u8]) -> Result<Envelope, ProtocolError> {
     if record.iter().all(u8::is_ascii_whitespace) {
         return Err(ProtocolError::EmptyLine);
     }
-    if record.contains(&b'\n') || record.contains(&b'\r') {
+    if record.contains(&b'\r') {
+        return Err(ProtocolError::BareCarriageReturn);
+    }
+    if record.contains(&b'\n') {
         return Err(ProtocolError::MultipleRecords);
     }
 
-    let value: Value = serde_json::from_slice(record).map_err(|error| json_error(&error))?;
+    let value = unique_json::from_slice(record).map_err(|error| json_error(&error))?;
     let Value::Object(mut fields) = value else {
         return Err(ProtocolError::InvalidField {
             field: "$".to_owned(),
@@ -246,17 +326,27 @@ pub fn encode_line(envelope: &Envelope) -> Result<String, ProtocolError> {
 }
 
 fn strip_record_terminator(input: &[u8]) -> &[u8] {
-    let without_newline = input.strip_suffix(b"\n").unwrap_or(input);
-    without_newline
-        .strip_suffix(b"\r")
-        .unwrap_or(without_newline)
+    input
+        .strip_suffix(b"\r\n")
+        .or_else(|| input.strip_suffix(b"\n"))
+        .unwrap_or(input)
 }
 
 fn json_error(error: &serde_json::Error) -> ProtocolError {
+    let message = error.to_string();
+    if let Some(remainder) = message
+        .split_once(unique_json::DUPLICATE_KEY_PREFIX)
+        .map(|(_, remainder)| remainder)
+        && let Some((key, _)) = remainder.split_once('`')
+    {
+        return ProtocolError::DuplicateKey {
+            key: key.to_owned(),
+        };
+    }
     ProtocolError::MalformedJson {
         line: error.line(),
         column: error.column(),
-        message: error.to_string(),
+        message,
     }
 }
 
@@ -358,6 +448,7 @@ fn validate(envelope: &Envelope) -> Result<(), ProtocolError> {
             supported: CURRENT_PROTOCOL_VERSION,
         });
     }
+    bounded_integer("sequence", envelope.sequence, MAX_SEQUENCE)?;
     reject_reserved(
         &envelope.extensions,
         &["protocol_version", "sequence", "type", "payload"],
@@ -366,9 +457,17 @@ fn validate(envelope: &Envelope) -> Result<(), ProtocolError> {
 
     match &envelope.message {
         Message::AgentStart(payload) => {
-            nonempty("payload.agent_id", &payload.agent_id)?;
-            nonempty("payload.session_id", &payload.session_id)?;
-            nonempty("payload.branch_id", &payload.branch_id)?;
+            bounded_string("payload.agent_id", &payload.agent_id, MAX_IDENTIFIER_BYTES)?;
+            bounded_string(
+                "payload.session_id",
+                &payload.session_id,
+                MAX_IDENTIFIER_BYTES,
+            )?;
+            bounded_string(
+                "payload.branch_id",
+                &payload.branch_id,
+                MAX_IDENTIFIER_BYTES,
+            )?;
             reject_reserved(
                 &payload.extensions,
                 &["agent_id", "session_id", "branch_id"],
@@ -376,7 +475,7 @@ fn validate(envelope: &Envelope) -> Result<(), ProtocolError> {
             )
         }
         Message::ContextUpdate(payload) => {
-            nonempty("payload.context_hash", &payload.context_hash)?;
+            bounded_integer("payload.revision", payload.revision, MAX_CONTEXT_REVISION)?;
             reject_reserved(
                 &payload.extensions,
                 &["revision", "context_hash"],
@@ -384,9 +483,12 @@ fn validate(envelope: &Envelope) -> Result<(), ProtocolError> {
             )
         }
         Message::ModelRequest(payload) => {
-            nonempty("payload.request_id", &payload.request_id)?;
-            nonempty("payload.model", &payload.model)?;
-            nonempty("payload.input_hash", &payload.input_hash)?;
+            bounded_string(
+                "payload.request_id",
+                &payload.request_id,
+                MAX_IDENTIFIER_BYTES,
+            )?;
+            bounded_string("payload.model", &payload.model, MAX_NAME_BYTES)?;
             reject_reserved(
                 &payload.extensions,
                 &["request_id", "model", "input_hash"],
@@ -394,8 +496,11 @@ fn validate(envelope: &Envelope) -> Result<(), ProtocolError> {
             )
         }
         Message::ModelResponse(payload) => {
-            nonempty("payload.request_id", &payload.request_id)?;
-            nonempty("payload.output_hash", &payload.output_hash)?;
+            bounded_string(
+                "payload.request_id",
+                &payload.request_id,
+                MAX_IDENTIFIER_BYTES,
+            )?;
             reject_reserved(
                 &payload.extensions,
                 &["request_id", "output_hash"],
@@ -403,9 +508,8 @@ fn validate(envelope: &Envelope) -> Result<(), ProtocolError> {
             )
         }
         Message::ToolCall(payload) => {
-            nonempty("payload.call_id", &payload.call_id)?;
-            nonempty("payload.tool", &payload.tool)?;
-            nonempty("payload.input_hash", &payload.input_hash)?;
+            bounded_string("payload.call_id", &payload.call_id, MAX_IDENTIFIER_BYTES)?;
+            bounded_string("payload.tool", &payload.tool, MAX_NAME_BYTES)?;
             reject_reserved(
                 &payload.extensions,
                 &["call_id", "tool", "input_hash"],
@@ -413,8 +517,7 @@ fn validate(envelope: &Envelope) -> Result<(), ProtocolError> {
             )
         }
         Message::ToolResult(payload) => {
-            nonempty("payload.call_id", &payload.call_id)?;
-            optional_nonempty("payload.output_hash", payload.output_hash.as_deref())?;
+            bounded_string("payload.call_id", &payload.call_id, MAX_IDENTIFIER_BYTES)?;
             reject_reserved(
                 &payload.extensions,
                 &["call_id", "outcome", "output_hash"],
@@ -422,8 +525,11 @@ fn validate(envelope: &Envelope) -> Result<(), ProtocolError> {
             )
         }
         Message::SafePoint(payload) => {
-            nonempty("payload.safe_point_id", &payload.safe_point_id)?;
-            nonempty("payload.context_hash", &payload.context_hash)?;
+            bounded_string(
+                "payload.safe_point_id",
+                &payload.safe_point_id,
+                MAX_IDENTIFIER_BYTES,
+            )?;
             reject_reserved(
                 &payload.extensions,
                 &["safe_point_id", "context_hash"],
@@ -431,25 +537,33 @@ fn validate(envelope: &Envelope) -> Result<(), ProtocolError> {
             )
         }
         Message::Completion(payload) => {
-            optional_nonempty("payload.output_hash", payload.output_hash.as_deref())?;
             reject_reserved(&payload.extensions, &["outcome", "output_hash"], "payload")
         }
     }
 }
 
-fn nonempty(field: &str, value: &str) -> Result<(), ProtocolError> {
+fn bounded_string(field: &str, value: &str, maximum: usize) -> Result<(), ProtocolError> {
     if value.trim().is_empty() {
         return Err(ProtocolError::InvalidField {
             field: field.to_owned(),
             reason: "must not be empty".to_owned(),
         });
     }
+    if value.len() > maximum {
+        return Err(ProtocolError::InvalidField {
+            field: field.to_owned(),
+            reason: format!("must be at most {maximum} bytes"),
+        });
+    }
     Ok(())
 }
 
-fn optional_nonempty(field: &str, value: Option<&str>) -> Result<(), ProtocolError> {
-    if let Some(value) = value {
-        nonempty(field, value)?;
+fn bounded_integer(field: &str, value: u64, maximum: u64) -> Result<(), ProtocolError> {
+    if value > maximum {
+        return Err(ProtocolError::InvalidField {
+            field: field.to_owned(),
+            reason: format!("must be at most {maximum}"),
+        });
     }
     Ok(())
 }

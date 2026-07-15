@@ -17,5 +17,9 @@ thiserror.workspace = true
 name = "epoch-criu-fixture"
 path = "src/bin/epoch-criu-fixture.rs"
 
+[[bin]]
+name = "epoch-criu-compat"
+path = "src/bin/epoch-criu-compat.rs"
+
 [lints]
 workspace = true

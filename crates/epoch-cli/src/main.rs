@@ -695,6 +695,36 @@ mod tests {
     }
 
     #[test]
+    fn backend_discovery_reports_only_registered_implementations_as_supported() {
+        let capabilities = HostCapabilities::detect();
+
+        assert_eq!(
+            capabilities.backends.direct_execution.status,
+            BackendStatus::Supported
+        );
+        assert!(capabilities.backends.direct_execution.registered);
+        assert_eq!(
+            capabilities.backends.application_checkpoint.status,
+            BackendStatus::Supported
+        );
+        assert!(capabilities.backends.application_checkpoint.registered);
+
+        for backend in [
+            &capabilities.backends.process_checkpoint,
+            &capabilities.backends.criu_checkpoint,
+            &capabilities.backends.workspace_checkpoint,
+        ] {
+            assert_eq!(backend.status, BackendStatus::Unsupported);
+            assert!(!backend.registered);
+            assert!(backend.backend.is_none());
+        }
+        assert_eq!(
+            capabilities.backends.criu_checkpoint.dependency_detected,
+            Some(capabilities.criu.is_some())
+        );
+    }
+
+    #[test]
     fn command_tree_exposes_the_complete_runtime_spec_surface() {
         let command = Cli::command();
         let actual = command

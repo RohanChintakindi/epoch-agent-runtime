@@ -22,6 +22,10 @@ const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 #[cfg(unix)]
 const PRIVATE_FILE_MODE: u32 = 0o600;
 const DEFAULT_STALE_TEMPORARY_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+const MAX_MEDIA_TYPE_BYTES: usize = 255;
+
+/// Default maximum payload size accepted by [`BlobStore`].
+pub const DEFAULT_MAX_BLOB_BYTES: u64 = 256 * 1024 * 1024;
 
 /// A canonical lowercase SHA-256 digest.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -86,6 +90,9 @@ impl<'de> Deserialize<'de> for BlobHash {
 pub struct InvalidBlobHash(String);
 
 /// Metadata stored by the trusted database alongside a filesystem blob.
+///
+/// The blob store durably pins one exact media type to each content hash. Reusing the same bytes
+/// with another media type is rejected instead of returning contradictory database metadata.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BlobMetadata {
     pub hash: BlobHash,
@@ -93,10 +100,11 @@ pub struct BlobMetadata {
     pub media_type: String,
 }
 
-/// Filesystem-backed content-addressed storage.
+/// Filesystem-backed content-addressed storage with verified, size-bounded reads.
 #[derive(Debug)]
 pub struct BlobStore {
     root: PathBuf,
+    max_blob_bytes: u64,
 }
 
 impl BlobStore {
@@ -109,6 +117,18 @@ impl BlobStore {
     /// responsible for choosing a trusted parent directory; Epoch never follows symlinks at the
     /// blob root or below it.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, BlobError> {
+        Self::open_with_max_blob_bytes(root, DEFAULT_MAX_BLOB_BYTES)
+    }
+
+    /// Creates or opens a blob store with an explicit payload-size boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::open`].
+    pub fn open_with_max_blob_bytes(
+        root: impl AsRef<Path>,
+        max_blob_bytes: u64,
+    ) -> Result<Self, BlobError> {
         let root = root.as_ref().to_path_buf();
         let root_created = ensure_secure_directory(&root)?;
         if root_created && let Some(parent) = root.parent() {
@@ -124,7 +144,10 @@ impl BlobStore {
         if ensure_secure_directory(&sha256.join(".tmp"))? {
             sync_directory(&sha256)?;
         }
-        let store = Self { root };
+        let store = Self {
+            root,
+            max_blob_bytes,
+        };
         store.cleanup_stale_temporary_files(DEFAULT_STALE_TEMPORARY_AGE)?;
         Ok(store)
     }
@@ -187,49 +210,59 @@ impl BlobStore {
     ///
     /// # Errors
     ///
-    /// Returns an error on filesystem or integrity failures.
+    /// Returns an error on filesystem or integrity failures, when `bytes` exceeds the configured
+    /// limit, or when the hash is already associated with another media type.
     pub fn put(
         &self,
         bytes: &[u8],
         media_type: impl Into<String>,
     ) -> Result<BlobMetadata, BlobError> {
-        let hash = BlobHash::digest(bytes);
         let length = u64::try_from(bytes.len()).map_err(|_| BlobError::BlobTooLarge {
             length: bytes.len(),
         })?;
+        if length > self.max_blob_bytes {
+            return Err(BlobError::SizeLimitExceeded {
+                actual: length,
+                maximum: self.max_blob_bytes,
+            });
+        }
+        let media_type = media_type.into();
+        validate_media_type(&media_type)?;
+        let hash = BlobHash::digest(bytes);
         let metadata = BlobMetadata {
             hash: hash.clone(),
             length,
-            media_type: media_type.into(),
+            media_type,
         };
         let final_path = self.blob_path(&hash);
-
-        if secure_regular_file_exists(&final_path)? {
-            self.read(&hash)?;
-            return Ok(metadata);
-        }
-
         let shard_directory = self.root.join("sha256").join(&hash.as_str()[..2]);
-        if ensure_secure_directory(&shard_directory)? {
-            // Persist the new shard name in its parent before publishing a blob into it.
-            sync_directory(&self.root.join("sha256"))?;
-        }
-
-        let temp_directory = self.root.join("sha256/.tmp");
-        let temp_path = temp_directory.join(format!("{hash}.{}.tmp", Uuid::new_v4()));
-        let mut temp_blob = TemporaryBlob::create(temp_path)?;
-        temp_blob.write_and_sync(bytes)?;
-
-        // A concurrent writer may have published the same address while this file was written.
-        // Verify that winner instead of replacing a potentially corrupted trusted file.
         if secure_regular_file_exists(&final_path)? {
             self.read(&hash)?;
-            return Ok(metadata);
+        } else {
+            if ensure_secure_directory(&shard_directory)? {
+                // Persist the new shard name in its parent before publishing a blob into it.
+                sync_directory(&self.root.join("sha256"))?;
+            }
+
+            let temp_directory = self.root.join("sha256/.tmp");
+            let temp_path = temporary_path(&temp_directory, &hash);
+            let mut temp_blob = TemporaryBlob::create(temp_path)?;
+            temp_blob.write_and_sync(bytes)?;
+
+            // A concurrent writer may have published the same address while this file was written.
+            // Verify that winner instead of replacing a potentially corrupted trusted file.
+            let winner_exists = if secure_regular_file_exists(&final_path)? {
+                discard_temporary(&temp_blob, &temp_directory)?;
+                true
+            } else {
+                !publish_no_clobber(&temp_blob, &final_path, &shard_directory, &temp_directory)?
+            };
+            if winner_exists {
+                self.read(&hash)?;
+            }
         }
 
-        fs::rename(temp_blob.path(), &final_path)?;
-        sync_directory(&shard_directory)?;
-        sync_directory(&temp_directory)?;
+        self.ensure_media_type(&hash, &metadata.media_type, &shard_directory)?;
         Ok(metadata)
     }
 
@@ -237,7 +270,8 @@ impl BlobStore {
     ///
     /// # Errors
     ///
-    /// Returns an error when the blob is missing, unreadable, or does not match its address.
+    /// Returns an error when the blob is missing, unreadable, exceeds the configured limit, or does
+    /// not match its address.
     pub fn read(&self, hash: &BlobHash) -> Result<Vec<u8>, BlobError> {
         let path = self.blob_path(hash);
         let mut file = match open_secure_regular_file(&path) {
@@ -247,8 +281,31 @@ impl BlobStore {
             }
             Err(error) => return Err(error),
         };
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
+        let on_disk_length = file.metadata()?.len();
+        if on_disk_length > self.max_blob_bytes {
+            return Err(BlobError::SizeLimitExceeded {
+                actual: on_disk_length,
+                maximum: self.max_blob_bytes,
+            });
+        }
+        let mut bytes = Vec::with_capacity(usize::try_from(on_disk_length).map_err(|_| {
+            BlobError::SizeLimitExceeded {
+                actual: on_disk_length,
+                maximum: self.max_blob_bytes,
+            }
+        })?);
+        Read::by_ref(&mut file)
+            .take(self.max_blob_bytes.saturating_add(1))
+            .read_to_end(&mut bytes)?;
+        let bytes_read = u64::try_from(bytes.len()).map_err(|_| BlobError::BlobTooLarge {
+            length: bytes.len(),
+        })?;
+        if bytes_read > self.max_blob_bytes {
+            return Err(BlobError::SizeLimitExceeded {
+                actual: bytes_read,
+                maximum: self.max_blob_bytes,
+            });
+        }
         let actual = BlobHash::digest(&bytes);
         if actual == *hash {
             Ok(bytes)
@@ -259,6 +316,119 @@ impl BlobStore {
             })
         }
     }
+
+    fn ensure_media_type(
+        &self,
+        hash: &BlobHash,
+        requested: &str,
+        shard_directory: &Path,
+    ) -> Result<(), BlobError> {
+        let media_type_path = media_type_path(shard_directory, hash);
+        if secure_regular_file_exists(&media_type_path)? {
+            return compare_media_type(hash, &self.read_media_type(hash)?, requested);
+        }
+
+        let temp_directory = self.root.join("sha256/.tmp");
+        let temp_path = temporary_path(&temp_directory, hash);
+        let mut temporary_media_type = TemporaryBlob::create(temp_path)?;
+        temporary_media_type.write_and_sync(requested.as_bytes())?;
+        if publish_no_clobber(
+            &temporary_media_type,
+            &media_type_path,
+            shard_directory,
+            &temp_directory,
+        )? {
+            Ok(())
+        } else {
+            compare_media_type(hash, &self.read_media_type(hash)?, requested)
+        }
+    }
+
+    fn read_media_type(&self, hash: &BlobHash) -> Result<String, BlobError> {
+        let shard_directory = self.root.join("sha256").join(&hash.as_str()[..2]);
+        let path = media_type_path(&shard_directory, hash);
+        let mut file = open_secure_regular_file(&path)?;
+        let length = file.metadata()?.len();
+        if length > MAX_MEDIA_TYPE_BYTES as u64 {
+            return Err(BlobError::CorruptMediaType {
+                hash: hash.clone(),
+                reason: "stored media type exceeds 255 bytes".to_owned(),
+            });
+        }
+        let capacity = usize::try_from(length).map_err(|error| BlobError::CorruptMediaType {
+            hash: hash.clone(),
+            reason: error.to_string(),
+        })?;
+        let mut bytes = Vec::with_capacity(capacity);
+        file.read_to_end(&mut bytes)?;
+        let value = String::from_utf8(bytes).map_err(|error| BlobError::CorruptMediaType {
+            hash: hash.clone(),
+            reason: error.to_string(),
+        })?;
+        validate_media_type(&value).map_err(|error| BlobError::CorruptMediaType {
+            hash: hash.clone(),
+            reason: error.to_string(),
+        })?;
+        Ok(value)
+    }
+}
+
+fn temporary_path(directory: &Path, hash: &BlobHash) -> PathBuf {
+    directory.join(format!("{hash}.{}.tmp", Uuid::new_v4()))
+}
+
+fn media_type_path(shard_directory: &Path, hash: &BlobHash) -> PathBuf {
+    shard_directory.join(format!("{hash}.media-type"))
+}
+
+fn validate_media_type(media_type: &str) -> Result<(), BlobError> {
+    let valid = !media_type.is_empty()
+        && media_type.len() <= MAX_MEDIA_TYPE_BYTES
+        && media_type
+            .bytes()
+            .all(|byte| byte.is_ascii() && !byte.is_ascii_control());
+    if valid {
+        Ok(())
+    } else {
+        Err(BlobError::InvalidMediaType {
+            value: media_type.to_owned(),
+        })
+    }
+}
+
+fn compare_media_type(hash: &BlobHash, stored: &str, requested: &str) -> Result<(), BlobError> {
+    if stored == requested {
+        Ok(())
+    } else {
+        Err(BlobError::MediaTypeConflict {
+            hash: hash.clone(),
+            stored: stored.to_owned(),
+            requested: requested.to_owned(),
+        })
+    }
+}
+
+fn publish_no_clobber(
+    temporary: &TemporaryBlob,
+    final_path: &Path,
+    final_directory: &Path,
+    temp_directory: &Path,
+) -> Result<bool, BlobError> {
+    let published = match fs::hard_link(temporary.path(), final_path) {
+        Ok(()) => {
+            sync_directory(final_directory)?;
+            true
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => false,
+        Err(error) => return Err(error.into()),
+    };
+    discard_temporary(temporary, temp_directory)?;
+    Ok(published)
+}
+
+fn discard_temporary(temporary: &TemporaryBlob, temp_directory: &Path) -> Result<(), BlobError> {
+    fs::remove_file(temporary.path())?;
+    sync_directory(temp_directory)
 }
 
 #[derive(Debug)]
@@ -487,6 +657,8 @@ pub enum BlobError {
     Io(#[from] std::io::Error),
     #[error("blob length {length} cannot be represented as u64")]
     BlobTooLarge { length: usize },
+    #[error("blob is {actual} bytes; configured maximum is {maximum}")]
+    SizeLimitExceeded { actual: u64, maximum: u64 },
     #[error("blob {0} was not found")]
     NotFound(BlobHash),
     #[error("blob integrity mismatch: expected {expected}, computed {actual}")]
@@ -506,5 +678,15 @@ pub enum BlobError {
         path: PathBuf,
         expected: u32,
         actual: u32,
+    },
+    #[error("invalid media type {value:?}; expected 1-255 printable ASCII bytes")]
+    InvalidMediaType { value: String },
+    #[error("corrupt media type for blob {hash}: {reason}")]
+    CorruptMediaType { hash: BlobHash, reason: String },
+    #[error("blob {hash} is already typed as {stored:?}; cannot also store it as {requested:?}")]
+    MediaTypeConflict {
+        hash: BlobHash,
+        stored: String,
+        requested: String,
     },
 }

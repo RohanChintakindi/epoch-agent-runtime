@@ -49,7 +49,115 @@ fn duplicate_content_has_one_canonical_file() {
         .expect("read shard")
         .collect::<Result<Vec<_>, _>>()
         .expect("collect shard files");
-    assert_eq!(final_files.len(), 1);
+    assert_eq!(
+        final_files.len(),
+        2,
+        "one payload and one media-type record should be canonical"
+    );
+}
+
+#[test]
+fn duplicate_content_rejects_a_conflicting_media_type_even_after_reopen() {
+    let directory = TempDir::new().expect("create test directory");
+    let root = directory.path().join("blobs");
+    let store = BlobStore::open(&root).expect("open blob store");
+    let bytes = b"typed content";
+    let original = store.put(bytes, "text/plain").expect("first write");
+    assert_eq!(
+        store.put(bytes, "text/plain").expect("idempotent write"),
+        original
+    );
+    assert!(matches!(
+        store.put(bytes, "application/json"),
+        Err(BlobError::MediaTypeConflict {
+            hash,
+            stored,
+            requested,
+        }) if hash == original.hash && stored == "text/plain" && requested == "application/json"
+    ));
+    drop(store);
+
+    let reopened = BlobStore::open(root).expect("reopen blob store");
+    assert!(matches!(
+        reopened.put(bytes, "application/json"),
+        Err(BlobError::MediaTypeConflict { hash, .. }) if hash == original.hash
+    ));
+}
+
+#[test]
+fn rejects_unbounded_or_control_character_media_types_before_writing() {
+    let (_directory, store) = store();
+    let bytes = b"not published";
+    for invalid in [
+        String::new(),
+        "text/plain\nsecret".to_owned(),
+        "x".repeat(256),
+    ] {
+        assert!(matches!(
+            store.put(bytes, invalid),
+            Err(BlobError::InvalidMediaType { .. })
+        ));
+    }
+    assert!(!store.blob_path(&BlobHash::digest(bytes)).exists());
+}
+
+#[test]
+fn concurrent_conflicting_media_types_choose_exactly_one_canonical_value() {
+    let (_directory, store) = store();
+    let store = Arc::new(store);
+    let media_types = ["text/plain", "application/json"];
+    let handles = media_types.map(|media_type| {
+        let store = Arc::clone(&store);
+        thread::spawn(move || store.put(b"racing typed content", media_type))
+    });
+    let results = handles.map(|handle| handle.join().expect("writer did not panic"));
+
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| matches!(result, Err(BlobError::MediaTypeConflict { .. })))
+            .count(),
+        1
+    );
+    let winner = results
+        .into_iter()
+        .find_map(Result::ok)
+        .expect("one media type wins");
+    assert_eq!(
+        store
+            .put(b"racing typed content", &winner.media_type)
+            .expect("winner remains idempotent"),
+        winner
+    );
+}
+
+#[test]
+fn configured_size_limit_bounds_put_and_read() {
+    let directory = TempDir::new().expect("create test directory");
+    let store = BlobStore::open_with_max_blob_bytes(directory.path().join("blobs"), 4)
+        .expect("open bounded store");
+    let exact = store.put(b"four", "text/plain").expect("write at limit");
+    assert_eq!(store.read(&exact.hash).expect("read at limit"), b"four");
+
+    let oversized = b"oversized";
+    assert!(matches!(
+        store.put(oversized, "text/plain"),
+        Err(BlobError::SizeLimitExceeded {
+            actual: 9,
+            maximum: 4
+        })
+    ));
+    assert!(!store.blob_path(&BlobHash::digest(oversized)).exists());
+
+    fs::write(store.blob_path(&exact.hash), b"grown").expect("grow canonical fixture");
+    assert!(matches!(
+        store.read(&exact.hash),
+        Err(BlobError::SizeLimitExceeded {
+            actual: 5,
+            maximum: 4
+        })
+    ));
 }
 
 #[test]
@@ -246,7 +354,10 @@ fn creates_private_directories_and_blob_files() {
     for path in [&root, &sha256, &temp, shard] {
         assert_eq!(unix_mode(path), 0o700, "{} must be private", path.display());
     }
-    assert_eq!(unix_mode(&store.blob_path(&metadata.hash)), 0o600);
+    let blob_path = store.blob_path(&metadata.hash);
+    let media_type_path = blob_path.with_file_name(format!("{}.media-type", metadata.hash));
+    assert_eq!(unix_mode(&blob_path), 0o600);
+    assert_eq!(unix_mode(&media_type_path), 0o600);
 }
 
 #[cfg(unix)]

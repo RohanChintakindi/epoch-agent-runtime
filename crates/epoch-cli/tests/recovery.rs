@@ -32,8 +32,7 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn fixture_manifest(fixture: &TempDir) -> std::path::PathBuf {
-    let seed = 73_u64;
+fn fixture_manifest(fixture: &TempDir, seed: u64) -> std::path::PathBuf {
     let safe_point_id = format!("safe-point-files-{seed:016x}");
     let state = FixtureState {
         seed,
@@ -73,7 +72,7 @@ fn fixture_manifest(fixture: &TempDir) -> std::path::PathBuf {
         checkpoint_context: context,
     })
     .expect("encode captured summary");
-    let script = fixture.path().join("recoverable-agent.sh");
+    let script = fixture.path().join(format!("recoverable-agent-{seed}.sh"));
     fs::write(
         &script,
         format!(
@@ -101,7 +100,7 @@ fn fixture_manifest(fixture: &TempDir) -> std::path::PathBuf {
         .permissions();
     permissions.set_mode(0o700);
     fs::set_permissions(&script, permissions).expect("make script executable");
-    let manifest = fixture.path().join("recoverable.toml");
+    let manifest = fixture.path().join(format!("recoverable-{seed}.toml"));
     fs::write(
         &manifest,
         format!(
@@ -122,93 +121,133 @@ fn epoch(fixture: &TempDir, arguments: &[&str]) -> std::process::Output {
 }
 
 #[test]
-fn cli_run_checkpoint_restore_status_is_restart_safe_json() {
+fn cli_week_two_flow_is_restart_safe_across_three_repetitions() {
     let fixture = TempDir::new().expect("create CLI recovery fixture");
-    let manifest = fixture_manifest(&fixture);
-    let run = Command::new(env!("CARGO_BIN_EXE_epoch"))
-        .current_dir(fixture.path())
-        .args(["run", "--manifest"])
-        .arg(manifest)
-        .output()
-        .expect("run fixture");
-    assert!(
-        run.status.success(),
-        "{}",
-        String::from_utf8_lossy(&run.stderr)
-    );
-    let run: serde_json::Value = serde_json::from_slice(&run.stdout).expect("run JSON");
-    let session = run["session_id"].as_str().expect("session ID");
-    let branch = run["branch_id"].as_str().expect("branch ID");
+    let mut sessions = std::collections::BTreeSet::new();
 
-    let checkpoint = epoch(
-        &fixture,
-        &[
-            "checkpoint",
-            session,
-            "--branch",
-            branch,
-            "--label",
-            "cli-cycle",
-        ],
-    );
-    assert!(
-        checkpoint.status.success(),
-        "{}",
-        String::from_utf8_lossy(&checkpoint.stderr)
-    );
-    let checkpoint: serde_json::Value =
-        serde_json::from_slice(&checkpoint.stdout).expect("checkpoint JSON");
-    assert_eq!(checkpoint["operation"], "checkpoint");
-    assert_eq!(checkpoint["outcome"], "supported");
-    assert_eq!(checkpoint["result"]["session_id"], session);
-    assert_eq!(checkpoint["result"]["branch_id"], branch);
-    assert_eq!(checkpoint["result"]["boundary_sequence"], 2);
-    assert_eq!(
-        checkpoint["result"]["restore_scope"],
-        "application_context_only"
-    );
-    let epoch_id = checkpoint["result"]["epoch_id"].as_str().expect("epoch ID");
+    for seed in [73_u64, 74, 75] {
+        let manifest = fixture_manifest(&fixture, seed);
+        let run = Command::new(env!("CARGO_BIN_EXE_epoch"))
+            .current_dir(fixture.path())
+            .args(["run", "--manifest"])
+            .arg(manifest)
+            .output()
+            .expect("run fixture");
+        assert!(
+            run.status.success(),
+            "{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let run: serde_json::Value = serde_json::from_slice(&run.stdout).expect("run JSON");
+        let session = run["session_id"].as_str().expect("session ID");
+        let branch = run["branch_id"].as_str().expect("branch ID");
+        assert!(
+            sessions.insert(session.to_owned()),
+            "session IDs must be fresh"
+        );
 
-    let diff = epoch(&fixture, &["diff", epoch_id, epoch_id, "--json"]);
-    assert!(diff.status.success());
-    let diff: serde_json::Value = serde_json::from_slice(&diff.stdout).expect("diff JSON");
-    assert_eq!(diff["operation"], "diff");
-    assert_eq!(diff["outcome"], "supported");
-    assert_eq!(diff["result"]["before_epoch_id"], epoch_id);
-    assert_eq!(diff["result"]["after_epoch_id"], epoch_id);
-    assert_eq!(diff["result"]["diff"]["identical"], true);
-    assert_eq!(
-        diff["result"]["diff"]["unsupported_sections"][0]["section"],
-        "capabilities"
-    );
+        let before_status = epoch(&fixture, &["status", session]);
+        assert!(before_status.status.success());
+        let before_status: serde_json::Value =
+            serde_json::from_slice(&before_status.stdout).expect("status JSON");
+        assert_eq!(before_status["session_id"], session);
+        assert_eq!(before_status["state"], "completed");
+        assert_eq!(before_status["application"]["outcome"], "supported");
+        assert!(
+            before_status["application"]["result"]["current_epoch_id"].is_null(),
+            "a completed run must not pretend that a checkpoint already exists"
+        );
 
-    let restore = epoch(&fixture, &["restore", epoch_id]);
-    assert!(
-        restore.status.success(),
-        "{}",
-        String::from_utf8_lossy(&restore.stderr)
-    );
-    let restore: serde_json::Value = serde_json::from_slice(&restore.stdout).expect("restore JSON");
-    assert_eq!(restore["operation"], "restore");
-    assert_eq!(restore["outcome"], "supported");
-    assert_eq!(restore["result"]["activated"], true);
-    assert_eq!(restore["result"]["process_restored"], false);
-    assert_eq!(restore["result"]["workspace_restored"], false);
+        let events = epoch(
+            &fixture,
+            &["events", session, "--branch", branch, "--limit", "100"],
+        );
+        assert!(events.status.success());
+        let events: serde_json::Value =
+            serde_json::from_slice(&events.stdout).expect("events JSON");
+        assert!(
+            events["events"]
+                .as_array()
+                .expect("events array")
+                .iter()
+                .any(|event| event["kind"] == "process.manifest"),
+            "fresh-process inspection must retain the Week 1 process manifest"
+        );
 
-    let status = epoch(&fixture, &["status", session]);
-    assert!(status.status.success());
-    let status: serde_json::Value = serde_json::from_slice(&status.stdout).expect("status JSON");
-    assert_eq!(status["session_id"], session);
-    assert_eq!(status["state"], "completed");
-    assert_eq!(status["application"]["outcome"], "supported");
-    assert_eq!(
-        status["application"]["result"]["current_epoch_id"],
-        epoch_id
-    );
-    assert_eq!(
-        status["application"]["result"]["context"]["cursors"]["boundary_sequence"],
-        2
-    );
+        let checkpoint = epoch(
+            &fixture,
+            &[
+                "checkpoint",
+                session,
+                "--branch",
+                branch,
+                "--label",
+                "cli-cycle",
+            ],
+        );
+        assert!(
+            checkpoint.status.success(),
+            "{}",
+            String::from_utf8_lossy(&checkpoint.stderr)
+        );
+        let checkpoint: serde_json::Value =
+            serde_json::from_slice(&checkpoint.stdout).expect("checkpoint JSON");
+        assert_eq!(checkpoint["operation"], "checkpoint");
+        assert_eq!(checkpoint["outcome"], "supported");
+        assert_eq!(checkpoint["result"]["session_id"], session);
+        assert_eq!(checkpoint["result"]["branch_id"], branch);
+        assert_eq!(checkpoint["result"]["boundary_sequence"], 2);
+        assert_eq!(
+            checkpoint["result"]["restore_scope"],
+            "application_context_only"
+        );
+        let epoch_id = checkpoint["result"]["epoch_id"].as_str().expect("epoch ID");
+
+        let restore = epoch(&fixture, &["restore", epoch_id]);
+        assert!(
+            restore.status.success(),
+            "{}",
+            String::from_utf8_lossy(&restore.stderr)
+        );
+        let restore: serde_json::Value =
+            serde_json::from_slice(&restore.stdout).expect("restore JSON");
+        assert_eq!(restore["operation"], "restore");
+        assert_eq!(restore["outcome"], "supported");
+        assert_eq!(restore["result"]["activated"], true);
+        assert_eq!(restore["result"]["process_restored"], false);
+        assert_eq!(restore["result"]["workspace_restored"], false);
+
+        let after_status = epoch(&fixture, &["status", session]);
+        assert!(after_status.status.success());
+        let after_status: serde_json::Value =
+            serde_json::from_slice(&after_status.stdout).expect("status JSON");
+        assert_eq!(after_status["session_id"], session);
+        assert_eq!(after_status["state"], "completed");
+        assert_eq!(after_status["application"]["outcome"], "supported");
+        assert_eq!(
+            after_status["application"]["result"]["current_epoch_id"],
+            epoch_id
+        );
+        assert_eq!(
+            after_status["application"]["result"]["context"]["cursors"]["boundary_sequence"],
+            2
+        );
+
+        let diff = epoch(&fixture, &["diff", epoch_id, epoch_id, "--json"]);
+        assert!(diff.status.success());
+        let diff: serde_json::Value = serde_json::from_slice(&diff.stdout).expect("diff JSON");
+        assert_eq!(diff["operation"], "diff");
+        assert_eq!(diff["outcome"], "supported");
+        assert_eq!(diff["result"]["before_epoch_id"], epoch_id);
+        assert_eq!(diff["result"]["after_epoch_id"], epoch_id);
+        assert_eq!(diff["result"]["diff"]["identical"], true);
+        assert_eq!(
+            diff["result"]["diff"]["unsupported_sections"][0]["section"],
+            "capabilities"
+        );
+    }
+
+    assert_eq!(sessions.len(), 3);
 }
 
 #[test]

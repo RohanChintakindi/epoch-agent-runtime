@@ -69,11 +69,12 @@ fn cli_selects_scenario_and_emits_machine_readable_summary() {
         serde_json::from_slice(&output.stderr).expect("stderr should contain one JSON summary");
     assert_eq!(summary["state"]["seed"], 99);
     assert_eq!(summary["state"]["scenario"], "files");
-    assert!(
-        summary["state_hash"]
-            .as_str()
-            .is_some_and(|hash| hash.starts_with("sha256:"))
-    );
+    assert!(summary["state_hash"].as_str().is_some_and(|hash| {
+        hash.len() == 64
+            && hash
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    }));
     assert!(summary["normalized_trace_hash"].as_str().is_some());
 }
 

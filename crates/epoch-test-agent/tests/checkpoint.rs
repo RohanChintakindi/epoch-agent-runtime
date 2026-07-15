@@ -47,7 +47,11 @@ fn serialized_w02_summary_carries_the_raw_cooperative_checkpoint_context() {
     let encoded = serde_json::to_value(&summary).expect("serialize run summary");
     assert_eq!(
         encoded["checkpoint_context"],
-        serde_json::to_value(summary.to_application_context().expect("checkpoint context"))
-            .expect("serialize checkpoint context")
+        serde_json::to_value(
+            summary
+                .to_application_context()
+                .expect("checkpoint context")
+        )
+        .expect("serialize checkpoint context")
     );
 }

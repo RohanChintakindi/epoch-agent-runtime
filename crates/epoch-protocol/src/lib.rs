@@ -3,6 +3,8 @@
 mod unique_json;
 
 use epoch_blob::{BlobHash, BlobStore};
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -102,6 +104,297 @@ pub fn validate_referenced_blobs(
     Ok(())
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SupervisorBinding {
+    session_id: String,
+    branch_id: String,
+}
+
+impl SupervisorBinding {
+    /// Creates the trusted session and branch identity assigned to one agent stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns a field error when either identifier is empty or exceeds the wire limit.
+    pub fn new(
+        session_id: impl Into<String>,
+        branch_id: impl Into<String>,
+    ) -> Result<Self, ProtocolError> {
+        let binding = Self {
+            session_id: session_id.into(),
+            branch_id: branch_id.into(),
+        };
+        bounded_string(
+            "binding.session_id",
+            &binding.session_id,
+            MAX_IDENTIFIER_BYTES,
+        )?;
+        bounded_string(
+            "binding.branch_id",
+            &binding.branch_id,
+            MAX_IDENTIFIER_BYTES,
+        )?;
+        Ok(binding)
+    }
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum StreamError {
+    #[error("stream must begin with agent.start, received {kind}")]
+    StartRequired { kind: String },
+    #[error("stream contains more than one agent.start")]
+    DuplicateStart,
+    #[error("agent claimed session {received:?}; supervisor assigned {expected:?}")]
+    SessionBindingMismatch { expected: String, received: String },
+    #[error("agent claimed branch {received:?}; supervisor assigned {expected:?}")]
+    BranchBindingMismatch { expected: String, received: String },
+    #[error("sequence {received} is not greater than prior sequence {previous}")]
+    NonMonotonicSequence { previous: u64, received: u64 },
+    #[error("context revision {received} is not greater than prior revision {previous}")]
+    NonMonotonicContextRevision { previous: u64, received: u64 },
+    #[error("model request ID {request_id:?} was reused")]
+    DuplicateModelRequest { request_id: String },
+    #[error("model response has no pending request {request_id:?}")]
+    ModelResponseWithoutRequest { request_id: String },
+    #[error("tool call ID {call_id:?} was reused")]
+    DuplicateToolCall { call_id: String },
+    #[error("tool result has no pending call {call_id:?}")]
+    ToolResultWithoutCall { call_id: String },
+    #[error("safe point arrived before any context update")]
+    SafePointWithoutContext,
+    #[error("safe point context {received} differs from current context {expected}")]
+    SafePointContextMismatch {
+        expected: BlobHash,
+        received: BlobHash,
+    },
+    #[error(
+        "safe point has {model_requests} pending model requests and {tool_calls} pending tool calls"
+    )]
+    SafePointWithOutstanding {
+        model_requests: usize,
+        tool_calls: usize,
+    },
+    #[error(
+        "completion has {model_requests} pending model requests and {tool_calls} pending tool calls"
+    )]
+    CompletionWithOutstanding {
+        model_requests: usize,
+        tool_calls: usize,
+    },
+    #[error("message {kind} arrived after agent.completion")]
+    MessageAfterCompletion { kind: String },
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum IngestError {
+    #[error(transparent)]
+    Protocol(#[from] ProtocolError),
+    #[error(transparent)]
+    Reference(#[from] ReferenceError),
+    #[error(transparent)]
+    Stream(#[from] StreamError),
+}
+
+/// Stateful validation at the trusted supervisor's agent-stream boundary.
+#[derive(Clone, Debug)]
+pub struct StreamValidator {
+    binding: SupervisorBinding,
+    started: bool,
+    completed: bool,
+    last_sequence: Option<u64>,
+    last_context_revision: Option<u64>,
+    current_context_hash: Option<BlobHash>,
+    seen_model_requests: HashSet<String>,
+    pending_model_requests: HashSet<String>,
+    seen_tool_calls: HashSet<String>,
+    pending_tool_calls: HashSet<String>,
+}
+
+impl StreamValidator {
+    #[must_use]
+    pub fn new(binding: SupervisorBinding) -> Self {
+        Self {
+            binding,
+            started: false,
+            completed: false,
+            last_sequence: None,
+            last_context_revision: None,
+            current_context_hash: None,
+            seen_model_requests: HashSet::new(),
+            pending_model_requests: HashSet::new(),
+            seen_tool_calls: HashSet::new(),
+            pending_tool_calls: HashSet::new(),
+        }
+    }
+
+    /// Validate an integrity-checked boundary record before acknowledgment or persistence.
+    ///
+    /// # Errors
+    ///
+    /// Returns an ingest error when a blob is not verified or stream semantics are invalid.
+    pub fn accept(
+        &mut self,
+        envelope: &Envelope,
+        resolver: &impl BlobReferenceResolver,
+    ) -> Result<(), IngestError> {
+        validate(envelope)?;
+        let mut candidate = self.clone();
+        candidate.accept_stream(envelope)?;
+        validate_referenced_blobs(envelope, resolver)?;
+        *self = candidate;
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn is_complete(&self) -> bool {
+        self.completed
+    }
+
+    fn accept_stream(&mut self, envelope: &Envelope) -> Result<(), StreamError> {
+        if self.completed {
+            return Err(StreamError::MessageAfterCompletion {
+                kind: envelope.message.kind().to_owned(),
+            });
+        }
+
+        if !self.started {
+            let Message::AgentStart(start) = &envelope.message else {
+                return Err(StreamError::StartRequired {
+                    kind: envelope.message.kind().to_owned(),
+                });
+            };
+            self.validate_binding(start)?;
+            self.started = true;
+            self.last_sequence = Some(envelope.sequence);
+            return Ok(());
+        }
+
+        if matches!(envelope.message, Message::AgentStart(_)) {
+            return Err(StreamError::DuplicateStart);
+        }
+        if let Some(previous) = self.last_sequence
+            && envelope.sequence <= previous
+        {
+            return Err(StreamError::NonMonotonicSequence {
+                previous,
+                received: envelope.sequence,
+            });
+        }
+
+        match &envelope.message {
+            Message::AgentStart(_) => unreachable!("duplicate start handled above"),
+            Message::ContextUpdate(update) => self.accept_context(update)?,
+            Message::ModelRequest(request) => self.accept_model_request(request)?,
+            Message::ModelResponse(response) => self.accept_model_response(response)?,
+            Message::ToolCall(call) => self.accept_tool_call(call)?,
+            Message::ToolResult(result) => self.accept_tool_result(result)?,
+            Message::SafePoint(safe_point) => self.accept_safe_point(safe_point)?,
+            Message::Completion(_) => self.accept_completion()?,
+        }
+        self.last_sequence = Some(envelope.sequence);
+        Ok(())
+    }
+
+    fn validate_binding(&self, start: &AgentStart) -> Result<(), StreamError> {
+        if start.session_id != self.binding.session_id {
+            return Err(StreamError::SessionBindingMismatch {
+                expected: self.binding.session_id.clone(),
+                received: start.session_id.clone(),
+            });
+        }
+        if start.branch_id != self.binding.branch_id {
+            return Err(StreamError::BranchBindingMismatch {
+                expected: self.binding.branch_id.clone(),
+                received: start.branch_id.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    fn accept_context(&mut self, update: &ContextUpdate) -> Result<(), StreamError> {
+        if let Some(previous) = self.last_context_revision
+            && update.revision <= previous
+        {
+            return Err(StreamError::NonMonotonicContextRevision {
+                previous,
+                received: update.revision,
+            });
+        }
+        self.last_context_revision = Some(update.revision);
+        self.current_context_hash = Some(update.context_hash.clone());
+        Ok(())
+    }
+
+    fn accept_model_request(&mut self, request: &ModelRequest) -> Result<(), StreamError> {
+        if !self.seen_model_requests.insert(request.request_id.clone()) {
+            return Err(StreamError::DuplicateModelRequest {
+                request_id: request.request_id.clone(),
+            });
+        }
+        self.pending_model_requests
+            .insert(request.request_id.clone());
+        Ok(())
+    }
+
+    fn accept_model_response(&mut self, response: &ModelResponse) -> Result<(), StreamError> {
+        if !self.pending_model_requests.remove(&response.request_id) {
+            return Err(StreamError::ModelResponseWithoutRequest {
+                request_id: response.request_id.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    fn accept_tool_call(&mut self, call: &ToolCall) -> Result<(), StreamError> {
+        if !self.seen_tool_calls.insert(call.call_id.clone()) {
+            return Err(StreamError::DuplicateToolCall {
+                call_id: call.call_id.clone(),
+            });
+        }
+        self.pending_tool_calls.insert(call.call_id.clone());
+        Ok(())
+    }
+
+    fn accept_tool_result(&mut self, result: &ToolResult) -> Result<(), StreamError> {
+        if !self.pending_tool_calls.remove(&result.call_id) {
+            return Err(StreamError::ToolResultWithoutCall {
+                call_id: result.call_id.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    fn accept_safe_point(&self, safe_point: &SafePoint) -> Result<(), StreamError> {
+        let Some(current) = &self.current_context_hash else {
+            return Err(StreamError::SafePointWithoutContext);
+        };
+        if safe_point.context_hash != *current {
+            return Err(StreamError::SafePointContextMismatch {
+                expected: current.clone(),
+                received: safe_point.context_hash.clone(),
+            });
+        }
+        if !self.pending_model_requests.is_empty() || !self.pending_tool_calls.is_empty() {
+            return Err(StreamError::SafePointWithOutstanding {
+                model_requests: self.pending_model_requests.len(),
+                tool_calls: self.pending_tool_calls.len(),
+            });
+        }
+        Ok(())
+    }
+
+    fn accept_completion(&mut self) -> Result<(), StreamError> {
+        if !self.pending_model_requests.is_empty() || !self.pending_tool_calls.is_empty() {
+            return Err(StreamError::CompletionWithOutstanding {
+                model_requests: self.pending_model_requests.len(),
+                tool_calls: self.pending_tool_calls.len(),
+            });
+        }
+        self.completed = true;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Message {
     AgentStart(AgentStart),
@@ -194,7 +487,7 @@ pub enum CompletionOutcome {
     Cancelled,
 }
 
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ProtocolError {
     #[error("JSONL record is empty")]
     EmptyLine,

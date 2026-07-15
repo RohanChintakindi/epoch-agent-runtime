@@ -76,3 +76,20 @@ and `validate_referenced_blobs` rejects both missing content and content that fa
 The agent must never receive write authority to the trusted blob-store root. A raw deterministic
 agent trace is therefore useful as a producer fixture, but it is not directly eligible for durable
 event persistence until the supervisor has ingested and verified each referenced blob.
+
+## Stateful supervisor validation
+
+`StreamValidator` is constructed with the session and branch IDs assigned by the supervisor. It
+validates a candidate record without mutating accepted state, verifies its blob references, and
+only then commits the stream transition. A rejected record can therefore be corrected and retried
+without advancing sequence or correlation state.
+
+An accepted stream obeys all of these rules:
+
+- Exactly one `agent.start` appears first and its session/branch claims match the trusted binding.
+- Agent sequence values and context revisions increase strictly and remain in SQLite's signed
+  integer range.
+- A model response names one pending, never-reused request ID; a tool result names one pending,
+  never-reused call ID.
+- A safe point has no pending model/tool operation and names the latest context hash.
+- Completion has no pending operation, and no record is accepted after completion.

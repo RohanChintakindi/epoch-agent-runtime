@@ -1,5 +1,8 @@
 //! Reproducible benchmark contracts for Epoch runtime experiments.
 
+mod environment;
+mod suites;
+
 use std::{collections::BTreeMap, fmt::Write as _};
 
 use serde::{Deserialize, Serialize};
@@ -11,6 +14,14 @@ pub const REPORT_SCHEMA_VERSION: u32 = 1;
 pub const MAX_WARMUPS: u32 = 10_000;
 /// Upper bound protecting accidental unbounded benchmark configurations.
 pub const MAX_REPETITIONS: u32 = 100_000;
+
+pub use environment::EnvironmentError;
+pub use suites::{
+    CheckpointSuiteConfig, CheckpointSuiteEvidence, CompatibilityMatrix, CowConfig, CowEvidence,
+    Decision, DecisionEvidence, DecisionThresholds, EvidenceBundle, EvidenceKind, FaultMatrix,
+    SuiteError, SuiteName, SuiteRequest, run_checkpoint_suite, run_compatibility_matrix,
+    run_cow_experiment, run_fault_matrix, run_suite,
+};
 
 /// Whether boundary tracing is enabled for a benchmark run.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -116,12 +127,16 @@ pub enum ConfigError {
 pub struct BenchmarkEnvironment {
     /// Exact source revision or dirty-tree identifier.
     pub code_revision: String,
+    /// Whether tracked source files differed from the revision during collection.
+    pub code_dirty: bool,
     /// Operating system name.
     pub os: String,
     /// CPU architecture.
     pub architecture: String,
     /// Kernel release.
     pub kernel_release: String,
+    /// CPU model as reported by the operating system.
+    pub cpu_model: String,
     /// Logical CPUs visible to the benchmark process.
     pub cpu_count: u32,
     /// Host memory when discoverable.

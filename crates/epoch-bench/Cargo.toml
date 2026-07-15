@@ -6,12 +6,14 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+epoch-blob.workspace = true
+epoch-checkpoint.workspace = true
+epoch-workspace.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
-
-[dev-dependencies]
 tempfile.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

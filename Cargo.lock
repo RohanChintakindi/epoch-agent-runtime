@@ -180,10 +180,14 @@ dependencies = [
 name = "epoch-bench"
 version = "0.1.0"
 dependencies = [
+ "epoch-blob",
+ "epoch-checkpoint",
+ "epoch-workspace",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]

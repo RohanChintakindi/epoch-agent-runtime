@@ -381,6 +381,14 @@ fn compare_messages(
         .map(|message| (message.message_id.as_str(), message))
         .collect::<BTreeMap<_, _>>();
 
+    compare_stable_id_order(
+        changes,
+        SemanticSection::Messages,
+        "/messages/order",
+        before.iter().map(|message| message.message_id.as_str()),
+        after.iter().map(|message| message.message_id.as_str()),
+    );
+
     for (identifier, before_message) in &before_by_id {
         let root = entity_path("/messages", identifier);
         match after_by_id.get(identifier) {
@@ -429,6 +437,14 @@ fn compare_tasks(changes: &mut Vec<SemanticChange>, before: &[PendingTask], afte
         .iter()
         .map(|task| (task.task_id.as_str(), task))
         .collect::<BTreeMap<_, _>>();
+
+    compare_stable_id_order(
+        changes,
+        SemanticSection::PendingTasks,
+        "/pending_tasks/order",
+        before.iter().map(|task| task.task_id.as_str()),
+        after.iter().map(|task| task.task_id.as_str()),
+    );
 
     for (identifier, before_task) in &before_by_id {
         let root = entity_path("/pending_tasks", identifier);
@@ -499,6 +515,31 @@ fn compare_id_collection(
             entity_path(root, identifier),
             json!(identifier),
         );
+    }
+}
+
+fn compare_stable_id_order<'a>(
+    changes: &mut Vec<SemanticChange>,
+    section: SemanticSection,
+    path: &str,
+    before: impl Iterator<Item = &'a str>,
+    after: impl Iterator<Item = &'a str>,
+) {
+    let before_order = before.collect::<Vec<_>>();
+    let after_order = after.collect::<Vec<_>>();
+    if before_order == after_order {
+        return;
+    }
+    let before_ids = before_order
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    let after_ids = after_order
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    if before_ids == after_ids {
+        changed_value(changes, section, path, &before_order, &after_order);
     }
 }
 

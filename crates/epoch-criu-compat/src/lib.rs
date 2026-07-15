@@ -905,6 +905,9 @@ impl CompatibilityRunner {
         )?;
         artifacts.push(restore.artifact());
         if !restore.success() {
+            if let Ok(restored_pid) = read_pid(&restored_pid_path) {
+                let _ = terminate_restored_group(restored_pid);
+            }
             let (status, code) = command_failure_classification(&restore, false);
             return Ok(row_from_command_failure(
                 scenario,
@@ -1306,13 +1309,6 @@ fn run_bounded(
     max_log_bytes: usize,
     log_artifact: &str,
 ) -> Result<CommandRun, RunError> {
-    let io_root = TempBuilder::new()
-        .prefix("command-")
-        .tempdir_in(working_directory)?;
-    let stdout_path = io_root.path().join("stdout");
-    let stderr_path = io_root.path().join("stderr");
-    let stdout = File::create(&stdout_path)?;
-    let stderr = File::create(&stderr_path)?;
     let started = Instant::now();
     let mut command = Command::new(program);
     command
@@ -1323,8 +1319,8 @@ fn run_bounded(
         .env("LC_ALL", "C")
         .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
         .stdin(Stdio::null())
-        .stdout(Stdio::from(stdout))
-        .stderr(Stdio::from(stderr));
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt as _;
@@ -1352,6 +1348,10 @@ fn run_bounded(
             });
         }
     };
+    let stdout = child.stdout.take().ok_or(RunError::MissingCapturePipe)?;
+    let stderr = child.stderr.take().ok_or(RunError::MissingCapturePipe)?;
+    let stdout_reader = thread::spawn(move || capture_stream(stdout, max_log_bytes));
+    let stderr_reader = thread::spawn(move || capture_stream(stderr, max_log_bytes));
     let deadline = Duration::from_millis(timeout_ms);
     let (status, timed_out) = loop {
         if let Some(status) = child.try_wait()? {
@@ -1363,9 +1363,17 @@ fn run_bounded(
         }
         thread::sleep(Duration::from_millis(10));
     };
-    let mut stdout = read_bounded(&stdout_path, max_log_bytes)?;
+    let mut stdout = stdout_reader
+        .join()
+        .map_err(|_| RunError::CaptureThread)??;
+    let mut stderr = stderr_reader
+        .join()
+        .map_err(|_| RunError::CaptureThread)??;
     let remaining = max_log_bytes.saturating_sub(stdout.bytes.len());
-    let stderr = read_bounded(&stderr_path, remaining)?;
+    if stderr.bytes.len() > remaining {
+        stderr.bytes.truncate(remaining);
+        stderr.truncated = true;
+    }
     stdout.bytes.extend(stderr.bytes);
     Ok(CommandRun {
         measurement: CommandMeasurement {
@@ -1388,6 +1396,23 @@ fn elapsed_ms(started: Instant) -> u64 {
 struct BoundedRead {
     bytes: Vec<u8>,
     truncated: bool,
+}
+
+fn capture_stream(mut stream: impl std::io::Read, maximum: usize) -> std::io::Result<BoundedRead> {
+    let mut bytes = Vec::with_capacity(maximum.min(64 * 1024));
+    let mut truncated = false;
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let read = stream.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        let remaining = maximum.saturating_sub(bytes.len());
+        let retained = read.min(remaining);
+        bytes.extend_from_slice(&buffer[..retained]);
+        truncated |= retained < read;
+    }
+    Ok(BoundedRead { bytes, truncated })
 }
 
 fn read_bounded(path: &Path, maximum: usize) -> Result<BoundedRead, RunError> {
@@ -1660,13 +1685,21 @@ fn terminate_command_group(child: &mut Child) {
 fn terminate_restored_group(pid: u32) -> bool {
     #[cfg(unix)]
     {
-        let Ok(pid) = i32::try_from(pid) else {
+        let raw_pid = pid;
+        let Ok(pid) = i32::try_from(raw_pid) else {
             return false;
         };
         match killpg(Pid::from_raw(pid), Signal::SIGKILL) {
-            Ok(()) | Err(Errno::ESRCH) => true,
-            Err(_) => false,
+            Err(Errno::ESRCH) => return true,
+            Err(_) => return false,
+            Ok(()) => {}
         }
+        let process_path = PathBuf::from(format!("/proc/{raw_pid}"));
+        let started = Instant::now();
+        while process_path.exists() && started.elapsed() < Duration::from_secs(2) {
+            thread::sleep(Duration::from_millis(10));
+        }
+        !process_path.exists()
     }
     #[cfg(not(unix))]
     {
@@ -1772,6 +1805,10 @@ pub enum RunError {
     TemporaryState(#[from] std::io::Error),
     #[error("CRIU restore produced an invalid PID file")]
     InvalidRestoredPid,
+    #[error("command capture pipe was unavailable")]
+    MissingCapturePipe,
+    #[error("command capture thread panicked")]
+    CaptureThread,
 }
 
 #[derive(Debug, Error)]
@@ -1788,4 +1825,66 @@ pub enum EvidenceError {
     },
     #[error("evidence JSON encoding failed: {0}")]
     Json(#[from] serde_json::Error),
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bounded_command_timeout_kills_the_process_group() {
+        let directory = TempDir::new().expect("temporary directory");
+        let started = Instant::now();
+        let result = run_bounded(
+            Path::new("/bin/sleep"),
+            &[OsString::from("2")],
+            directory.path(),
+            100,
+            1_024,
+            "logs/timeout.log",
+        )
+        .expect("bounded command");
+        assert!(result.measurement.timed_out);
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn command_output_is_drained_but_retained_only_to_the_configured_bound() {
+        let directory = TempDir::new().expect("temporary directory");
+        let result = run_bounded(
+            Path::new("/usr/bin/yes"),
+            &[OsString::from("bounded")],
+            directory.path(),
+            100,
+            1_024,
+            "logs/output.log",
+        )
+        .expect("bounded command");
+        assert!(result.measurement.timed_out);
+        assert!(result.measurement.log_truncated);
+        assert_eq!(result.log.len(), 1_024);
+    }
+
+    #[test]
+    fn failure_classifier_preserves_failed_and_unsupported_results() {
+        let directory = TempDir::new().expect("temporary directory");
+        let mut result = run_bounded(
+            Path::new("/usr/bin/false"),
+            &[],
+            directory.path(),
+            1_000,
+            1_024,
+            "logs/failure.log",
+        )
+        .expect("bounded command");
+        assert_eq!(
+            command_failure_classification(&result, true),
+            (RowStatus::Failed, DiagnosticCode::DumpFailed)
+        );
+        result.log = b"Operation not permitted by host policy\n".to_vec();
+        assert_eq!(
+            command_failure_classification(&result, true),
+            (RowStatus::Unsupported, DiagnosticCode::DumpUnsupported)
+        );
+    }
 }

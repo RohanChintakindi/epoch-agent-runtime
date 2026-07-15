@@ -219,6 +219,16 @@ def test_training_fails_clearly_without_three_labelled_task_groups(tmp_path):
         train_model(mixed, tmp_path / "model", TrainConfig(epochs=1))
 
 
+def test_training_refuses_a_dangling_symlink_output(tmp_path):
+    records = generate_records(task_groups=3, branches_per_group=1, seed=72)
+    output = tmp_path / "model"
+    output.symlink_to(tmp_path / "missing-target", target_is_directory=True)
+
+    with pytest.raises(ValueError, match="already exists"):
+        train_model(records, output, TrainConfig(epochs=1, hidden_size=8))
+    assert output.is_symlink()
+
+
 def refresh_manifest_hash(manifest_path, changed_path):
     import hashlib
 

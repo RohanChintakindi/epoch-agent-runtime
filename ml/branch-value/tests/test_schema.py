@@ -31,6 +31,30 @@ EXPECTED_KINDS = {
     "application.context_restored",
     "other",
 }
+RUST_SCHEMA_V1_FIXTURE = (
+    Path(__file__).resolve().parents[3]
+    / "crates"
+    / "epoch-trajectory"
+    / "tests"
+    / "fixtures"
+    / "schema-v1.jsonl"
+)
+
+
+def test_python_loads_the_canonical_rust_schema_v1_fixture():
+    records = load_jsonl(RUST_SCHEMA_V1_FIXTURE)
+
+    assert len(records) == 2
+    assert any(record.is_labelled and record.events for record in records)
+    assert any(not record.is_labelled and not record.events for record in records)
+    assert {event.kind for record in records for event in record.events} == EXPECTED_KINDS
+    assert {event.actor for record in records for event in record.events} == {
+        "agent",
+        "supervisor",
+        "tool",
+        "gateway",
+        "operator",
+    }
 
 
 def test_real_rust_contract_round_trips_labelled_and_unlabelled_records_privately(tmp_path):

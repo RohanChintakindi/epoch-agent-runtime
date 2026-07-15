@@ -260,6 +260,7 @@ dependencies = [
  "epoch-blob",
  "epoch-core",
  "epoch-events",
+ "epoch-proc",
  "epoch-protocol",
  "epoch-storage",
  "nix",

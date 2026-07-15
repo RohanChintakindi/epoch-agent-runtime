@@ -1,7 +1,10 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-use epoch_supervisor::{AgentTermination, DirectSupervisor, RunOutcome};
+use epoch_core::{BranchId, SessionId};
+use epoch_supervisor::{
+    AgentTermination, DirectSupervisor, EventPageRequest, InspectionError, RunOutcome,
+};
 use serde::Serialize;
 
 const SUPERVISOR_FAILURE_EXIT: u8 = 125;
@@ -40,6 +43,12 @@ enum Command {
         session: String,
         #[arg(long)]
         branch: Option<String>,
+        /// Number of events to skip in stable branch/sequence order.
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        /// Maximum number of events to return (1 through 1000).
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
     },
     /// Commit a composite execution checkpoint.
     Checkpoint {
@@ -263,6 +272,13 @@ fn main() -> ExitCode {
 fn execute(command: Command) -> ExitCode {
     match command {
         Command::Run { manifest } => run_manifest(&manifest),
+        Command::Status { session } => inspect_status(&session),
+        Command::Events {
+            session,
+            branch,
+            offset,
+            limit,
+        } => inspect_events(&session, branch.as_deref(), offset, limit),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -297,6 +313,85 @@ fn execute(command: Command) -> ExitCode {
         unfinished => {
             eprintln!("epoch {} is not implemented yet", unfinished.command_path());
             ExitCode::from(2)
+        }
+    }
+}
+
+fn inspect_status(raw_session: &str) -> ExitCode {
+    let session_id = match parse_session_id(raw_session) {
+        Ok(session_id) => session_id,
+        Err(status) => return status,
+    };
+    let supervisor = match DirectSupervisor::open_existing(".epoch") {
+        Ok(supervisor) => supervisor,
+        Err(error) => return report_inspection_error(&error),
+    };
+    match supervisor.session_status(session_id) {
+        Ok(report) => print_json(&report),
+        Err(error) => report_inspection_error(&error),
+    }
+}
+
+fn inspect_events(
+    raw_session: &str,
+    raw_branch: Option<&str>,
+    offset: u64,
+    limit: usize,
+) -> ExitCode {
+    let session_id = match parse_session_id(raw_session) {
+        Ok(session_id) => session_id,
+        Err(status) => return status,
+    };
+    let branch_id = match raw_branch {
+        Some(value) => {
+            let Ok(branch_id) = value.parse::<BranchId>() else {
+                eprintln!("invalid branch ID: {value:?}");
+                return ExitCode::from(2);
+            };
+            Some(branch_id)
+        }
+        None => None,
+    };
+    let supervisor = match DirectSupervisor::open_existing(".epoch") {
+        Ok(supervisor) => supervisor,
+        Err(error) => return report_inspection_error(&error),
+    };
+    match supervisor.events(EventPageRequest {
+        session_id,
+        branch_id,
+        offset,
+        limit,
+    }) {
+        Ok(report) => print_json(&report),
+        Err(error) => report_inspection_error(&error),
+    }
+}
+
+fn parse_session_id(value: &str) -> Result<SessionId, ExitCode> {
+    value.parse().map_err(|_| {
+        eprintln!("invalid session ID: {value:?}");
+        ExitCode::from(2)
+    })
+}
+
+fn report_inspection_error(error: &InspectionError) -> ExitCode {
+    eprintln!("{error}");
+    if error.is_user_error() {
+        ExitCode::from(2)
+    } else {
+        ExitCode::from(SUPERVISOR_FAILURE_EXIT)
+    }
+}
+
+fn print_json(value: &impl Serialize) -> ExitCode {
+    match serde_json::to_string(value) {
+        Ok(encoded) => {
+            println!("{encoded}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("failed to encode inspection report: {error}");
+            ExitCode::from(SUPERVISOR_FAILURE_EXIT)
         }
     }
 }

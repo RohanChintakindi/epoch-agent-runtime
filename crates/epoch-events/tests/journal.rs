@@ -6,7 +6,9 @@ use std::{
 
 use epoch_blob::{BlobHash, BlobStore};
 use epoch_core::{BranchId, EpochId, EventActor, EventId, EventKind, EventStatus, SessionId};
-use epoch_events::{EventJournal, EventQuery, INLINE_PAYLOAD_LIMIT, JournalError, NewEvent};
+use epoch_events::{
+    EventJournal, EventQuery, INLINE_PAYLOAD_LIMIT, JournalError, MAX_EVENT_PAGE_SIZE, NewEvent,
+};
 use epoch_storage::Store;
 use rusqlite::params;
 use serde_json::{Value, json};
@@ -165,6 +167,51 @@ fn append_allocates_branch_sequences_and_queries_with_deterministic_filters() {
         .expect("query filtered events");
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].event_id, second.event_id);
+}
+
+#[test]
+fn bounded_pages_preserve_the_full_querys_deterministic_order() {
+    let fixture = Fixture::new();
+    let journal = fixture.journal();
+    for (branch, number) in [
+        (fixture.sibling, 0),
+        (fixture.branch, 0),
+        (fixture.sibling, 1),
+        (fixture.branch, 1),
+        (fixture.branch, 2),
+    ] {
+        journal
+            .append(draft(
+                fixture.session,
+                branch,
+                "page.item",
+                json!({"number": number}),
+            ))
+            .expect("append page fixture event");
+    }
+
+    let query = EventQuery::for_session(fixture.session);
+    let expected = journal.query(&query).expect("query complete timeline");
+    let mut actual = Vec::new();
+    let mut offset = 0;
+    loop {
+        let page = journal
+            .query_page(&query, offset, 2)
+            .expect("query bounded page");
+        actual.extend(page.events);
+        if !page.has_more {
+            break;
+        }
+        offset = u64::try_from(actual.len()).expect("fixture length fits u64");
+    }
+    assert_eq!(actual, expected);
+
+    for limit in [0, MAX_EVENT_PAGE_SIZE + 1] {
+        assert!(matches!(
+            journal.query_page(&query, 0, limit),
+            Err(JournalError::InvalidPageLimit { received, .. }) if received == limit
+        ));
+    }
 }
 
 #[test]

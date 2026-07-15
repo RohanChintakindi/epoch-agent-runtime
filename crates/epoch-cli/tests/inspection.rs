@@ -23,7 +23,9 @@ printf '{"payload":{"outcome":"succeeded","output_hash":null},"protocol_version"
 "#,
     )
     .expect("write agent fixture");
-    let mut permissions = fs::metadata(&script).expect("script metadata").permissions();
+    let mut permissions = fs::metadata(&script)
+        .expect("script metadata")
+        .permissions();
     permissions.set_mode(0o700);
     fs::set_permissions(&script, permissions).expect("make agent executable");
     let manifest = fixture.path().join("workload.toml");
@@ -167,8 +169,11 @@ fn inspection_distinguishes_missing_and_corrupt_trusted_state() {
 
     let corrupt = TempDir::new().expect("create corrupt-state fixture");
     fs::create_dir(corrupt.path().join(".epoch")).expect("create state directory");
-    fs::write(corrupt.path().join(".epoch/state.db"), b"not a SQLite database")
-        .expect("write corrupt database");
+    fs::write(
+        corrupt.path().join(".epoch/state.db"),
+        b"not a SQLite database",
+    )
+    .expect("write corrupt database");
     let output = epoch(
         &corrupt,
         &["status", "00000000-0000-4000-8000-000000000000"],

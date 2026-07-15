@@ -14,6 +14,9 @@ use thiserror::Error;
 /// Payloads larger than this encoded JSON size are stored in the content-addressed blob store.
 pub const INLINE_PAYLOAD_LIMIT: usize = 16 * 1024;
 
+/// Largest page accepted by [`EventJournal::query_page`].
+pub const MAX_EVENT_PAGE_SIZE: usize = 1_000;
+
 /// Event fields supplied by a recorder. Identity and sequence are assigned by the journal.
 #[derive(Clone, Debug)]
 pub struct NewEvent {
@@ -38,6 +41,13 @@ pub struct EventQuery {
     pub branch_id: Option<BranchId>,
     pub kind: Option<EventKind>,
     pub sequence: Option<RangeInclusive<u64>>,
+}
+
+/// A bounded event result with an explicit continuation signal.
+#[derive(Clone, Debug)]
+pub struct EventPage {
+    pub events: Vec<Event>,
+    pub has_more: bool,
 }
 
 impl EventQuery {
@@ -166,6 +176,78 @@ impl EventJournal {
         rows.map(|row| decode_event(row?)).collect()
     }
 
+    /// Returns at most `limit` events after skipping `offset` events in the journal's stable
+    /// branch/sequence/id order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a zero or excessive limit, an unrepresentable offset, invalid scope,
+    /// or corrupt stored event data.
+    pub fn query_page(
+        &self,
+        query: &EventQuery,
+        offset: u64,
+        limit: usize,
+    ) -> Result<EventPage, JournalError> {
+        if !(1..=MAX_EVENT_PAGE_SIZE).contains(&limit) {
+            return Err(JournalError::InvalidPageLimit {
+                received: limit,
+                maximum: MAX_EVENT_PAGE_SIZE,
+            });
+        }
+        let (sequence_start, sequence_end) = sequence_bounds(query)?;
+        let offset = to_sql_integer("event_offset", offset)?;
+        let fetch_limit = limit.checked_add(1).ok_or(JournalError::InvalidPageLimit {
+            received: limit,
+            maximum: MAX_EVENT_PAGE_SIZE,
+        })?;
+        let fetch_limit =
+            i64::try_from(fetch_limit).map_err(|_| JournalError::InvalidPageLimit {
+                received: limit,
+                maximum: MAX_EVENT_PAGE_SIZE,
+            })?;
+
+        let store = self.store.lock().map_err(|_| JournalError::LockPoisoned)?;
+        ensure_session_exists(store.connection(), query.session_id)?;
+        if let Some(branch_id) = query.branch_id {
+            ensure_branch_scope(store.connection(), query.session_id, branch_id)?;
+        }
+
+        let session_id = query.session_id.to_string();
+        let branch_id = query.branch_id.map(|id| id.to_string());
+        let kind = query.kind.as_ref().map(EventKind::as_str);
+        let mut statement = store.connection().prepare(
+            "SELECT id, sequence, session_id, branch_id, epoch_id, causal_parent_id, \
+                    monotonic_ns, occurred_at_unix_ms, actor, kind, input_hash, output_hash, \
+                    status, payload_json, payload_blob_hash \
+             FROM events \
+             WHERE session_id = ?1 \
+               AND (?2 IS NULL OR branch_id = ?2) \
+               AND (?3 IS NULL OR kind = ?3) \
+               AND sequence BETWEEN ?4 AND ?5 \
+             ORDER BY branch_id ASC, sequence ASC, id ASC \
+             LIMIT ?6 OFFSET ?7",
+        )?;
+        let rows = statement.query_map(
+            params![
+                session_id,
+                branch_id,
+                kind,
+                sequence_start,
+                sequence_end,
+                fetch_limit,
+                offset
+            ],
+            StoredEvent::read,
+        )?;
+        let mut events = rows
+            .map(|row| decode_event(row?))
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_more = events.len() > limit;
+        events.truncate(limit);
+        Ok(EventPage { events, has_more })
+    }
+
     /// Loads and parses either an inline or externalized payload, verifying blobs on read.
     ///
     /// # Errors
@@ -182,6 +264,23 @@ impl EventJournal {
         } else {
             Ok(serde_json::from_str(&event.payload_json)?)
         }
+    }
+}
+
+fn sequence_bounds(query: &EventQuery) -> Result<(i64, i64), JournalError> {
+    match &query.sequence {
+        Some(range) => {
+            let start = *range.start();
+            let end = *range.end();
+            if start > end {
+                return Err(JournalError::InvalidSequenceRange { start, end });
+            }
+            Ok((
+                to_sql_integer("sequence_start", start)?,
+                to_sql_integer("sequence_end", end)?,
+            ))
+        }
+        None => Ok((0, i64::MAX)),
     }
 }
 
@@ -655,6 +754,8 @@ pub enum JournalError {
     BlobMetadataMismatch { hash: BlobHash },
     #[error("invalid inclusive sequence range {start}..={end}")]
     InvalidSequenceRange { start: u64, end: u64 },
+    #[error("event page limit must be between 1 and {maximum}, got {received}")]
+    InvalidPageLimit { received: usize, maximum: usize },
     #[error("{field} value {value} cannot be represented by SQLite INTEGER")]
     NumericOutOfRange { field: &'static str, value: u64 },
     #[error("wall time must be nonnegative, got {value}")]

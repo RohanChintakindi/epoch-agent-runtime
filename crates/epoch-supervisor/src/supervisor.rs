@@ -8,8 +8,9 @@ use std::{
 };
 
 use epoch_blob::BlobHash;
-use epoch_core::{BranchId, EventActor, EventKind, EventStatus, SessionId};
-use epoch_events::{EventJournal, JournalError, NewEvent};
+use epoch_core::{BranchId, EventActor, EventId, EventKind, EventStatus, SessionId};
+use epoch_events::{EventJournal, EventQuery, JournalError, NewEvent};
+use epoch_proc::{CollectorLimits, ProcCollection, collect_live};
 use epoch_protocol::{
     CompletionOutcome, IngestError, Message, ProtocolError, StreamValidator, SupervisorBinding,
     ToolOutcome,
@@ -20,7 +21,8 @@ use nix::{
     sys::signal::{Signal, killpg},
     unistd::Pid,
 };
-use rusqlite::{TransactionBehavior, params};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
+use serde::Serialize;
 use serde_json::{Value, json};
 use thiserror::Error;
 
@@ -31,7 +33,6 @@ use crate::{
 
 pub const MAX_STDOUT_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_STDERR_BYTES: usize = 1024 * 1024;
-
 const PIPE_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 const READER_CHANNEL_CAPACITY: usize = 32;
 const READER_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -54,6 +55,59 @@ pub struct RunOutcome {
     pub termination: AgentTermination,
     pub protocol_records: usize,
     pub stderr: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BranchStatus {
+    pub branch_id: BranchId,
+    pub state: String,
+    pub next_event_sequence: u64,
+    pub created_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionStatusReport {
+    pub session_id: SessionId,
+    pub state: String,
+    pub policy_revision: u64,
+    pub revision: u64,
+    pub created_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
+    pub branches: Vec<BranchStatus>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EventPageRequest {
+    pub session_id: SessionId,
+    pub branch_id: Option<BranchId>,
+    pub offset: u64,
+    pub limit: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ObservedEvent {
+    pub event_id: EventId,
+    pub sequence: u64,
+    pub session_id: SessionId,
+    pub branch_id: BranchId,
+    pub monotonic_ns: u64,
+    pub occurred_at_unix_ms: i64,
+    pub actor: EventActor,
+    pub kind: String,
+    pub status: EventStatus,
+    pub payload: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct EventPageReport {
+    pub session_id: SessionId,
+    pub branch_id: Option<BranchId>,
+    pub offset: u64,
+    pub limit: usize,
+    pub has_more: bool,
+    pub next_offset: Option<u64>,
+    pub events: Vec<ObservedEvent>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -87,6 +141,167 @@ impl DirectSupervisor {
         Ok(Self {
             database_path,
             journal,
+        })
+    }
+
+    /// Opens trusted state without creating a new runtime when the requested state is absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InspectionError::StateNotFound`] when there is no existing database, and a
+    /// state-unavailable error when the trusted database cannot be validated.
+    pub fn open_existing(state_root: impl AsRef<Path>) -> Result<Self, InspectionError> {
+        let requested = state_root.as_ref();
+        let database = requested.join("state.db");
+        if !requested.is_dir() || !database.is_file() {
+            return Err(InspectionError::StateNotFound {
+                path: requested.to_path_buf(),
+            });
+        }
+        let state_root = fs::canonicalize(requested).map_err(|error| unavailable(&error))?;
+        let database_path = state_root.join("state.db");
+        Store::open(&database_path).map_err(|error| unavailable(&error))?;
+        let journal = EventJournal::open(&database_path, state_root.join("blobs"))
+            .map_err(|error| unavailable(&error))?;
+        Ok(Self {
+            database_path,
+            journal,
+        })
+    }
+
+    /// Reads a durable session and its branches from trusted state.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed not-found or state-corruption error.
+    pub fn session_status(
+        &self,
+        session_id: SessionId,
+    ) -> Result<SessionStatusReport, InspectionError> {
+        let store = Store::open(&self.database_path).map_err(|error| unavailable(&error))?;
+        let session = store
+            .connection()
+            .query_row(
+                "SELECT state, policy_revision, revision, created_at_unix_ms, updated_at_unix_ms \
+                 FROM sessions WHERE id = ?1",
+                [session_id.to_string()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| unavailable(&error))?
+            .ok_or(InspectionError::SessionNotFound { session_id })?;
+        validate_session_state(&session.0)?;
+
+        let mut statement = store
+            .connection()
+            .prepare(
+                "SELECT id, state, next_event_sequence, created_at_unix_ms, updated_at_unix_ms \
+                 FROM branches WHERE session_id = ?1 ORDER BY created_at_unix_ms ASC, id ASC",
+            )
+            .map_err(|error| unavailable(&error))?;
+        let rows = statement
+            .query_map([session_id.to_string()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })
+            .map_err(|error| unavailable(&error))?;
+        let stored_branches = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| unavailable(&error))?;
+        let mut branches = Vec::with_capacity(stored_branches.len());
+        for (id, state, next_event_sequence, created_at, updated_at) in stored_branches {
+            validate_branch_state(&state)?;
+            branches.push(BranchStatus {
+                branch_id: parse_stored("branches.id", &id)?,
+                state,
+                next_event_sequence: nonnegative(
+                    "branches.next_event_sequence",
+                    next_event_sequence,
+                )?,
+                created_at_unix_ms: nonnegative_i64("branches.created_at_unix_ms", created_at)?,
+                updated_at_unix_ms: nonnegative_i64("branches.updated_at_unix_ms", updated_at)?,
+            });
+        }
+        Ok(SessionStatusReport {
+            session_id,
+            state: session.0,
+            policy_revision: nonnegative("sessions.policy_revision", session.1)?,
+            revision: nonnegative("sessions.revision", session.2)?,
+            created_at_unix_ms: nonnegative_i64("sessions.created_at_unix_ms", session.3)?,
+            updated_at_unix_ms: nonnegative_i64("sessions.updated_at_unix_ms", session.4)?,
+            branches,
+        })
+    }
+
+    /// Reads a bounded, deterministic page of durable events and verifies externalized payloads.
+    ///
+    /// # Errors
+    ///
+    /// Returns typed invalid-scope/page errors or a trusted-state error when stored data cannot be
+    /// decoded and verified.
+    pub fn events(&self, request: EventPageRequest) -> Result<EventPageReport, InspectionError> {
+        let mut query = EventQuery::for_session(request.session_id);
+        query.branch_id = request.branch_id;
+        let page = self
+            .journal
+            .query_page(&query, request.offset, request.limit)
+            .map_err(InspectionError::from_journal)?;
+        let mut events = Vec::with_capacity(page.events.len());
+        for event in page.events {
+            let payload = self
+                .journal
+                .read_payload(&event)
+                .map_err(InspectionError::from_journal)?;
+            events.push(ObservedEvent {
+                event_id: event.event_id,
+                sequence: event.sequence,
+                session_id: event.session_id,
+                branch_id: event.branch_id,
+                monotonic_ns: event.monotonic_ns,
+                occurred_at_unix_ms: event.occurred_at_unix_ms,
+                actor: event.actor,
+                kind: event.kind.to_string(),
+                status: event.status,
+                payload,
+            });
+        }
+        let next_offset = if page.has_more {
+            let count =
+                u64::try_from(events.len()).map_err(|_| InspectionError::InvalidOffset {
+                    offset: request.offset,
+                })?;
+            Some(
+                request
+                    .offset
+                    .checked_add(count)
+                    .ok_or(InspectionError::InvalidOffset {
+                        offset: request.offset,
+                    })?,
+            )
+        } else {
+            None
+        };
+        Ok(EventPageReport {
+            session_id: request.session_id,
+            branch_id: request.branch_id,
+            offset: request.offset,
+            limit: request.limit,
+            has_more: page.has_more,
+            next_offset,
+            events,
         })
     }
 
@@ -147,6 +362,23 @@ impl DirectSupervisor {
             EventActor::Supervisor,
             EventStatus::Succeeded,
             json!({"pid": u64::from(child.id()), "backend": "direct"}),
+        )?;
+
+        let process_collection = collect_live(child.id(), CollectorLimits::default());
+        let collection_status = if matches!(&process_collection, ProcCollection::Collected(_)) {
+            EventStatus::Succeeded
+        } else {
+            EventStatus::Unknown
+        };
+        self.append_event(
+            ids,
+            started,
+            "process.manifest",
+            EventActor::Supervisor,
+            collection_status,
+            serde_json::to_value(process_collection).map_err(|error| ExecutionError::Internal {
+                message: format!("process manifest could not be encoded: {error}"),
+            })?,
         )?;
 
         let monitored = self.monitor_process(&mut child, stdout, stderr, ids, started)?;
@@ -681,6 +913,130 @@ fn persistence(error: &impl ToString) -> ExecutionError {
 fn io_error(error: &std::io::Error) -> ExecutionError {
     ExecutionError::Io {
         message: error.to_string(),
+    }
+}
+
+fn unavailable(error: &impl ToString) -> InspectionError {
+    InspectionError::StateUnavailable {
+        message: error.to_string(),
+    }
+}
+
+fn parse_stored<Id>(field: &'static str, value: &str) -> Result<Id, InspectionError>
+where
+    Id: std::str::FromStr,
+{
+    value
+        .parse()
+        .map_err(|_| InspectionError::InvalidStoredValue {
+            field,
+            value: value.to_owned(),
+        })
+}
+
+fn nonnegative(field: &'static str, value: i64) -> Result<u64, InspectionError> {
+    u64::try_from(value).map_err(|_| InspectionError::InvalidStoredValue {
+        field,
+        value: value.to_string(),
+    })
+}
+
+fn nonnegative_i64(field: &'static str, value: i64) -> Result<i64, InspectionError> {
+    if value >= 0 {
+        Ok(value)
+    } else {
+        Err(InspectionError::InvalidStoredValue {
+            field,
+            value: value.to_string(),
+        })
+    }
+}
+
+fn validate_session_state(value: &str) -> Result<(), InspectionError> {
+    if matches!(
+        value,
+        "created"
+            | "starting"
+            | "running"
+            | "suspended"
+            | "checkpointing"
+            | "restoring"
+            | "completed"
+            | "failed"
+    ) {
+        Ok(())
+    } else {
+        Err(InspectionError::InvalidStoredValue {
+            field: "sessions.state",
+            value: value.to_owned(),
+        })
+    }
+}
+
+fn validate_branch_state(value: &str) -> Result<(), InspectionError> {
+    if matches!(
+        value,
+        "created" | "running" | "suspended" | "completed" | "promoted" | "abandoned" | "failed"
+    ) {
+        Ok(())
+    } else {
+        Err(InspectionError::InvalidStoredValue {
+            field: "branches.state",
+            value: value.to_owned(),
+        })
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum InspectionError {
+    #[error("Epoch state does not exist at {path}")]
+    StateNotFound { path: PathBuf },
+    #[error("session {session_id} does not exist")]
+    SessionNotFound { session_id: SessionId },
+    #[error("branch {branch_id} does not exist")]
+    BranchNotFound { branch_id: BranchId },
+    #[error("branch {branch_id} belongs to a different session")]
+    BranchSessionMismatch { branch_id: BranchId },
+    #[error("event limit must be between 1 and {maximum}, got {received}")]
+    InvalidLimit { received: usize, maximum: usize },
+    #[error("event offset cannot be represented safely: {offset}")]
+    InvalidOffset { offset: u64 },
+    #[error("trusted state field {field} has invalid value {value:?}")]
+    InvalidStoredValue { field: &'static str, value: String },
+    #[error("trusted state is unavailable: {message}")]
+    StateUnavailable { message: String },
+}
+
+impl InspectionError {
+    fn from_journal(error: JournalError) -> Self {
+        match error {
+            JournalError::SessionNotFound { session_id } => Self::SessionNotFound { session_id },
+            JournalError::BranchNotFound { branch_id } => Self::BranchNotFound { branch_id },
+            JournalError::BranchSessionMismatch { branch_id, .. } => {
+                Self::BranchSessionMismatch { branch_id }
+            }
+            JournalError::InvalidPageLimit { received, maximum } => {
+                Self::InvalidLimit { received, maximum }
+            }
+            JournalError::NumericOutOfRange {
+                field: "event_offset",
+                value,
+            } => Self::InvalidOffset { offset: value },
+            other => unavailable(&other),
+        }
+    }
+
+    #[must_use]
+    pub const fn is_user_error(&self) -> bool {
+        matches!(
+            self,
+            Self::StateNotFound { .. }
+                | Self::SessionNotFound { .. }
+                | Self::BranchNotFound { .. }
+                | Self::BranchSessionMismatch { .. }
+                | Self::InvalidLimit { .. }
+                | Self::InvalidOffset { .. }
+        )
     }
 }
 

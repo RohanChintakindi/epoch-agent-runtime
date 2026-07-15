@@ -9,6 +9,7 @@ rust-version.workspace = true
 epoch-blob.workspace = true
 epoch-core.workspace = true
 epoch-events = { path = "../epoch-events" }
+epoch-proc = { path = "../epoch-proc" }
 epoch-protocol = { path = "../epoch-protocol" }
 epoch-storage.workspace = true
 nix.workspace = true

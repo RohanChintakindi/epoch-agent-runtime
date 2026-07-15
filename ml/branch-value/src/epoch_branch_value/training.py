@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import io
 import json
@@ -11,6 +13,7 @@ import random
 import re
 import shutil
 import stat
+import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -38,6 +41,9 @@ ARTIFACT_LIMITS = {
     "training-metrics.json": MAX_METRICS_JSON_BYTES,
 }
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+LINUX_AT_FDCWD = -100
+LINUX_RENAME_NOREPLACE = 1
+DARWIN_RENAME_EXCL = 0x00000004
 
 
 class ArtifactValidationError(ValueError):
@@ -455,13 +461,44 @@ def _load_model(model_dir: os.PathLike[str]) -> LoadedModel:
 
 
 def _load_verified_bundle(root: Path) -> Dict[str, bytes]:
+    if os.name != "posix":
+        return _load_verified_bundle_by_path(root)
+    try:
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        directory_fd = os.open(root, flags)
+    except OSError as error:
+        raise ArtifactValidationError("artifact model directory is unavailable") from error
+    try:
+        metadata = os.fstat(directory_fd)
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise ArtifactValidationError("artifact model path must be a regular directory")
+        _require_private_owner_mode(metadata, "model directory", directory=True)
+        return _load_verified_payloads(
+            lambda name, maximum: _read_bounded_regular_at(directory_fd, name, maximum)
+        )
+    finally:
+        os.close(directory_fd)
+
+
+def _load_verified_bundle_by_path(root: Path) -> Dict[str, bytes]:
     try:
         root_stat = root.lstat()
     except OSError as error:
         raise ArtifactValidationError("artifact model directory is unavailable") from error
     if not stat.S_ISDIR(root_stat.st_mode) or root.is_symlink():
         raise ArtifactValidationError("artifact model path must be a regular directory")
-    manifest_bytes = _read_bounded_regular(root / "manifest.json", MAX_MANIFEST_BYTES)
+    return _load_verified_payloads(
+        lambda name, maximum: _read_bounded_regular(root / name, maximum)
+    )
+
+
+def _load_verified_payloads(reader) -> Dict[str, bytes]:
+    manifest_bytes = reader("manifest.json", MAX_MANIFEST_BYTES)
     manifest = _decode_object("manifest.json", manifest_bytes)
     if set(manifest) != {"format_version", "files"} or manifest.get("format_version") != 1:
         raise ArtifactValidationError("artifact manifest contract is invalid")
@@ -482,38 +519,65 @@ def _load_verified_bundle(root: Path) -> Dict[str, bytes]:
             or not _is_sha256(expected_hash)
         ):
             raise ArtifactValidationError(f"artifact manifest entry {name} is invalid")
-        payload = _read_bounded_regular(root / name, maximum)
+        payload = reader(name, maximum)
         if len(payload) != expected_size or hashlib.sha256(payload).hexdigest() != expected_hash:
             raise ArtifactValidationError(f"artifact {name} failed manifest verification")
         payloads[name] = payload
     return payloads
 
 
+def _read_bounded_regular_at(directory_fd: int, name: str, maximum: int) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(name, flags, dir_fd=directory_fd)
+    except OSError as error:
+        raise ArtifactValidationError(f"artifact {name} is unavailable") from error
+    return _read_bounded_descriptor(descriptor, name, maximum, enforce_private=True)
+
+
 def _read_bounded_regular(path: Path, maximum: int) -> bytes:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
     except OSError as error:
         raise ArtifactValidationError(f"artifact {path.name} is unavailable") from error
+    return _read_bounded_descriptor(descriptor, path.name, maximum, enforce_private=False)
+
+
+def _read_bounded_descriptor(
+    descriptor: int, name: str, maximum: int, *, enforce_private: bool
+) -> bytes:
     try:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
-            raise ArtifactValidationError(f"artifact {path.name} must be a regular file")
+            raise ArtifactValidationError(f"artifact {name} must be a regular file")
+        if enforce_private:
+            _require_private_owner_mode(metadata, name, directory=False)
         if not 1 <= metadata.st_size <= maximum:
-            raise ArtifactValidationError(
-                f"artifact {path.name} is empty or exceeds its size bound"
-            )
+            raise ArtifactValidationError(f"artifact {name} is empty or exceeds its size bound")
         with os.fdopen(descriptor, "rb") as source:
             descriptor = -1
             payload = source.read(maximum + 1)
         if len(payload) != metadata.st_size or len(payload) > maximum:
-            raise ArtifactValidationError(f"artifact {path.name} changed while being read")
+            raise ArtifactValidationError(f"artifact {name} changed while being read")
         return payload
     except OSError as error:
-        raise ArtifactValidationError(f"artifact {path.name} cannot be read") from error
+        raise ArtifactValidationError(f"artifact {name} cannot be read") from error
     finally:
         if descriptor >= 0:
             os.close(descriptor)
+
+
+def _require_private_owner_mode(metadata: os.stat_result, name: str, *, directory: bool) -> None:
+    if metadata.st_uid != os.geteuid():
+        raise ArtifactValidationError(f"artifact {name} ownership is unsafe")
+    mode = stat.S_IMODE(metadata.st_mode)
+    if directory:
+        safe = mode in {0o500, 0o700}
+    else:
+        safe = mode in {0o400, 0o600}
+    if not safe:
+        raise ArtifactValidationError(f"artifact {name} permissions are unsafe")
 
 
 def _publish_bundle(output: Path, payloads: Mapping[str, bytes]) -> None:
@@ -541,14 +605,63 @@ def _publish_bundle(output: Path, payloads: Mapping[str, bytes]) -> None:
             raise ValueError("artifact manifest exceeds its size bound")
         _write_private_new(stage / "manifest.json", manifest)
         _fsync_directory(stage)
-        if os.path.lexists(output):
-            raise ValueError("output directory already exists; refusing to clobber model artifacts")
-        os.rename(stage, output)
+        try:
+            _rename_directory_noreplace(stage, output)
+        except OSError as error:
+            if error.errno not in {errno.EEXIST, errno.ENOTEMPTY}:
+                raise
+            raise ValueError(
+                "output directory already exists; refusing to clobber model artifacts"
+            ) from error
         published = True
         _fsync_directory(output.parent)
     finally:
         if not published:
             shutil.rmtree(stage, ignore_errors=True)
+
+
+def _rename_directory_noreplace(source: Path, destination: Path) -> None:
+    """Atomically publish one directory while refusing every existing destination path."""
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+    if sys.platform.startswith("linux"):
+        try:
+            rename = libc.renameat2
+        except AttributeError as error:
+            raise OSError(errno.ENOTSUP, "renameat2 is unavailable") from error
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename.restype = ctypes.c_int
+        result = rename(
+            LINUX_AT_FDCWD,
+            source_bytes,
+            LINUX_AT_FDCWD,
+            destination_bytes,
+            LINUX_RENAME_NOREPLACE,
+        )
+    elif sys.platform == "darwin":
+        try:
+            rename = libc.renamex_np
+        except AttributeError as error:
+            raise OSError(errno.ENOTSUP, "renamex_np is unavailable") from error
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        rename.restype = ctypes.c_int
+        result = rename(source_bytes, destination_bytes, DARWIN_RENAME_EXCL)
+    elif os.name == "nt":
+        os.rename(source, destination)
+        return
+    else:
+        raise OSError(errno.ENOTSUP, "atomic no-replace directory publication is unavailable")
+    if result != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), os.fspath(destination))
 
 
 def _write_private_new(path: Path, payload: bytes) -> None:

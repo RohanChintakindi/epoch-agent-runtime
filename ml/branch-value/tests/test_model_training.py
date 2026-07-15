@@ -1,10 +1,12 @@
 import json
+import os
 import stat
 from dataclasses import replace
 
 import pytest
 import torch
 
+import epoch_branch_value.training as training
 from epoch_branch_value.model import BranchValueModel, Vocabulary, collate_records
 from epoch_branch_value.split import SplitConfig
 from epoch_branch_value.synthetic import generate_records
@@ -227,6 +229,64 @@ def test_training_refuses_a_dangling_symlink_output(tmp_path):
     with pytest.raises(ValueError, match="already exists"):
         train_model(records, output, TrainConfig(epochs=1, hidden_size=8))
     assert output.is_symlink()
+
+
+def test_model_publish_never_replaces_a_concurrently_created_path(tmp_path, monkeypatch):
+    records = generate_records(task_groups=3, branches_per_group=1, seed=73)
+    output = tmp_path / "model"
+    original_publish = training._rename_directory_noreplace
+
+    def race_publish(stage, destination):
+        destination.mkdir(mode=0o700)
+        marker = destination / "racer-owned"
+        marker.write_text("keep me", encoding="utf-8")
+        marker.chmod(0o600)
+        original_publish(stage, destination)
+
+    monkeypatch.setattr(training, "_rename_directory_noreplace", race_publish)
+    with pytest.raises(ValueError, match="already exists"):
+        train_model(records, output, TrainConfig(epochs=1, hidden_size=8))
+
+    assert (output / "racer-owned").read_text(encoding="utf-8") == "keep me"
+    assert not (output / "manifest.json").exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Unix ownership and mode policy")
+@pytest.mark.parametrize(("artifact", "unsafe_mode"), [(None, 0o750), ("model.json", 0o640)])
+def test_model_loading_rejects_nonprivate_bundle_permissions(tmp_path, artifact, unsafe_mode):
+    records = generate_records(task_groups=3, branches_per_group=1, seed=74)
+    model_dir = tmp_path / "model"
+    train_model(records, model_dir, TrainConfig(epochs=1, hidden_size=8))
+    target = model_dir if artifact is None else model_dir / artifact
+    target.chmod(unsafe_mode)
+
+    with pytest.raises(ValueError, match="permissions"):
+        score_model(records, model_dir)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires directory-relative file opens")
+def test_model_loading_keeps_one_stable_directory_handle(tmp_path, monkeypatch):
+    records = generate_records(task_groups=3, branches_per_group=1, seed=75)
+    model_dir = tmp_path / "model"
+    moved_model_dir = tmp_path / "model-opened"
+    replacement = tmp_path / "replacement"
+    replacement.mkdir(mode=0o700)
+    train_model(records, model_dir, TrainConfig(epochs=1, hidden_size=8))
+    original_read = training._read_bounded_regular_at
+    swapped = False
+
+    def swap_root_after_manifest(directory_fd, name, maximum):
+        nonlocal swapped
+        payload = original_read(directory_fd, name, maximum)
+        if name == "manifest.json" and not swapped:
+            model_dir.rename(moved_model_dir)
+            model_dir.symlink_to(replacement, target_is_directory=True)
+            swapped = True
+        return payload
+
+    monkeypatch.setattr(training, "_read_bounded_regular_at", swap_root_after_manifest)
+    assert len(score_model(records, model_dir)) == len(records)
+    assert swapped
 
 
 def refresh_manifest_hash(manifest_path, changed_path):

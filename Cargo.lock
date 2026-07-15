@@ -288,6 +288,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-workspace"
+version = "0.1.0"
+dependencies = [
+ "epoch-blob",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

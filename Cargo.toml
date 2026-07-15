@@ -9,6 +9,7 @@ members = [
     "crates/epoch-storage",
     "crates/epoch-supervisor",
     "crates/epoch-test-agent",
+    "crates/epoch-workspace",
 ]
 resolver = "2"
 
@@ -23,6 +24,7 @@ clap = { version = "4.5", features = ["derive"] }
 epoch-blob = { path = "crates/epoch-blob" }
 epoch-core = { path = "crates/epoch-core" }
 epoch-storage = { path = "crates/epoch-storage" }
+epoch-workspace = { path = "crates/epoch-workspace" }
 libc = "0.2"
 nix = { version = "0.30", features = ["process", "signal"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }

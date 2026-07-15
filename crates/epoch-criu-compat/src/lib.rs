@@ -238,6 +238,7 @@ pub struct Diagnostic {
     pub code: DiagnosticCode,
     pub stage: String,
     pub message: String,
+    pub log_artifact: String,
 }
 
 /// One bounded external-command observation.
@@ -565,28 +566,38 @@ impl CompatibilityRunner {
             criu_check_supported: false,
             criu_check_diagnostic: unavailable.clone(),
         };
-        let rows = matrix_points(&self.config.scaling)
-            .map(|(scenario, scale)| CompatibilityRow {
+        let mut rows = Vec::new();
+        for (index, (scenario, scale)) in matrix_points(&self.config.scaling).enumerate() {
+            let log_artifact = format!("logs/row-{index:04}-diagnostic.log");
+            let diagnostic = if scenario == Scenario::ExternalTcp {
+                Diagnostic {
+                    code: DiagnosticCode::ExternalTcpUnsupported,
+                    stage: "scenario".to_owned(),
+                    message: "external TCP is explicitly outside the transparent restore subset"
+                        .to_owned(),
+                    log_artifact: log_artifact.clone(),
+                }
+            } else {
+                Diagnostic {
+                    log_artifact: log_artifact.clone(),
+                    ..unavailable.clone()
+                }
+            };
+            artifacts.push(LogArtifact {
+                relative_path: log_artifact,
+                bytes: format!("{}: {}\n", diagnostic.stage, diagnostic.message).into_bytes(),
+            });
+            rows.push(CompatibilityRow {
                 scenario,
                 scale,
                 status: RowStatus::Unsupported,
-                diagnostic: if scenario == Scenario::ExternalTcp {
-                    Diagnostic {
-                        code: DiagnosticCode::ExternalTcpUnsupported,
-                        stage: "scenario".to_owned(),
-                        message:
-                            "external TCP is explicitly outside the transparent restore subset"
-                                .to_owned(),
-                    }
-                } else {
-                    unavailable.clone()
-                },
+                diagnostic,
                 dump: None,
                 restore: None,
                 image_bytes: None,
                 restored_behavior_verified: false,
-            })
-            .collect();
+            });
+        }
         artifacts.push(LogArtifact {
             relative_path: "logs/environment-criu-check.log".to_owned(),
             bytes: unavailable.message.as_bytes().to_vec(),
@@ -636,6 +647,7 @@ fn unavailable_diagnostic(config: &RunnerConfig) -> Diagnostic {
                 "CRIU process checkpoint experiments require Linux; current OS is {}",
                 std::env::consts::OS
             ),
+            log_artifact: "logs/environment-criu-check.log".to_owned(),
         }
     } else if !config.criu_path.is_file() {
         Diagnostic {
@@ -645,6 +657,7 @@ fn unavailable_diagnostic(config: &RunnerConfig) -> Diagnostic {
                 "CRIU executable is unavailable at {}",
                 config.criu_path.display()
             ),
+            log_artifact: "logs/environment-criu-check.log".to_owned(),
         }
     } else if !config.fixture_path.is_file() {
         Diagnostic {
@@ -654,12 +667,14 @@ fn unavailable_diagnostic(config: &RunnerConfig) -> Diagnostic {
                 "compatibility fixture is unavailable at {}",
                 config.fixture_path.display()
             ),
+            log_artifact: "logs/environment-criu-check.log".to_owned(),
         }
     } else {
         Diagnostic {
             code: DiagnosticCode::CriuCheckFailed,
             stage: "criu_check".to_owned(),
             message: "CRIU probing is not yet implemented".to_owned(),
+            log_artifact: "logs/environment-criu-check.log".to_owned(),
         }
     }
 }

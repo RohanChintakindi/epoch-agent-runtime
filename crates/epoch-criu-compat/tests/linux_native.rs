@@ -3,8 +3,7 @@
 use std::path::PathBuf;
 
 use epoch_criu_compat::{
-    CompatibilityRunner, DiagnosticCode, RowStatus, RunLimits, RunnerConfig, ScalingPlan,
-    Scenario,
+    CompatibilityRunner, DiagnosticCode, RowStatus, RunLimits, RunnerConfig, ScalingPlan, Scenario,
 };
 use tempfile::TempDir;
 
@@ -30,8 +29,20 @@ fn real_criu_matrix_preserves_environment_rows_logs_and_verified_success() {
     let report = evidence.report();
 
     assert_eq!(report.rows.len(), Scenario::declared().len());
-    assert!(report.environment.kernel_release.as_deref().is_some_and(|v| !v.is_empty()));
-    assert!(report.environment.criu_version.as_deref().is_some_and(|v| !v.is_empty()));
+    assert!(
+        report
+            .environment
+            .kernel_release
+            .as_deref()
+            .is_some_and(|v| !v.is_empty())
+    );
+    assert!(
+        report
+            .environment
+            .criu_version
+            .as_deref()
+            .is_some_and(|v| !v.is_empty())
+    );
     assert_ne!(
         report.environment.criu_check_diagnostic.code,
         DiagnosticCode::CriuUnavailable
@@ -53,7 +64,11 @@ fn real_criu_matrix_preserves_environment_rows_logs_and_verified_success() {
         .filter(|row| row.status == RowStatus::Supported)
     {
         assert!(row.dump.as_ref().is_some_and(|dump| !dump.timed_out));
-        assert!(row.restore.as_ref().is_some_and(|restore| !restore.timed_out));
+        assert!(
+            row.restore
+                .as_ref()
+                .is_some_and(|restore| !restore.timed_out)
+        );
         assert!(row.image_bytes.is_some_and(|bytes| bytes > 0));
         assert!(row.restored_behavior_verified);
     }

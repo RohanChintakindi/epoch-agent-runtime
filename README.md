@@ -22,6 +22,7 @@ Linux isolation and checkpoint backends are added only after that vertical slice
   prototype.
 - `epoch-supervisor`: direct execution plus restart-safe cooperative application recovery.
 - `epoch-test-agent`: seeded workload for repeatable execution, tracing, and fault experiments.
+- `epoch-trajectory`: metadata-only, outcome-cutoff trajectory export with opaque grouping IDs.
 - `epoch-workspace`: deterministic full-copy workspace snapshots and no-clobber restore.
 - `epoch-cli`: command-line entry point and host capability diagnostics.
 
@@ -69,6 +70,9 @@ structured matrix, Oracle ARM64 evidence, preliminary decision gates, and integr
 
 The [branch-value experiment guide](docs/ml-branch-value.md) documents the strict text-free dataset,
 task-group leakage boundary, fixed-seed CPU GRU, baselines, metrics, and non-authoritative output.
+Its exact cross-language contract is frozen in the [trajectory schema](docs/trajectory-schema.md),
+and the [ML smoke guide](docs/ml-demo.md) exercises Rust export, Python validation, training,
+evaluation, and advisory scoring as one credential-free flow.
 
 The [final Week 4 acceptance runbook](docs/final-runbook.md) is the single demo, benchmark, Linux,
 CRIU, evidence, and interview-Q&A gate for a clean candidate revision.

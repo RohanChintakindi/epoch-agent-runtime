@@ -40,6 +40,10 @@ The [application checkpoint guide](docs/application-checkpoints.md) and
 [workspace checkpoint guide](docs/workspace-checkpoint.md) document the Week 2 composite
 checkpoint/restore/status/diff flow and its explicit process-memory limitations.
 
+The [Week 4 benchmark guide](docs/benchmarking.md) documents the real checkpoint, compatibility,
+COW-memory, and fault suites; frozen thresholds; stable artifacts; safety bounds; and the exact
+Oracle ARM64 evidence command.
+
 ## Development
 
 ```bash

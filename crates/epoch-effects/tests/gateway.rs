@@ -165,7 +165,10 @@ fn denial_is_durable_and_dispatch_is_never_called() {
     ));
     assert_eq!(dispatcher.calls.load(Ordering::SeqCst), 0);
     assert_eq!(
-        gateway.inspect(intent.operation_id()).expect("inspect").state,
+        gateway
+            .inspect(intent.operation_id())
+            .expect("inspect")
+            .state,
         EffectState::Failed
     );
     assert_eq!(
@@ -262,10 +265,8 @@ fn concurrent_duplicate_is_suppressed_while_first_dispatch_is_in_flight() {
         entered: Barrier::new(2),
         release: Barrier::new(2),
     });
-    let gateway = Arc::new(fixture.gateway(
-        Arc::new(AllowAuthorizer::default()),
-        dispatcher.clone(),
-    ));
+    let gateway =
+        Arc::new(fixture.gateway(Arc::new(AllowAuthorizer::default()), dispatcher.clone()));
     let intent = Arc::new(fixture.intent(json!({"body": "once"})));
 
     let worker_gateway = Arc::clone(&gateway);
@@ -305,7 +306,10 @@ fn fault_before_dispatch_is_known_not_sent_and_remains_prepared() {
     ));
     assert_eq!(dispatcher.calls.load(Ordering::SeqCst), 0);
     assert_eq!(
-        gateway.inspect(intent.operation_id()).expect("inspect").state,
+        gateway
+            .inspect(intent.operation_id())
+            .expect("inspect")
+            .state,
         EffectState::Prepared
     );
 }
@@ -343,7 +347,7 @@ fn provider_credential_fields_are_rejected_before_authorization_or_storage() {
     let fixture = Fixture::new();
     let authorizer = Arc::new(AllowAuthorizer::default());
     let dispatcher = Arc::new(IdempotentDispatcher::default());
-    let gateway = fixture.gateway(authorizer.clone(), dispatcher.clone());
+    let _gateway = fixture.gateway(authorizer.clone(), dispatcher.clone());
 
     let error = CanonicalIntent::new(
         fixture.session,
@@ -376,7 +380,9 @@ fn transition_history_is_database_enforced_append_only() {
         Arc::new(IdempotentDispatcher::default()),
     );
     let intent = fixture.intent(json!({"body": "immutable"}));
-    gateway.execute(&intent, FaultPoint::None).expect("dispatch");
+    gateway
+        .execute(&intent, FaultPoint::None)
+        .expect("dispatch");
 
     let store = Store::open(&fixture.database).expect("store");
     assert!(
@@ -409,8 +415,7 @@ fn path_contains(root: &Path, needle: &[u8]) -> bool {
                 path_contains(&path, needle)
             } else {
                 std::fs::read(path)
-                    .map(|bytes| bytes.windows(needle.len()).any(|window| window == needle))
-                    .unwrap_or(false)
+                    .is_ok_and(|bytes| bytes.windows(needle.len()).any(|window| window == needle))
             }
         })
 }

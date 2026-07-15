@@ -19,7 +19,7 @@ fn make_executable(path: &Path) {
 }
 
 struct Fixture {
-    _directory: TempDir,
+    directory: TempDir,
     executable: std::path::PathBuf,
     helper: std::path::PathBuf,
     workspace: std::path::PathBuf,
@@ -35,7 +35,7 @@ impl Fixture {
         make_executable(&executable);
         make_executable(&helper);
         Self {
-            _directory: directory,
+            directory,
             executable,
             helper,
             workspace,
@@ -60,8 +60,12 @@ impl Fixture {
 }
 
 fn tools() -> LinuxTools {
-    LinuxTools::new("/usr/bin/systemd-run", "/usr/bin/bwrap", "/usr/bin/systemctl")
-        .expect("tools")
+    LinuxTools::new(
+        "/usr/bin/systemd-run",
+        "/usr/bin/bwrap",
+        "/usr/bin/systemctl",
+    )
+    .expect("tools")
 }
 
 #[test]
@@ -74,7 +78,7 @@ fn direct_backend_is_preserved_behind_the_common_interface() {
         panic!("direct backend must be available");
     };
     assert_eq!(plan.backend(), BackendKind::Direct);
-    assert_eq!(plan.program(), fixture.executable);
+    assert_eq!(plan.program(), fixture.request().executable());
     assert_eq!(plan.arguments(), ["--scenario", "full"]);
     assert!(plan.clear_environment());
 }
@@ -111,13 +115,19 @@ fn linux_plan_has_every_required_boundary_and_no_shell_interpolation() {
         "--new-session",
         "--seccomp-profile-v1",
     ] {
-        assert!(arguments.iter().any(|argument| argument == required), "missing {required}");
+        assert!(
+            arguments.iter().any(|argument| argument == required),
+            "missing {required}"
+        );
     }
     assert!(!arguments.iter().any(|argument| {
-        matches!(argument.as_str(), "sh" | "/bin/sh" | "bash" | "/bin/bash" | "-c")
+        matches!(
+            argument.as_str(),
+            "sh" | "/bin/sh" | "bash" | "/bin/bash" | "-c"
+        )
     }));
     assert!(arguments.ends_with(&[
-        fixture.executable.display().to_string(),
+        request.executable().display().to_string(),
         "--scenario".to_owned(),
         "full".to_owned(),
     ]));
@@ -126,7 +136,7 @@ fn linux_plan_has_every_required_boundary_and_no_shell_interpolation() {
 #[test]
 fn request_validation_rejects_symlink_escapes_and_unsafe_environment() {
     let fixture = Fixture::new();
-    let outside = fixture._directory.path().join("outside");
+    let outside = fixture.directory.path().join("outside");
     fs::create_dir(&outside).expect("outside");
     #[cfg(unix)]
     std::os::unix::fs::symlink(&outside, fixture.workspace.join("escape")).expect("symlink");
@@ -181,7 +191,11 @@ fn linux_backend_never_silently_falls_back_to_direct() {
 
 #[test]
 fn direct_backend_can_launch_without_a_shell() {
-    let executable = if cfg!(windows) { "cmd.exe" } else { "/bin/true" };
+    let executable = if cfg!(windows) {
+        "cmd.exe"
+    } else {
+        "/usr/bin/true"
+    };
     let directory = TempDir::new().expect("runtime");
     let helper = directory.path().join("helper");
     make_executable(&helper);
@@ -210,7 +224,10 @@ fn non_linux_hosts_report_structured_unsupported() {
     let backend = LinuxBackend::discover();
     let capabilities = backend.capabilities();
     assert_eq!(capabilities.status, BackendStatus::Unsupported);
-    assert!(capabilities.diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == UnsupportedCode::PlatformNotLinux
-    }));
+    assert!(
+        capabilities
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == UnsupportedCode::PlatformNotLinux })
+    );
 }

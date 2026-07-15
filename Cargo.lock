@@ -183,6 +183,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "epoch-blob",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "epoch-cli"
 version = "0.1.0"
 dependencies = [

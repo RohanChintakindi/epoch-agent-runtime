@@ -149,6 +149,25 @@ fn fixture() -> Fixture {
             offset + 25,
         );
     }
+    insert_event(
+        connection,
+        session,
+        failed,
+        2,
+        "process.stderr",
+        "succeeded",
+        250,
+    );
+    insert_event(connection, session, failed, 3, "tool.call", "started", 275);
+    insert_event(
+        connection,
+        session,
+        failed,
+        4,
+        "process.exited",
+        "failed",
+        300,
+    );
     drop(store);
 
     Fixture {
@@ -314,6 +333,13 @@ fn export_is_deterministic_grouped_labelled_and_payload_free() {
     assert_eq!(success.candidate_group_id, failed.candidate_group_id);
     assert_eq!(failed.candidate_group_id, suspended.candidate_group_id);
     assert_eq!(success.events[1].delta_monotonic_ns, 25);
+    assert_eq!(failed.events.len(), 2);
+    assert!(
+        failed
+            .events
+            .iter()
+            .all(|event| event.kind != "process.stderr")
+    );
     assert_eq!(failed.summary.failed_events, 1);
     assert_eq!(suspended.summary.unknown_events, 1);
     assert_eq!(root.events.len(), 2);
@@ -338,6 +364,7 @@ fn export_is_deterministic_grouped_labelled_and_payload_free() {
         "branch_state",
         "agent.completion",
         "process.exited",
+        "process.stderr",
         "supervisor.failure",
         SECRET_SHAPED_KIND,
     ] {

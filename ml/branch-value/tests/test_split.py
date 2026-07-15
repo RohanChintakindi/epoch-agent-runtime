@@ -57,6 +57,18 @@ def test_split_rejects_duplicate_trajectories_and_candidate_groups_crossing_task
         split_by_task_group([records[0], records[1], crossed, *records[3:]], SplitConfig(seed=2))
 
 
+def test_split_rejects_one_session_crossing_train_and_validation_tasks():
+    records = generate_records(task_groups=6, branches_per_group=1, seed=7)
+    config = SplitConfig(seed=17)
+    baseline = split_by_task_group(records, config)
+    assert baseline.assignment[records[0].trajectory_id] == "train"
+    assert baseline.assignment[records[1].trajectory_id] == "validation"
+    crossed = replace(records[1], session_group_id=records[0].session_group_id)
+
+    with pytest.raises(ValueError, match=r"session_group_id.*task groups"):
+        split_by_task_group([records[0], crossed, *records[2:]], config)
+
+
 @pytest.mark.parametrize(
     "config",
     [

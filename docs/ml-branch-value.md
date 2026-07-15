@@ -43,15 +43,17 @@ Every event has exactly:
 - `actor`: `agent`, `supervisor`, `tool`, `gateway`, or `operator`.
 - `kind`: exactly one member of Rust's finite taxonomy: `agent.start`, `context.update`,
   `model.request`, `model.response`, `tool.call`, `tool.result`, `safe_point`,
-  `supervisor.run_started`, `process.started`, `process.manifest`, `process.stderr`,
+  `supervisor.run_started`, `process.started`, `process.manifest`,
   `application.context_restored`, or `other`.
 - `status`: `started`, `succeeded`, `failed`, `denied`, or `unknown`.
 - `references_epoch` and `has_causal_parent`: Booleans.
 
 The finite kind taxonomy prevents an arbitrary event name from becoming a covert text channel or
-an unbounded learned vocabulary. Rust truncates the feature timeline before the first terminal
-outcome event (`agent.completion`, `process.exited`, or `supervisor.failure`), dropping that event
-and everything after it. Python also rejects those kinds because they are not in the taxonomy.
+an unbounded learned vocabulary. Rust truncates the feature timeline before the first
+outcome-observation boundary (`agent.completion`, `process.stderr`, `process.exited`, or
+`supervisor.failure`), dropping that event and everything after it. `process.stderr` is excluded
+because the supervisor persists it only after observing process termination. Python also rejects
+those kinds because they are not in the taxonomy.
 
 The summary has exactly `event_count`, `duration_monotonic_ns`, `started_events`,
 `succeeded_events`, `failed_events`, `denied_events`, and `unknown_events`. Python recomputes all
@@ -74,9 +76,9 @@ The splitter fails clearly unless labelled data spans at least three task groups
 nonempty train, validation, and test partitions.
 
 `task_group_id` is the partition unit, so executions of the same underlying task stay together.
-Sibling candidates share `candidate_group_id`; the reader and splitter reject a candidate group
-that crosses task groups. Sorting before a fixed-seed shuffle makes assignment independent of input
-order.
+Sibling candidates share `candidate_group_id`, and branches from one session share
+`session_group_id`; the reader and splitter reject either group crossing task groups. Sorting before
+a fixed-seed shuffle makes assignment independent of input order.
 
 The bundle stores the split configuration, unit, complete group assignment, complete labelled-
 trajectory assignment, and SHA-256 fingerprint of the canonical labelled dataset. Evaluation does

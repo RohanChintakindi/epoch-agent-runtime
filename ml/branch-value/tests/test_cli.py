@@ -100,6 +100,21 @@ def test_cli_returns_clean_validation_errors(tmp_path):
     assert result.stdout == ""
 
 
+def test_cli_normalizes_an_overflowing_integer_label_to_exit_two(tmp_path):
+    dataset = tmp_path / "overflowing-label.jsonl"
+    assert run_cli("generate", "--output", dataset, "--task-groups", 1).returncode == 0
+    value = json.loads(dataset.read_text(encoding="utf-8").splitlines()[0])
+    value["value_label"] = int("9" * 400)
+    dataset.write_text(json.dumps(value) + "\n", encoding="utf-8")
+
+    result = run_cli("validate", dataset)
+    assert result.returncode == 2
+    assert "validation failed" in result.stderr
+    assert "value_label" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert result.stdout == ""
+
+
 def test_cli_normalizes_broken_model_artifacts_to_exit_two(tmp_path):
     dataset = tmp_path / "synthetic.jsonl"
     assert run_cli("generate", "--output", dataset, "--task-groups", 6).returncode == 0

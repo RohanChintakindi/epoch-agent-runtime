@@ -115,6 +115,7 @@ def split_by_task_group(records: Sequence[TrajectoryRecord], config: SplitConfig
         raise ValueError("cannot split an empty dataset")
     trajectories = set()
     candidate_tasks: Dict[str, str] = {}
+    session_tasks: Dict[str, str] = {}
     for record in records:
         if record.trajectory_id in trajectories:
             raise ValueError(f"duplicate trajectory_id {record.trajectory_id}")
@@ -122,6 +123,9 @@ def split_by_task_group(records: Sequence[TrajectoryRecord], config: SplitConfig
         previous = candidate_tasks.setdefault(record.candidate_group_id, record.task_group_id)
         if previous != record.task_group_id:
             raise ValueError("candidate_group_id appears in multiple task groups")
+        previous = session_tasks.setdefault(record.session_group_id, record.task_group_id)
+        if previous != record.task_group_id:
+            raise ValueError("session_group_id appears in multiple task groups")
     labelled = [record for record in records if record.is_labelled]
     task_groups = {record.task_group_id for record in labelled}
     if len(task_groups) < 3:

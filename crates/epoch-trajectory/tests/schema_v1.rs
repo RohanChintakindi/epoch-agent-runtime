@@ -7,7 +7,7 @@ use epoch_trajectory::{
 const SCHEMA_V1_JSONL: &str = include_str!("fixtures/schema-v1.jsonl");
 const ACTORS: [&str; 5] = ["agent", "gateway", "operator", "supervisor", "tool"];
 const STATUSES: [&str; 5] = ["denied", "failed", "started", "succeeded", "unknown"];
-const EVENT_KINDS: [&str; 13] = [
+const EVENT_KINDS: [&str; 12] = [
     "agent.start",
     "application.context_restored",
     "context.update",
@@ -16,7 +16,6 @@ const EVENT_KINDS: [&str; 13] = [
     "other",
     "process.manifest",
     "process.started",
-    "process.stderr",
     "safe_point",
     "supervisor.run_started",
     "tool.call",

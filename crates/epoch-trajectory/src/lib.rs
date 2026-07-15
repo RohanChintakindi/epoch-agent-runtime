@@ -418,7 +418,7 @@ const fn learning_labels(state: &str) -> (Option<bool>, Option<f64>) {
 fn is_terminal_outcome_kind(kind: &str) -> bool {
     matches!(
         kind,
-        "agent.completion" | "process.exited" | "supervisor.failure"
+        "agent.completion" | "process.stderr" | "process.exited" | "supervisor.failure"
     )
 }
 
@@ -434,7 +434,6 @@ fn normalized_event_kind(kind: &str) -> &'static str {
         "supervisor.run_started" => "supervisor.run_started",
         "process.started" => "process.started",
         "process.manifest" => "process.manifest",
-        "process.stderr" => "process.stderr",
         "application.context_restored" => "application.context_restored",
         _ => "other",
     }

@@ -33,7 +33,6 @@ KINDS = frozenset(
         "supervisor.run_started",
         "process.started",
         "process.manifest",
-        "process.stderr",
         "application.context_restored",
         "other",
     }
@@ -288,6 +287,7 @@ def load_jsonl(
     records: List[TrajectoryRecord] = []
     seen_trajectories = set()
     candidate_tasks: Dict[str, str] = {}
+    session_tasks: Dict[str, str] = {}
     with Path(path).open("rb") as source:
         line_number = 0
         while True:
@@ -331,6 +331,11 @@ def load_jsonl(
             if previous_task != record.task_group_id:
                 raise DatasetValidationError(
                     f"line {line_number}: candidate_group_id appears in multiple task groups"
+                )
+            previous_task = session_tasks.setdefault(record.session_group_id, record.task_group_id)
+            if previous_task != record.task_group_id:
+                raise DatasetValidationError(
+                    f"line {line_number}: session_group_id appears in multiple task groups"
                 )
             seen_trajectories.add(record.trajectory_id)
             records.append(record)
@@ -397,6 +402,7 @@ def _validate_dataset_identities(records: Sequence[TrajectoryRecord]) -> None:
         raise DatasetValidationError("dataset must contain at least one record")
     trajectories = set()
     candidate_tasks: Dict[str, str] = {}
+    session_tasks: Dict[str, str] = {}
     for record in records:
         if not isinstance(record, TrajectoryRecord):
             raise DatasetValidationError("writer accepts only typed TrajectoryRecord values")
@@ -406,6 +412,9 @@ def _validate_dataset_identities(records: Sequence[TrajectoryRecord]) -> None:
         previous = candidate_tasks.setdefault(record.candidate_group_id, record.task_group_id)
         if previous != record.task_group_id:
             raise DatasetValidationError("candidate_group_id appears in multiple task groups")
+        previous = session_tasks.setdefault(record.session_group_id, record.task_group_id)
+        if previous != record.task_group_id:
+            raise DatasetValidationError("session_group_id appears in multiple task groups")
 
 
 class _DuplicateKey(ValueError):
@@ -451,6 +460,11 @@ def _bounded_integer(name: str, value: Any, minimum: int, maximum: int) -> None:
 def _bounded_number(name: str, value: Any, minimum: float, maximum: float) -> None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise DatasetValidationError(f"{name} must be a finite number in [{minimum}, {maximum}]")
-    converted = float(value)
+    try:
+        converted = float(value)
+    except OverflowError as error:
+        raise DatasetValidationError(
+            f"{name} must be a finite number in [{minimum}, {maximum}]"
+        ) from error
     if not math.isfinite(converted) or not minimum <= converted <= maximum:
         raise DatasetValidationError(f"{name} must be a finite number in [{minimum}, {maximum}]")

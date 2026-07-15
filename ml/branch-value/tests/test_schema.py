@@ -27,7 +27,6 @@ EXPECTED_KINDS = {
     "supervisor.run_started",
     "process.started",
     "process.manifest",
-    "process.stderr",
     "application.context_restored",
     "other",
 }
@@ -202,6 +201,32 @@ def test_reader_reports_line_numbers_duplicate_keys_and_trajectory_ids(tmp_path)
     )
     with pytest.raises(DatasetValidationError, match=r"line 2.*duplicate trajectory_id"):
         load_jsonl(duplicate_id)
+
+
+def test_reader_and_writer_reject_session_groups_crossing_task_groups(tmp_path):
+    records = generate_records(task_groups=2, branches_per_group=1, seed=23)
+    crossed = replace(records[1], session_group_id=records[0].session_group_id)
+    assert crossed.task_group_id != records[0].task_group_id
+    dataset = tmp_path / "crossed-session.jsonl"
+    dataset.write_text(
+        json.dumps(records[0].as_dict()) + "\n" + json.dumps(crossed.as_dict()) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DatasetValidationError, match=r"session_group_id.*task groups"):
+        load_jsonl(dataset)
+    with pytest.raises(DatasetValidationError, match=r"session_group_id.*task groups"):
+        write_jsonl(tmp_path / "crossed-session-output.jsonl", [records[0], crossed])
+
+
+def test_reader_normalizes_an_overflowing_integer_label(tmp_path):
+    value = generate_records(task_groups=1, branches_per_group=1, seed=24)[0].as_dict()
+    value["value_label"] = int("9" * 400)
+    dataset = tmp_path / "overflowing-label.jsonl"
+    dataset.write_text(json.dumps(value) + "\n", encoding="utf-8")
+
+    with pytest.raises(DatasetValidationError, match="value_label"):
+        load_jsonl(dataset)
 
 
 def test_bounded_reader_and_typed_constructor_validation(tmp_path):

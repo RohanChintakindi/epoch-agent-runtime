@@ -323,10 +323,7 @@ fn event_schema_supports_external_payloads_and_rejects_mutation() {
     }
 }
 
-#[test]
-fn fork_lineage_is_complete_scoped_exact_and_immutable() {
-    let database = TestDatabase::new("fork-lineage");
-    let store = Store::open(database.path()).expect("open database");
+fn insert_fork_lineage_fixture(store: &Store) -> String {
     for session_id in ["session-a", "session-b"] {
         store
             .connection()
@@ -395,6 +392,15 @@ fn fork_lineage_is_complete_scoped_exact_and_immutable() {
             [&component_hash],
         )
         .expect("insert complete fork lineage");
+    component_hash
+}
+
+#[test]
+fn fork_lineage_is_complete_scoped_exact_and_immutable() {
+    let database = TestDatabase::new("fork-lineage");
+    let store = Store::open(database.path()).expect("open database");
+    let component_hash = insert_fork_lineage_fixture(&store);
+    assert_eq!(component_hash, "a".repeat(64));
 
     for (statement, message) in [
         (

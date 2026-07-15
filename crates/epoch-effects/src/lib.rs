@@ -5,10 +5,14 @@
 //! authority outside the sandbox rollback domain.
 
 use std::{
+    collections::HashMap,
     fmt,
     path::Path,
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -258,11 +262,61 @@ pub trait EffectDispatcher: Send + Sync {
     fn dispatch(&self, request: &DispatchRequest<'_>) -> DispatchOutcome;
 }
 
+/// Deterministic in-process idempotent downstream fixture for tests and demonstrations.
+///
+/// This is not a production provider adapter. Its committed results are keyed by the stable
+/// operation ID so even a direct duplicate dispatch returns identical raw bytes.
+#[derive(Debug, Default)]
+pub struct DeterministicLocalDispatcher {
+    dispatches: AtomicUsize,
+    committed: Mutex<HashMap<String, Vec<u8>>>,
+}
+
+impl DeterministicLocalDispatcher {
+    #[must_use]
+    pub fn dispatch_count(&self) -> usize {
+        self.dispatches.load(Ordering::SeqCst)
+    }
+}
+
+impl EffectDispatcher for DeterministicLocalDispatcher {
+    fn dispatch(&self, request: &DispatchRequest<'_>) -> DispatchOutcome {
+        self.dispatches.fetch_add(1, Ordering::SeqCst);
+        let mut committed = self
+            .committed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let result = committed
+            .entry(request.operation_id.to_string())
+            .or_insert_with(|| {
+                format!(
+                    r#"{{"accepted":true,"input_hash":"{}","operation_id":"{}"}}"#,
+                    request.input_hash, request.operation_id
+                )
+                .into_bytes()
+            })
+            .clone();
+        DispatchOutcome::Committed(DispatchResult {
+            bytes: result,
+            media_type: "application/json".to_owned(),
+            downstream_reference: Some(format!("local:demo:{}", request.operation_id)),
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EffectState {
     Requested,
     Prepared,
     Dispatched,
+    Committed,
+    Failed,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AttemptState {
+    Started,
     Committed,
     Failed,
     Unknown,
@@ -286,6 +340,14 @@ pub enum FaultSafety {
 pub struct EffectTransition {
     pub sequence: u64,
     pub state: EffectState,
+    pub occurred_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectAttemptTransition {
+    pub attempt_no: u64,
+    pub sequence: u64,
+    pub state: AttemptState,
     pub occurred_at_unix_ms: i64,
 }
 
@@ -424,6 +486,50 @@ impl EffectGateway {
                     }
                 })?,
                 state: parse_history_state(&state)?,
+                occurred_at_unix_ms,
+            })
+        })
+        .collect()
+    }
+
+    /// Reads immutable dispatch-attempt history in attempt/sequence order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for absent operations, invalid stored values, or `SQLite` failures.
+    pub fn attempt_history(
+        &self,
+        operation_id: &OperationId,
+    ) -> Result<Vec<EffectAttemptTransition>, GatewayError> {
+        let snapshot = self.inspect(operation_id)?;
+        let store = self.store.lock().map_err(|_| GatewayError::LockPoisoned)?;
+        let mut statement = store.connection().prepare(
+            "SELECT attempt_no, sequence, state, occurred_at_unix_ms \
+             FROM effect_attempt_history WHERE effect_id = ?1 \
+             ORDER BY attempt_no, sequence",
+        )?;
+        let rows = statement.query_map([snapshot.effect_id.to_string()], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (attempt_no, sequence, state, occurred_at_unix_ms) = row?;
+            Ok(EffectAttemptTransition {
+                attempt_no: u64::try_from(attempt_no).map_err(|_| {
+                    GatewayError::InvalidStoredValue {
+                        field: "effect_attempt_history.attempt_no",
+                    }
+                })?,
+                sequence: u64::try_from(sequence).map_err(|_| {
+                    GatewayError::InvalidStoredValue {
+                        field: "effect_attempt_history.sequence",
+                    }
+                })?,
+                state: parse_attempt_state(&state)?,
                 occurred_at_unix_ms,
             })
         })
@@ -1107,6 +1213,18 @@ fn parse_history_state(value: &str) -> Result<EffectState, GatewayError> {
         "unknown" => Ok(EffectState::Unknown),
         _ => Err(GatewayError::InvalidStoredValue {
             field: "effect_transition_history.state",
+        }),
+    }
+}
+
+fn parse_attempt_state(value: &str) -> Result<AttemptState, GatewayError> {
+    match value {
+        "started" => Ok(AttemptState::Started),
+        "committed" => Ok(AttemptState::Committed),
+        "failed" => Ok(AttemptState::Failed),
+        "unknown" => Ok(AttemptState::Unknown),
+        _ => Err(GatewayError::InvalidStoredValue {
+            field: "effect_attempt_history.state",
         }),
     }
 }

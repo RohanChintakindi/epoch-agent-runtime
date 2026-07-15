@@ -443,7 +443,10 @@ fn intent_and_started_attempt_are_durable_before_dispatcher_invocation() {
     });
     let gateway = fixture.gateway(Arc::new(AllowAuthorizer::default()), dispatcher.clone());
     gateway
-        .execute(&fixture.intent(json!({"body": "inspect"})), FaultPoint::None)
+        .execute(
+            &fixture.intent(json!({"body": "inspect"})),
+            FaultPoint::None,
+        )
         .expect("dispatch");
     assert!(
         *dispatcher
@@ -464,7 +467,10 @@ impl EffectDispatcher for FailingDispatcher {
 #[test]
 fn bounded_dispatch_failure_is_durable_in_transition_and_attempt_history() {
     let fixture = Fixture::new();
-    let gateway = fixture.gateway(Arc::new(AllowAuthorizer::default()), Arc::new(FailingDispatcher));
+    let gateway = fixture.gateway(
+        Arc::new(AllowAuthorizer::default()),
+        Arc::new(FailingDispatcher),
+    );
     let intent = fixture.intent(json!({"body": "fail"}));
     assert!(matches!(
         gateway.execute(&intent, FaultPoint::None),
@@ -474,7 +480,10 @@ fn bounded_dispatch_failure_is_durable_in_transition_and_attempt_history() {
         })
     ));
     assert_eq!(
-        gateway.inspect(intent.operation_id()).expect("inspect").state,
+        gateway
+            .inspect(intent.operation_id())
+            .expect("inspect")
+            .state,
         EffectState::Failed
     );
     assert_eq!(
@@ -497,9 +506,7 @@ fn supplied_deterministic_dispatcher_is_idempotent_and_gateway_replays_it() {
     let first = gateway
         .execute(&intent, FaultPoint::None)
         .expect("first execution");
-    let second = gateway
-        .execute(&intent, FaultPoint::None)
-        .expect("replay");
+    let second = gateway.execute(&intent, FaultPoint::None).expect("replay");
     assert_eq!(first.result, second.result);
     assert_eq!(dispatcher.dispatch_count(), 1);
 }
@@ -537,8 +544,7 @@ fn duplicate_suppression_holds_across_independent_gateway_connections() {
         .collect::<Vec<_>>();
     assert!(outcomes.iter().any(Result::is_ok));
     assert!(outcomes.iter().all(|outcome| {
-        outcome.is_ok()
-            || matches!(outcome, Err(GatewayError::UnresolvedOperation { .. }))
+        outcome.is_ok() || matches!(outcome, Err(GatewayError::UnresolvedOperation { .. }))
     }));
     assert_eq!(dispatcher.calls.load(Ordering::SeqCst), 1);
 }

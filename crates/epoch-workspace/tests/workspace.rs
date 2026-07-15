@@ -123,6 +123,26 @@ fn snapshot_is_stable_and_immutable_after_source_mutation() {
 
 #[test]
 #[cfg(unix)]
+fn restore_preserves_workspace_root_mode() {
+    let fixture = Fixture::new();
+    fs::set_permissions(&fixture.source, fs::Permissions::from_mode(0o711)).expect("root mode");
+    write(&fixture.source.join("file"), b"content");
+    let backend = fixture.backend();
+    let snapshot = backend.snapshot(&fixture.source).expect("snapshot");
+    let target = fixture.target("root-mode");
+    backend.restore(&snapshot, &target).expect("restore");
+    assert_eq!(
+        fs::metadata(target)
+            .expect("root metadata")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o711
+    );
+}
+
+#[test]
+#[cfg(unix)]
 fn hardlinks_are_explicitly_materialized_as_independent_files() {
     use std::os::unix::fs::MetadataExt;
 
@@ -253,6 +273,23 @@ fn restore_validates_every_blob_before_creating_the_target() {
 }
 
 #[test]
+fn corrupt_manifest_blob_is_rejected_before_target_or_staging_creation() {
+    let fixture = Fixture::new();
+    write(&fixture.source.join("file"), b"content");
+    let backend = fixture.backend();
+    let snapshot = backend.snapshot(&fixture.source).expect("snapshot");
+    let blobs = BlobStore::open(&fixture.blobs).expect("blobs");
+    fs::write(blobs.blob_path(snapshot.manifest_hash()), b"tampered").expect("tamper manifest");
+    let target = fixture.target("corrupt");
+    assert!(backend.restore(&snapshot, &target).is_err());
+    assert!(!target.exists());
+    assert!(fs::read_dir(&fixture.restore_parent)
+        .expect("parent")
+        .next()
+        .is_none());
+}
+
+#[test]
 fn future_noncanonical_and_wrong_length_manifests_are_rejected_before_mutation() {
     let fixture = Fixture::new();
     write(&fixture.source.join("file"), b"content");
@@ -350,4 +387,30 @@ fn injected_restore_interrupts_remove_staging_and_never_publish_partial_target()
                 .is_none()
         );
     }
+}
+
+#[test]
+#[cfg(unix)]
+fn interrupted_restore_cleans_staging_even_with_inaccessible_final_directory_mode() {
+    let fixture = Fixture::new();
+    write(&fixture.source.join("locked/file"), b"content");
+    fs::set_permissions(
+        fixture.source.join("locked"),
+        fs::Permissions::from_mode(0o500),
+    )
+    .expect("restrict directory");
+    let backend = fixture.backend();
+    let snapshot = backend.snapshot(&fixture.source).expect("snapshot");
+    let target = fixture.target("interrupted-locked");
+    assert!(matches!(
+        backend.restore_with_fault(&snapshot, &target, RestoreFault::BeforePublish),
+        Err(WorkspaceError::FaultInjected {
+            point: RestoreFault::BeforePublish
+        })
+    ));
+    assert!(!target.exists());
+    assert!(fs::read_dir(&fixture.restore_parent)
+        .expect("parent")
+        .next()
+        .is_none());
 }

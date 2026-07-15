@@ -39,6 +39,10 @@ The [application checkpoint guide](docs/application-checkpoints.md) documents th
 schema, integrity boundary, supervisor-backed checkpoint/restore/status flow, and its explicit
 application-only limitations.
 
+The [logical fork and replay boundary](docs/fork-replay.md) documents durable branch lineage,
+restart-safe inspection, recorded-result evidence, and the explicit replay, effect-frontier, and
+promotion limitations.
+
 ## Development
 
 ```bash

@@ -71,7 +71,7 @@ fn cgroup_available_bytes() -> Option<u64> {
             .trim()
             .parse::<u64>()
             .ok()?;
-        return Some(maximum.saturating_sub(current));
+        Some(maximum.saturating_sub(current))
     }
     #[cfg(not(target_os = "linux"))]
     None

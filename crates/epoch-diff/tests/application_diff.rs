@@ -235,7 +235,7 @@ fn classifies_added_removed_and_changed_keyed_state_deterministically() {
 }
 
 #[test]
-fn output_is_independent_of_input_map_and_entity_order() {
+fn detects_semantically_meaningful_task_queue_reordering() {
     let fixture = Fixture::new();
     let mut after_a = fixture.before.clone();
     after_a.pending_tasks.push(PendingTask {
@@ -257,7 +257,57 @@ fn output_is_independent_of_input_map_and_entity_order() {
     let first_diff = diff_application_checkpoints(&fixture.backend, &before, &first).unwrap();
     let second_diff = diff_application_checkpoints(&fixture.backend, &before, &second).unwrap();
 
-    assert_eq!(first_diff.changes, second_diff.changes);
+    assert_eq!(
+        first_diff
+            .changes
+            .iter()
+            .map(|change| change.path.as_str())
+            .collect::<Vec<_>>(),
+        ["/pending_tasks/a-task", "/pending_tasks/z-task"]
+    );
+    assert_eq!(
+        second_diff
+            .changes
+            .iter()
+            .map(|change| change.path.as_str())
+            .collect::<Vec<_>>(),
+        ["/pending_tasks/a-task", "/pending_tasks/z-task"]
+    );
+
+    let reorder = diff_application_checkpoints(&fixture.backend, &first, &second).unwrap();
+    assert_eq!(reorder.changes.len(), 1);
+    assert_eq!(reorder.changes[0].path, "/pending_tasks/order");
+    assert_eq!(
+        reorder.changes[0].classification,
+        ChangeClassification::Changed
+    );
+}
+
+#[test]
+fn detects_message_reordering_as_reasoning_context_change_without_hidden_state() {
+    let fixture = Fixture::new();
+    let mut before = fixture.before.clone();
+    before.messages.push(ObservableMessage {
+        message_id: "message-2".to_owned(),
+        role: MessageRole::Assistant,
+        content_hash: fixture.put(b"visible assistant response"),
+    });
+    let mut after = before.clone();
+    after.messages.reverse();
+
+    let before_checkpoint = fixture.capture(&before);
+    let after_checkpoint = fixture.capture(&after);
+    let diff =
+        diff_application_checkpoints(&fixture.backend, &before_checkpoint, &after_checkpoint)
+            .expect("valid context reorder");
+
+    assert_eq!(diff.changes.len(), 1);
+    assert_eq!(diff.changes[0].section, SemanticSection::Messages);
+    assert_eq!(diff.changes[0].path, "/messages/order");
+    assert_eq!(
+        diff.changes[0].classification,
+        ChangeClassification::Changed
+    );
 }
 
 #[test]
@@ -275,6 +325,28 @@ fn refuses_corrupted_checkpoint_before_comparison() {
     assert_eq!(error.side, DiffSide::Before);
     assert_eq!(error.kind, DiffErrorKind::InvalidCheckpoint);
     assert_eq!(error.code, "integrity");
+}
+
+#[test]
+fn refuses_checkpoint_records_that_have_not_passed_metadata_validation() {
+    let fixture = Fixture::new();
+    let valid = fixture.capture(&fixture.before);
+    let unvalidated = ApplicationCheckpoint::from_record(
+        valid.component_hash.clone(),
+        valid.byte_length,
+        valid.schema_version,
+        ApplicationCheckpointMetadata {
+            safe_point_id: "forged-safe-point".to_owned(),
+            context_revision: valid.metadata.context_revision,
+            boundary_sequence: valid.metadata.boundary_sequence,
+        },
+    );
+
+    let error = diff_application_checkpoints(&fixture.backend, &unvalidated, &valid)
+        .expect_err("metadata-mismatched records must not reach comparison");
+    assert_eq!(error.side, DiffSide::Before);
+    assert_eq!(error.kind, DiffErrorKind::InvalidCheckpoint);
+    assert_eq!(error.code, "metadata_mismatch");
 }
 
 #[test]
@@ -342,4 +414,18 @@ fn unsupported_sections_are_explicit_not_fabricated_from_context() {
             SemanticSection::WorkspaceFiles,
         ]
     );
+}
+
+#[test]
+fn compact_json_encoding_is_repeatable_and_machine_readable() {
+    let fixture = Fixture::new();
+    let checkpoint = fixture.capture(&fixture.before);
+    let diff = diff_application_checkpoints(&fixture.backend, &checkpoint, &checkpoint).unwrap();
+
+    let first = diff.to_json().expect("compact JSON");
+    let second = diff.to_json().expect("repeat compact JSON");
+    assert_eq!(first, second);
+    let decoded: serde_json::Value = serde_json::from_slice(&first).expect("machine-readable JSON");
+    assert_eq!(decoded["schema_version"], 1);
+    assert_eq!(decoded["identical"], true);
 }

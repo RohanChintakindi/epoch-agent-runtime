@@ -50,6 +50,10 @@ The [Linux sandbox guide](docs/linux-sandbox.md) documents backend discovery, na
 seccomp boundaries, the threat model, native Oracle validation, measured launch samples, and the
 prototype's explicit limitations.
 
+The [five-minute interview demo](docs/interview-demo.md) provides the exact reproducible command,
+talk track, evidence contract, safety rules, and integration hooks for the implemented vertical
+slice.
+
 ## Development
 
 ```bash

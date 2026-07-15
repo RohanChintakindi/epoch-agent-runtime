@@ -59,16 +59,18 @@ Agent-emitted hash strings are not registered as trusted blobs.
 
 ## Recovery vertical slice
 
-The direct supervisor now implements an application-only recovery path:
+The direct supervisor now coordinates the application component with the declared workload
+workspace:
 
 1. `epoch run --manifest ...` completes a cooperative W02 run and durably records its raw stderr
    summary and validated boundary stream.
 2. `epoch checkpoint SESSION [--branch BRANCH]` extracts and validates that captured context, stores
-   canonical bytes, and atomically commits an `application_context` snapshot component and epoch in
-   SQLite.
-3. `epoch restore EPOCH` reopens the component after any supervisor restart, verifies schema,
-   hashes, length, canonical encoding, nested references, and metadata, then appends an immutable
-   activation event.
+   canonical bytes, snapshots only the manifest's resolved `working_directory`, and atomically
+   commits `application_context` and `workspace` component metadata in one SQLite transaction.
+3. `epoch restore EPOCH --workspace-target NEW_DIRECTORY` reopens both components after any
+   supervisor restart, validates every application and workspace blob before mutation, publishes
+   the workspace with new-directory/no-clobber semantics, then appends an immutable activation
+   event.
 4. `epoch status SESSION` resolves the latest activation event and revalidates its epoch before
    returning the current observable context.
 
@@ -84,19 +86,18 @@ commit can leave only an unreachable content-addressed blob, never a committed-l
 
 ## Honest scope and remaining work
 
-This is cooperative **application-context restore**, not process or workspace rollback. The current
-W02 agent reaches its safe point immediately before successful completion, so restore reactivates a
-durable context for inspection and future SDK rehydration; it does not resume an instruction pointer
-or relaunch the completed agent. JSON reports therefore always state `process_restored: false` and
-`workspace_restored: false`. Tests mutate the workspace after checkpoint and prove application
-restore leaves that mutation untouched.
+This is cooperative **application-context plus full-copy workspace restore**, not process-memory
+rollback. The current W02 agent reaches its safe point immediately before successful completion,
+so restore reactivates durable context and publishes checkpointed files to an explicit clean target;
+it does not resume an instruction pointer or relaunch the completed agent. JSON therefore states
+`process_restored: false` and truthfully reports whether the workspace was published.
 
 The next composite recovery layer still needs to:
 
 - add a live pause/acknowledgement exchange for agents with work remaining;
 - ingest observable content bytes into the trusted BlobStore before accepting their hashes;
 - rehydrate the agent SDK from restored context and resume only after policy/effect-frontier checks;
-- coordinate application, workspace, and optional process components in one composite epoch.
+- add an optional process component without making it a prerequisite for portable recovery.
 
-Workspace and CRIU backends remain separate K03/K04 components. Their availability must not change
-an application checkpoint from unsupported or failed into a false success.
+CRIU remains a separate optional component. Its availability must not change an application or
+workspace failure into a false success.

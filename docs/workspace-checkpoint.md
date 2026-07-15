@@ -1,15 +1,21 @@
 # Workspace checkpoint integration contract
 
 `epoch-workspace` is the deterministic full-copy K03 control backend. It is usable on macOS and
-Linux without OverlayFS, reflinks, or CRIU. The composite checkpoint coordinator can store the
-returned manifest hash and length as its workspace component; this crate does not write epoch rows
-or change supervisor/CLI lifecycle state.
+Linux without OverlayFS, reflinks, or CRIU. The supervisor stores the returned manifest hash and
+length beside the application component in one committed composite epoch; the backend crate itself
+does not write epoch rows or change supervisor/CLI lifecycle state.
 
 ```rust
 let backend = WorkspaceBackend::open(state_dir.join("blobs"), WorkspaceLimits::default())?;
 let snapshot = backend.snapshot(workspace_dir)?;
 backend.restore(&snapshot, new_workspace_dir)?;
 ```
+
+At the product boundary, `epoch checkpoint` captures only the workload manifest's resolved
+`working_directory` after the session and branch are completed at a cooperative safe point.
+`epoch restore EPOCH --workspace-target NEW_DIRECTORY` requires an explicit absent target.
+`process_checkpointed` and `process_restored` remain false because no CRIU/COW process backend is
+registered.
 
 ## Snapshot contract
 

@@ -17,6 +17,7 @@ Linux isolation and checkpoint backends are added only after that vertical slice
 - `epoch-protocol`: versioned JSONL messages at the agent/supervisor boundary.
 - `epoch-supervisor`: direct execution plus restart-safe cooperative application recovery.
 - `epoch-test-agent`: seeded workload for repeatable execution, tracing, and fault experiments.
+- `epoch-workspace`: deterministic full-copy workspace snapshots and no-clobber restore.
 - `epoch-cli`: command-line entry point and host capability diagnostics.
 
 The wire contract and its forward-compatibility rules are documented in the
@@ -35,9 +36,9 @@ Its JSONL boundary history is written to stdout and its normalized state, trace 
 cooperative checkpoint context are written as one JSON object to stderr. See the
 [deterministic agent guide](docs/deterministic-agent.md) for scenarios and crash points.
 
-The [application checkpoint guide](docs/application-checkpoints.md) documents the Week 2 context
-schema, integrity boundary, supervisor-backed checkpoint/restore/status flow, and its explicit
-application-only limitations.
+The [application checkpoint guide](docs/application-checkpoints.md) and
+[workspace checkpoint guide](docs/workspace-checkpoint.md) document the Week 2 composite
+checkpoint/restore/status/diff flow and its explicit process-memory limitations.
 
 ## Development
 

@@ -7,14 +7,16 @@ use std::{
 use epoch_storage::{LATEST_SCHEMA_VERSION, StorageError, Store};
 use rusqlite::{ErrorCode, params};
 
-const EXPECTED_TABLES: [&str; 15] = [
+const EXPECTED_TABLES: [&str; 17] = [
     "approvals",
     "benchmark_runs",
     "blobs",
     "branches",
     "capabilities",
     "effect_attempts",
+    "effect_attempt_history",
     "effect_intents",
+    "effect_transition_history",
     "epochs",
     "events",
     "fault_injections",

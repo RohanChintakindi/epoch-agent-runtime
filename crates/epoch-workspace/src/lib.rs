@@ -29,6 +29,7 @@ pub struct WorkspaceLimits {
     pub max_manifest_bytes: u64,
     pub max_depth: usize,
     pub max_path_bytes: usize,
+    pub max_component_bytes: usize,
     pub max_symlink_target_bytes: usize,
 }
 
@@ -41,6 +42,7 @@ impl Default for WorkspaceLimits {
             max_manifest_bytes: 16 * 1024 * 1024,
             max_depth: 64,
             max_path_bytes: 4_096,
+            max_component_bytes: 255,
             max_symlink_target_bytes: 4_096,
         }
     }
@@ -58,6 +60,7 @@ pub enum HardlinkPolicy {
 pub struct WorkspaceManifest {
     pub schema_version: u32,
     pub hardlink_policy: HardlinkPolicy,
+    pub root_mode: u32,
     pub entries: Vec<WorkspaceEntry>,
 }
 
@@ -133,6 +136,7 @@ pub enum LimitKind {
     ManifestBytes,
     Depth,
     PathBytes,
+    ComponentBytes,
     SymlinkTargetBytes,
 }
 
@@ -198,6 +202,7 @@ impl WorkspaceBackend {
         let manifest = WorkspaceManifest {
             schema_version: WORKSPACE_SCHEMA_VERSION,
             hardlink_policy: HardlinkPolicy::Materialize,
+            root_mode: metadata_mode(&root_metadata, true),
             entries: capture.entries,
         };
         validate_manifest(&manifest, self.limits)?;
@@ -305,14 +310,14 @@ impl WorkspaceBackend {
             .collect::<Vec<_>>();
         directories.sort_by_key(|entry| (path_depth(&entry.path), entry.path.as_str()));
         for entry in &directories {
-            let path = staging.join(manifest_path(&entry.path)?);
+            let path = staging.join(manifest_path(&entry.path));
             create_private_directory(&path)?;
             created_entries += 1;
             maybe_fault_after_first(fault, created_entries)?;
         }
 
         for entry in &manifest.entries {
-            let path = staging.join(manifest_path(&entry.path)?);
+            let path = staging.join(manifest_path(&entry.path));
             match &entry.kind {
                 EntryKind::Directory { .. } => continue,
                 EntryKind::Regular { mode, .. } => {
@@ -330,12 +335,6 @@ impl WorkspaceBackend {
             maybe_fault_after_first(fault, created_entries)?;
         }
 
-        directories.sort_by_key(|entry| std::cmp::Reverse(path_depth(&entry.path)));
-        for entry in directories {
-            if let EntryKind::Directory { mode } = entry.kind {
-                set_mode(&staging.join(manifest_path(&entry.path)?), mode)?;
-            }
-        }
         sync_workspace_tree(&staging, &manifest)?;
         if fault == RestoreFault::BeforePublish {
             return Err(WorkspaceError::FaultInjected { point: fault });
@@ -344,6 +343,21 @@ impl WorkspaceBackend {
             return Err(WorkspaceError::TargetExists {
                 path: target.to_path_buf(),
             });
+        }
+        let mut directory_handles = directories
+            .iter()
+            .map(|entry| File::open(staging.join(manifest_path(&entry.path))))
+            .collect::<Result<Vec<_>, _>>()?;
+        directory_handles.push(File::open(&staging)?);
+        directories.sort_by_key(|entry| std::cmp::Reverse(path_depth(&entry.path)));
+        for entry in directories {
+            if let EntryKind::Directory { mode } = entry.kind {
+                set_mode(&staging.join(manifest_path(&entry.path)), mode)?;
+            }
+        }
+        set_mode(&staging, manifest.root_mode)?;
+        for directory in directory_handles {
+            directory.sync_all()?;
         }
         fs::rename(&staging, target).map_err(|error| {
             if target.exists() {
@@ -503,6 +517,7 @@ fn validate_limits(limits: WorkspaceLimits) -> Result<(), WorkspaceError> {
         || limits.max_manifest_bytes == 0
         || limits.max_depth == 0
         || limits.max_path_bytes == 0
+        || limits.max_component_bytes == 0
         || limits.max_symlink_target_bytes == 0
         || limits.max_file_bytes > limits.max_total_bytes
     {
@@ -516,6 +531,7 @@ fn validate_manifest(
     manifest: &WorkspaceManifest,
     limits: WorkspaceLimits,
 ) -> Result<(), WorkspaceError> {
+    validate_mode(manifest.root_mode)?;
     if manifest.entries.len() > limits.max_entries {
         return Err(WorkspaceError::LimitExceeded {
             kind: LimitKind::Entries,
@@ -622,6 +638,12 @@ fn enforce_path_limits(
         LimitKind::Depth,
         u64::try_from(depth).unwrap_or(u64::MAX),
         u64::try_from(limits.max_depth).unwrap_or(u64::MAX),
+    )?;
+    let longest_component = path.split('/').map(str::len).max().unwrap_or(0);
+    enforce_limit(
+        LimitKind::ComponentBytes,
+        u64::try_from(longest_component).unwrap_or(u64::MAX),
+        u64::try_from(limits.max_component_bytes).unwrap_or(u64::MAX),
     )
 }
 
@@ -712,9 +734,8 @@ fn path_to_manifest(path: &Path) -> Result<String, WorkspaceError> {
     Ok(output)
 }
 
-fn manifest_path(path: &str) -> Result<PathBuf, WorkspaceError> {
-    validate_manifest_path(path, WorkspaceLimits::default())?;
-    Ok(path.split('/').collect())
+fn manifest_path(path: &str) -> PathBuf {
+    path.split('/').collect()
 }
 
 fn path_depth(path: &str) -> usize {
@@ -892,7 +913,7 @@ fn sync_workspace_tree(root: &Path, manifest: &WorkspaceManifest) -> Result<(), 
         .entries
         .iter()
         .filter(|entry| matches!(entry.kind, EntryKind::Directory { .. }))
-        .map(|entry| root.join(entry.path.split('/').collect::<PathBuf>()))
+        .map(|entry| root.join(manifest_path(&entry.path)))
         .collect::<Vec<_>>();
     directories.sort_by_key(|path| std::cmp::Reverse(path.components().count()));
     for directory in directories {
@@ -927,9 +948,59 @@ impl StagingGuard {
 impl Drop for StagingGuard {
     fn drop(&mut self) {
         if !self.published {
+            let _ = make_tree_removable(&self.path);
             let _ = fs::remove_dir_all(&self.path);
         }
     }
+}
+
+fn make_tree_removable(path: &Path) -> Result<(), std::io::Error> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if metadata.file_type().is_symlink() {
+        return Ok(());
+    }
+    if metadata.is_dir() {
+        make_directory_owner_accessible(path)?;
+        for entry in fs::read_dir(path)? {
+            make_tree_removable(&entry?.path())?;
+        }
+    } else {
+        make_file_owner_writable(path, metadata.permissions())?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn make_directory_owner_accessible(path: &Path) -> Result<(), std::io::Error> {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+}
+
+#[cfg(not(unix))]
+fn make_directory_owner_accessible(path: &Path) -> Result<(), std::io::Error> {
+    let mut permissions = fs::metadata(path)?.permissions();
+    permissions.set_readonly(false);
+    fs::set_permissions(path, permissions)
+}
+
+#[cfg(unix)]
+fn make_file_owner_writable(
+    path: &Path,
+    _permissions: fs::Permissions,
+) -> Result<(), std::io::Error> {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn make_file_owner_writable(
+    path: &Path,
+    mut permissions: fs::Permissions,
+) -> Result<(), std::io::Error> {
+    permissions.set_readonly(false);
+    fs::set_permissions(path, permissions)
 }
 
 #[derive(Debug, Error)]

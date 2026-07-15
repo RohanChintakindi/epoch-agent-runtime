@@ -24,10 +24,10 @@ use thiserror::Error;
 /// Version of the JSONL record contract consumed by the ML package.
 pub const TRAJECTORY_SCHEMA_VERSION: u32 = 1;
 
-/// Conservative default bound for one session export.
+/// Hard schema-v1 bound for one session export.
 pub const DEFAULT_MAX_BRANCHES: usize = 256;
 
-/// Conservative default bound for one branch export.
+/// Hard schema-v1 bound for one branch export.
 pub const DEFAULT_MAX_EVENTS_PER_BRANCH: usize = 256;
 
 /// Export safety limits. Limits fail the whole export instead of silently truncating examples.
@@ -191,7 +191,11 @@ fn validate_task_group(value: &str) -> Result<(), ExportError> {
 }
 
 const fn validate_limits(limits: ExportLimits) -> Result<(), ExportError> {
-    if limits.max_branches == 0 || limits.max_events_per_branch == 0 {
+    if limits.max_branches == 0
+        || limits.max_branches > DEFAULT_MAX_BRANCHES
+        || limits.max_events_per_branch == 0
+        || limits.max_events_per_branch > DEFAULT_MAX_EVENTS_PER_BRANCH
+    {
         Err(ExportError::InvalidLimits)
     } else {
         Ok(())
@@ -497,7 +501,7 @@ pub fn write_jsonl_new(
 pub enum ExportError {
     #[error("invalid task group; use 1-128 lowercase ASCII letters, digits, '.', '_', or '-'")]
     InvalidTaskGroup,
-    #[error("export limits must be positive and representable")]
+    #[error("export limits must be between 1 and the schema-v1 hard bounds")]
     InvalidLimits,
     #[error("session {session_id} does not exist")]
     SessionNotFound { session_id: SessionId },

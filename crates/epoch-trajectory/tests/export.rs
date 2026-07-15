@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, path::Path};
 
 use epoch_core::{BranchId, EpochId, EventId, SessionId};
 use epoch_storage::Store;
-use epoch_trajectory::{ExportLimits, PrivacyProfile, export_session};
+use epoch_trajectory::{BranchTrajectory, ExportLimits, PrivacyProfile, export_session};
 use rusqlite::params;
 use tempfile::TempDir;
 
@@ -194,65 +194,8 @@ fn insert_event(
         .expect("insert event");
 }
 
-#[test]
-fn export_is_deterministic_grouped_labelled_and_payload_free() {
-    let fixture = fixture();
-    let first = export_session(
-        &fixture.database,
-        fixture.session,
-        TASK_GROUP,
-        ExportLimits::default(),
-    )
-    .expect("export trajectories");
-    let second = export_session(
-        &fixture.database,
-        fixture.session,
-        TASK_GROUP,
-        ExportLimits::default(),
-    )
-    .expect("repeat export");
-    assert_eq!(first, second);
-    assert_eq!(first.len(), 4);
-    assert!(first.iter().all(|record| {
-        record.schema_version == 1 && record.privacy_profile == PrivacyProfile::MetadataOnly
-    }));
-
-    let success = first
-        .iter()
-        .find(|record| record.success_label == Some(true) && record.branch_depth == 1)
-        .expect("successful branch");
-    let failed = first
-        .iter()
-        .find(|record| record.success_label == Some(false))
-        .expect("failed branch");
-    let suspended = first
-        .iter()
-        .find(|record| record.success_label.is_none())
-        .expect("suspended branch");
-    let root = first
-        .iter()
-        .find(|record| record.success_label == Some(true) && record.branch_depth == 0)
-        .expect("root branch");
-
-    assert_eq!(success.success_label, Some(true));
-    assert_eq!(success.value_label, Some(1.0));
-    assert_eq!(failed.success_label, Some(false));
-    assert_eq!(failed.value_label, Some(0.0));
-    assert_eq!(suspended.success_label, None);
-    assert_eq!(suspended.value_label, None);
-    assert_eq!(root.value_label, Some(0.75));
-    assert_eq!(root.branch_depth, 0);
-    assert_eq!(success.branch_depth, 1);
-    assert_eq!(success.candidate_group_id, failed.candidate_group_id);
-    assert_eq!(failed.candidate_group_id, suspended.candidate_group_id);
-    assert_eq!(success.events[1].delta_monotonic_ns, 25);
-    assert_eq!(failed.summary.failed_events, 1);
-    assert_eq!(suspended.summary.unknown_events, 1);
-    assert_eq!(root.events.len(), 2);
-    assert_eq!(root.events[0].kind, "agent.start");
-    assert_eq!(root.events[1].kind, "other");
-
-    let wire = serde_json::to_value(root).expect("trajectory wire JSON");
+fn assert_wire_contract(record: &BranchTrajectory) {
+    let wire = serde_json::to_value(record).expect("trajectory wire JSON");
     let record_fields = wire
         .as_object()
         .expect("trajectory object")
@@ -317,6 +260,67 @@ fn export_is_deterministic_grouped_labelled_and_payload_free() {
         .into_iter()
         .collect()
     );
+}
+
+#[test]
+fn export_is_deterministic_grouped_labelled_and_payload_free() {
+    let fixture = fixture();
+    let first = export_session(
+        &fixture.database,
+        fixture.session,
+        TASK_GROUP,
+        ExportLimits::default(),
+    )
+    .expect("export trajectories");
+    let second = export_session(
+        &fixture.database,
+        fixture.session,
+        TASK_GROUP,
+        ExportLimits::default(),
+    )
+    .expect("repeat export");
+    assert_eq!(first, second);
+    assert_eq!(first.len(), 4);
+    assert!(first.iter().all(|record| {
+        record.schema_version == 1 && record.privacy_profile == PrivacyProfile::MetadataOnly
+    }));
+
+    let success = first
+        .iter()
+        .find(|record| record.success_label == Some(true) && record.branch_depth == 1)
+        .expect("successful branch");
+    let failed = first
+        .iter()
+        .find(|record| record.success_label == Some(false))
+        .expect("failed branch");
+    let suspended = first
+        .iter()
+        .find(|record| record.success_label.is_none())
+        .expect("suspended branch");
+    let root = first
+        .iter()
+        .find(|record| record.success_label == Some(true) && record.branch_depth == 0)
+        .expect("root branch");
+
+    assert_eq!(success.success_label, Some(true));
+    assert_eq!(success.value_label, Some(1.0));
+    assert_eq!(failed.success_label, Some(false));
+    assert_eq!(failed.value_label, Some(0.0));
+    assert_eq!(suspended.success_label, None);
+    assert_eq!(suspended.value_label, None);
+    assert_eq!(root.value_label, Some(0.75));
+    assert_eq!(root.branch_depth, 0);
+    assert_eq!(success.branch_depth, 1);
+    assert_eq!(success.candidate_group_id, failed.candidate_group_id);
+    assert_eq!(failed.candidate_group_id, suspended.candidate_group_id);
+    assert_eq!(success.events[1].delta_monotonic_ns, 25);
+    assert_eq!(failed.summary.failed_events, 1);
+    assert_eq!(suspended.summary.unknown_events, 1);
+    assert_eq!(root.events.len(), 2);
+    assert_eq!(root.events[0].kind, "agent.start");
+    assert_eq!(root.events[1].kind, "other");
+
+    assert_wire_contract(root);
 
     let encoded = first
         .iter()
@@ -375,6 +379,21 @@ fn export_rejects_invalid_groups_missing_sessions_and_limits_without_partial_res
     )
     .expect_err("branch limit");
     assert!(bounded.to_string().contains("branch limit"));
+
+    for limits in [
+        ExportLimits {
+            max_branches: 257,
+            max_events_per_branch: 1,
+        },
+        ExportLimits {
+            max_branches: 1,
+            max_events_per_branch: 257,
+        },
+    ] {
+        let error = export_session(&fixture.database, fixture.session, TASK_GROUP, limits)
+            .expect_err("schema hard limit");
+        assert!(error.to_string().contains("hard bounds"));
+    }
 }
 
 #[test]

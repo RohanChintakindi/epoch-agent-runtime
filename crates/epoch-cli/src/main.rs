@@ -1,7 +1,10 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
+use epoch_supervisor::{AgentTermination, DirectSupervisor, RunOutcome};
 use serde::Serialize;
+
+const SUPERVISOR_FAILURE_EXIT: u8 = 125;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -179,6 +182,17 @@ struct HostCapabilities {
     unshare: Option<PathBuf>,
 }
 
+#[derive(Debug, Serialize)]
+struct RunReport {
+    session_id: String,
+    branch_id: String,
+    termination: &'static str,
+    exit_code: Option<i32>,
+    signal: Option<i32>,
+    protocol_records: usize,
+    stderr_bytes: usize,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Support {
@@ -248,6 +262,7 @@ fn main() -> ExitCode {
 
 fn execute(command: Command) -> ExitCode {
     match command {
+        Command::Run { manifest } => run_manifest(&manifest),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -284,6 +299,55 @@ fn execute(command: Command) -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+fn run_manifest(manifest: &std::path::Path) -> ExitCode {
+    let supervisor = match DirectSupervisor::open(".epoch") {
+        Ok(supervisor) => supervisor,
+        Err(error) => {
+            eprintln!("supervisor initialization failed: {error}");
+            return ExitCode::from(SUPERVISOR_FAILURE_EXIT);
+        }
+    };
+    match supervisor.run_manifest(manifest) {
+        Ok(outcome) => report_run(&outcome),
+        Err(error) => {
+            eprintln!("supervisor failed: {error}");
+            ExitCode::from(SUPERVISOR_FAILURE_EXIT)
+        }
+    }
+}
+
+fn report_run(outcome: &RunOutcome) -> ExitCode {
+    let (termination, exit_code, signal, status) = match outcome.termination {
+        AgentTermination::Succeeded { code } => ("succeeded", Some(code), None, ExitCode::SUCCESS),
+        AgentTermination::NonZero { code, signal } => {
+            ("nonzero", code, signal, nonzero_exit_code(code))
+        }
+    };
+    let report = RunReport {
+        session_id: outcome.session_id.to_string(),
+        branch_id: outcome.branch_id.to_string(),
+        termination,
+        exit_code,
+        signal,
+        protocol_records: outcome.protocol_records,
+        stderr_bytes: outcome.stderr.len(),
+    };
+    match serde_json::to_string(&report) {
+        Ok(encoded) => println!("{encoded}"),
+        Err(error) => {
+            eprintln!("failed to encode run report: {error}");
+            return ExitCode::from(SUPERVISOR_FAILURE_EXIT);
+        }
+    }
+    status
+}
+
+fn nonzero_exit_code(code: Option<i32>) -> ExitCode {
+    code.and_then(|value| u8::try_from(value).ok())
+        .filter(|value| *value != 0)
+        .map_or_else(|| ExitCode::from(1), ExitCode::from)
 }
 
 impl Command {

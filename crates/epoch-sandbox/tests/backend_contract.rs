@@ -106,6 +106,7 @@ fn linux_plan_has_every_required_boundary_and_no_shell_interpolation() {
         "--ro-bind",
         "--bind",
         "--tmpfs",
+        "/run",
         "--proc",
         "--dev",
         "--cap-drop",
@@ -127,7 +128,7 @@ fn linux_plan_has_every_required_boundary_and_no_shell_interpolation() {
         )
     }));
     assert!(arguments.ends_with(&[
-        request.executable().display().to_string(),
+        "/run/epoch-workload".to_owned(),
         "--scenario".to_owned(),
         "full".to_owned(),
     ]));

@@ -583,11 +583,19 @@ pub fn plan_linux_launch(
         "--ro-bind".to_owned(),
         "/".to_owned(),
         "/".to_owned(),
+        "--tmpfs".to_owned(),
+        "/tmp".to_owned(),
+        "--tmpfs".to_owned(),
+        "/run".to_owned(),
         "--bind".to_owned(),
         request.workspace.display().to_string(),
         request.workspace.display().to_string(),
-        "--tmpfs".to_owned(),
-        "/tmp".to_owned(),
+        "--ro-bind".to_owned(),
+        request.trusted_helper.display().to_string(),
+        "/run/epoch-sandbox-init".to_owned(),
+        "--ro-bind".to_owned(),
+        request.executable.display().to_string(),
+        "/run/epoch-workload".to_owned(),
         "--proc".to_owned(),
         "/proc".to_owned(),
         "--dev".to_owned(),
@@ -607,10 +615,10 @@ pub fn plan_linux_launch(
     }
     arguments.extend([
         "--".to_owned(),
-        request.trusted_helper.display().to_string(),
+        "/run/epoch-sandbox-init".to_owned(),
         "--seccomp-profile-v1".to_owned(),
         "--".to_owned(),
-        request.executable.display().to_string(),
+        "/run/epoch-workload".to_owned(),
     ]);
     arguments.extend(request.arguments.iter().cloned());
 

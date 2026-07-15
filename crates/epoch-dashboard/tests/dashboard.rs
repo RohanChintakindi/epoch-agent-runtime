@@ -95,6 +95,27 @@ impl Fixture {
                 )
                 .expect("event");
         }
+        let effect_id = "50000000-0000-4000-8000-000000000001";
+        connection.execute(
+            "INSERT INTO effect_intents (id, session_id, branch_id, operation_id, replay_key, action, resource, input_hash, state, error_json, policy_revision, prepared_at_unix_ms, dispatched_at_unix_ms, resolved_at_unix_ms, revision) VALUES (?1, ?2, ?3, 'op_fixture', 'step-1', 'email.send', 'mailbox:test', ?4, 'failed', ?5, 3, 60, 61, 62, 2)",
+            params![effect_id, SESSION, ROOT_BRANCH, "a".repeat(64), format!(r#"{{"provider_error":"{SECRET}"}}"#)],
+        ).expect("effect intent");
+        connection.execute(
+            "INSERT INTO effect_attempts (id, effect_id, attempt_no, state, downstream_idempotency_key, error_json, started_at_unix_ms, completed_at_unix_ms) VALUES ('60000000-0000-4000-8000-000000000001', ?1, 1, 'failed', 'idem-1', ?2, 61, 62)",
+            params![effect_id, format!(r#"{{"raw":"{SECRET}"}}"#)],
+        ).expect("effect attempt");
+        connection.execute(
+            "INSERT INTO effect_transition_history (effect_id, sequence, state, occurred_at_unix_ms, detail_json) VALUES (?1, 0, 'requested', 60, ?2), (?1, 1, 'failed', 62, ?2)",
+            params![effect_id, format!(r#"{{"detail":"{SECRET}"}}"#)],
+        ).expect("effect transitions");
+        connection.execute(
+            "INSERT INTO effect_attempt_history (effect_id, attempt_no, sequence, state, occurred_at_unix_ms, detail_json) VALUES (?1, 1, 0, 'started', 61, ?2), (?1, 1, 1, 'failed', 62, ?2)",
+            params![effect_id, format!(r#"{{"detail":"{SECRET}"}}"#)],
+        ).expect("attempt history");
+        connection.execute(
+            "INSERT INTO capability_decisions (decision_id, capability_id, handle_hash, session_id, branch_id, subject, action, resource, request_id, request_hash, policy_revision, budget_units, outcome, reason, decided_at_unix_ms) VALUES ('decision-fixture', NULL, ?1, ?2, ?3, 'agent', 'email.send', 'mailbox:test', 'request-1', ?4, 3, 1, 'deny', 'unknown_handle', 63)",
+            params!["d".repeat(64), SESSION, ROOT_BRANCH, "e".repeat(64)],
+        ).expect("capability audit");
         Self { root }
     }
 
@@ -140,6 +161,13 @@ fn rejects_traversal_and_mutation_and_serves_locked_down_assets() {
     assert_eq!(dashboard.handle("POST", "/api/v1/sessions").status, 405);
     let page = dashboard.handle("GET", "/");
     assert_eq!(page.status, 200);
+    assert!(page.headers.iter().any(|(name, value)| {
+        *name == "Content-Security-Policy" && value.starts_with("default-src 'none'")
+    }));
+    assert!(
+        page.headers
+            .contains(&("X-Content-Type-Options", "nosniff"))
+    );
     let html = String::from_utf8(page.body).expect("HTML");
     assert!(!html.contains("https://"));
     assert!(!html.contains("http://"));
@@ -172,6 +200,19 @@ fn reports_branch_lineage_and_ordered_filtered_timeline() {
     assert_eq!(timeline["items"][0]["sequence"], 1);
     assert_eq!(timeline["items"][0]["kind"], "application.context_restored");
     assert_eq!(timeline["page"]["has_more"], false);
+
+    let epochs = json(dashboard.handle(
+        "GET",
+        &format!("/api/v1/sessions/{SESSION}/epochs?limit=10&offset=0"),
+    ));
+    assert_eq!(
+        epochs["items"][0]["components"][0]["kind"],
+        "application_context"
+    );
+    assert_eq!(
+        epochs["items"][0]["restore_outcomes"][0]["status"],
+        "succeeded"
+    );
 }
 
 #[test]
@@ -226,6 +267,27 @@ fn raw_payloads_and_capability_material_never_reach_responses() {
         assert!(!body.contains("payload_json"));
         assert!(!body.contains("error_json"));
     }
+    let capabilities =
+        json(dashboard.handle("GET", &format!("/api/v1/sessions/{SESSION}/capabilities")));
+    assert_eq!(capabilities["current"].as_array().unwrap().len(), 1);
+    assert_eq!(capabilities["audit"][0]["reason"], "unknown_handle");
+    assert_eq!(capabilities["bearer_material_exposed"], false);
+    let effects = json(dashboard.handle("GET", &format!("/api/v1/sessions/{SESSION}/effects")));
+    assert_eq!(
+        effects["intents"][0]["attempts"][0]["history"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        effects["intents"][0]["transitions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(effects["provider_content_exposed"], false);
 }
 
 #[test]
@@ -267,4 +329,30 @@ fn json_and_ui_render_injected_text_as_data() {
         serde_json::from_str::<Value>(&body).unwrap()["items"][0]["changes"][0]["path"],
         injected
     );
+}
+
+#[test]
+fn benchmark_cards_are_real_bounded_reports_or_explicitly_unavailable() {
+    let fixture = Fixture::populated();
+    let dashboard = fixture.dashboard();
+    let unavailable = json(dashboard.handle("GET", "/api/v1/benchmarks"));
+    assert_eq!(unavailable["available"], false);
+    assert_eq!(unavailable["reason"], "results_directory_missing");
+
+    let results = fixture.root.path().join("results");
+    fs::create_dir(&results).expect("results directory");
+    fs::write(
+        results.join("checkpoint.json"),
+        br#"{
+          "schema_version": 1,
+          "config": {"suite":"checkpoint","backend":"cooperative-w02-v1","trace_mode":"on","repetitions":5},
+          "summary": {"succeeded":5,"unsupported":0,"failed":0,"latency_ns":{"p50":1200,"p95":1800,"p99":1900}}
+        }"#,
+    )
+    .expect("benchmark report");
+    let dashboard = Dashboard::open(fixture.root.path(), Some(results)).expect("dashboard");
+    let available = json(dashboard.handle("GET", "/api/v1/benchmarks"));
+    assert_eq!(available["available"], true);
+    assert_eq!(available["reports"][0]["suite"], "checkpoint");
+    assert_eq!(available["reports"][0]["p95_ns"], 1800);
 }

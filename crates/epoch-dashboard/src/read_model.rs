@@ -95,7 +95,8 @@ impl ReadModel {
              ORDER BY s.updated_at_unix_ms DESC, s.id ASC \
              LIMIT ?2 OFFSET ?3",
         )?;
-        let mut rows = statement.query(params![status, sql_limit(limit)?, sql_offset(offset)?])?;
+        let mut rows =
+            statement.query(params![status, sql_page_limit(limit)?, sql_offset(offset)?])?;
         let mut items = Vec::new();
         while let Some(row) = rows.next()? {
             items.push(session_summary(row)?);
@@ -149,7 +150,7 @@ impl ReadModel {
              LIMIT ?2",
         )?;
         let mut rows =
-            statement.query(params![session_id, sql_limit(MAX_BRANCHES_PER_SESSION)?])?;
+            statement.query(params![session_id, sql_bound(MAX_BRANCHES_PER_SESSION)?])?;
         let mut branches = Vec::new();
         while let Some(row) = rows.next()? {
             let fork_point: Option<i64> = row.get(5)?;
@@ -210,7 +211,7 @@ impl ReadModel {
             filters.actor,
             filters.kind,
             filters.status,
-            sql_limit(limit)?,
+            sql_page_limit(limit)?,
             sql_offset(offset)?
         ])?;
         let mut items = Vec::new();
@@ -254,8 +255,11 @@ impl ReadModel {
              ORDER BY created_at_unix_ms DESC, id ASC \
              LIMIT ?2 OFFSET ?3",
         )?;
-        let mut rows =
-            statement.query(params![session_id, sql_limit(limit)?, sql_offset(offset)?])?;
+        let mut rows = statement.query(params![
+            session_id,
+            sql_page_limit(limit)?,
+            sql_offset(offset)?
+        ])?;
         let mut items = Vec::new();
         while let Some(row) = rows.next()? {
             let epoch_id = checked_uuid(row.get(0)?, "epoch.id")?;
@@ -312,8 +316,11 @@ impl ReadModel {
              ORDER BY d.created_at_unix_ms DESC, d.id ASC \
              LIMIT ?2 OFFSET ?3",
         )?;
-        let mut rows =
-            statement.query(params![session_id, sql_limit(limit)?, sql_offset(offset)?])?;
+        let mut rows = statement.query(params![
+            session_id,
+            sql_page_limit(limit)?,
+            sql_offset(offset)?
+        ])?;
         let mut items = Vec::new();
         while let Some(row) = rows.next()? {
             let summary: String = row.get(5)?;
@@ -348,7 +355,7 @@ impl ReadModel {
              FROM capabilities WHERE session_id = ?1 \
              ORDER BY issued_at_unix_ms DESC, id ASC LIMIT ?2",
         )?;
-        let mut rows = statement.query(params![session_id, sql_limit(MAX_STANDARD_PAGE)?])?;
+        let mut rows = statement.query(params![session_id, sql_bound(MAX_STANDARD_PAGE)?])?;
         let mut current = Vec::new();
         while let Some(row) = rows.next()? {
             current.push(CapabilitySummary {
@@ -388,7 +395,7 @@ impl ReadModel {
              FROM capability_decisions WHERE session_id = ?1 \
              ORDER BY sequence DESC LIMIT ?2",
         )?;
-        let mut rows = statement.query(params![session_id, sql_limit(MAX_STANDARD_PAGE)?])?;
+        let mut rows = statement.query(params![session_id, sql_bound(MAX_STANDARD_PAGE)?])?;
         let mut audit = Vec::new();
         while let Some(row) = rows.next()? {
             audit.push(CapabilityDecision {
@@ -443,7 +450,7 @@ impl ReadModel {
              FROM effect_intents WHERE session_id = ?1 \
              ORDER BY prepared_at_unix_ms DESC, id ASC LIMIT ?2",
         )?;
-        let mut rows = statement.query(params![session_id, sql_limit(MAX_STANDARD_PAGE)?])?;
+        let mut rows = statement.query(params![session_id, sql_bound(MAX_STANDARD_PAGE)?])?;
         let mut intents = Vec::new();
         while let Some(row) = rows.next()? {
             let effect_id = checked_uuid(row.get(0)?, "effect.id")?;
@@ -537,7 +544,7 @@ fn components(
         "SELECT kind, status, backend, byte_length, staged_at_unix_ms, committed_at_unix_ms \
          FROM snapshot_components WHERE epoch_id = ?1 ORDER BY kind ASC LIMIT ?2",
     )?;
-    let mut rows = statement.query(params![epoch_id, sql_limit(MAX_COMPONENTS_PER_EPOCH)?])?;
+    let mut rows = statement.query(params![epoch_id, sql_bound(MAX_COMPONENTS_PER_EPOCH)?])?;
     let mut components = Vec::new();
     while let Some(row) = rows.next()? {
         components.push(SnapshotComponent {
@@ -562,7 +569,7 @@ fn restores(connection: &Connection, epoch_id: &str) -> Result<Vec<RestoreOutcom
          FROM events WHERE epoch_id = ?1 AND kind = 'application.context_restored' \
          ORDER BY occurred_at_unix_ms DESC, id ASC LIMIT ?2",
     )?;
-    let mut rows = statement.query(params![epoch_id, sql_limit(MAX_RESTORES_PER_EPOCH)?])?;
+    let mut rows = statement.query(params![epoch_id, sql_bound(MAX_RESTORES_PER_EPOCH)?])?;
     let mut restores = Vec::new();
     while let Some(row) = rows.next()? {
         restores.push(RestoreOutcome {
@@ -583,7 +590,7 @@ fn effect_attempts(
         "SELECT id, attempt_no, state, started_at_unix_ms, completed_at_unix_ms \
          FROM effect_attempts WHERE effect_id = ?1 ORDER BY attempt_no ASC LIMIT ?2",
     )?;
-    let mut rows = statement.query(params![effect_id, sql_limit(MAX_EFFECT_ATTEMPTS)?])?;
+    let mut rows = statement.query(params![effect_id, sql_bound(MAX_EFFECT_ATTEMPTS)?])?;
     let mut attempts = Vec::new();
     while let Some(row) = rows.next()? {
         let attempt_no = nonnegative(row.get(1)?, "effect_attempt.number")?;
@@ -618,7 +625,7 @@ fn effect_attempt_history(
     let mut rows = statement.query(params![
         effect_id,
         i64::try_from(attempt_no).map_err(|_| StateError::Corrupt("effect_attempt.number"))?,
-        sql_limit(MAX_EFFECT_HISTORY)?
+        sql_bound(MAX_EFFECT_HISTORY)?
     ])?;
     history_rows(&mut rows)
 }
@@ -631,7 +638,7 @@ fn effect_transitions(
         "SELECT sequence, state, occurred_at_unix_ms FROM effect_transition_history \
          WHERE effect_id = ?1 ORDER BY sequence ASC LIMIT ?2",
     )?;
-    let mut rows = statement.query(params![effect_id, sql_limit(MAX_EFFECT_HISTORY)?])?;
+    let mut rows = statement.query(params![effect_id, sql_bound(MAX_EFFECT_HISTORY)?])?;
     history_rows(&mut rows)
 }
 
@@ -739,9 +746,13 @@ fn ensure_session(connection: &Connection, session_id: &str) -> Result<(), State
     }
 }
 
-fn sql_limit(limit: usize) -> Result<i64, StateError> {
+fn sql_page_limit(limit: usize) -> Result<i64, StateError> {
     i64::try_from(limit.checked_add(1).ok_or(StateError::InvalidPage)?)
         .map_err(|_| StateError::InvalidPage)
+}
+
+fn sql_bound(limit: usize) -> Result<i64, StateError> {
+    i64::try_from(limit).map_err(|_| StateError::InvalidPage)
 }
 
 fn sql_offset(offset: u64) -> Result<i64, StateError> {

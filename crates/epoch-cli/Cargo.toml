@@ -13,6 +13,7 @@ path = "src/main.rs"
 clap.workspace = true
 epoch-capabilities.workspace = true
 epoch-core = { path = "../epoch-core" }
+epoch-dashboard.workspace = true
 epoch-effects.workspace = true
 epoch-sandbox.workspace = true
 epoch-storage.workspace = true

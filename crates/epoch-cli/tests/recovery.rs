@@ -169,6 +169,19 @@ fn cli_run_checkpoint_restore_status_is_restart_safe_json() {
     );
     let epoch_id = checkpoint["result"]["epoch_id"].as_str().expect("epoch ID");
 
+    let diff = epoch(&fixture, &["diff", epoch_id, epoch_id, "--json"]);
+    assert!(diff.status.success());
+    let diff: serde_json::Value = serde_json::from_slice(&diff.stdout).expect("diff JSON");
+    assert_eq!(diff["operation"], "diff");
+    assert_eq!(diff["outcome"], "supported");
+    assert_eq!(diff["result"]["before_epoch_id"], epoch_id);
+    assert_eq!(diff["result"]["after_epoch_id"], epoch_id);
+    assert_eq!(diff["result"]["diff"]["identical"], true);
+    assert_eq!(
+        diff["result"]["diff"]["unsupported_sections"][0]["section"],
+        "capabilities"
+    );
+
     let restore = epoch(&fixture, &["restore", epoch_id]);
     assert!(
         restore.status.success(),

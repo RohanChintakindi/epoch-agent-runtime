@@ -11,6 +11,7 @@ Linux isolation and checkpoint backends are added only after that vertical slice
 ## Workspace
 
 - `epoch-blob`: private, atomic SHA-256 storage with bounded verified reads and media-type locking.
+- `epoch-checkpoint`: versioned, blob-backed observable application checkpoints.
 - `epoch-core`: stable identifiers, lifecycle state machines, and shared domain types.
 - `epoch-events`: append-only execution history with deterministic queries and external payloads.
 - `epoch-protocol`: versioned JSONL messages at the agent/supervisor boundary.
@@ -32,6 +33,9 @@ cargo run -p epoch-test-agent -- \
 Its JSONL boundary history is written to stdout and its normalized state/trace hashes are written
 as one JSON object to stderr. See the [deterministic agent guide](docs/deterministic-agent.md) for
 scenarios and crash points.
+
+The [application checkpoint guide](docs/application-checkpoints.md) documents the Week 2 context
+schema, integrity boundary, and remaining supervisor integration work.
 
 ## Development
 

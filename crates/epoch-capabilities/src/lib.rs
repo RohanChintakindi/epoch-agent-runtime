@@ -36,14 +36,10 @@ const MAX_REQUEST_ID_LENGTH: usize = 255;
 pub struct CapabilityHandle(String);
 
 impl CapabilityHandle {
-    fn generate() -> Self {
-        let first = Uuid::new_v4();
-        let second = Uuid::new_v4();
-        Self(format!(
-            "{HANDLE_PREFIX}{}{}",
-            first.simple(),
-            second.simple()
-        ))
+    fn generate() -> Result<Self, CapabilityError> {
+        let mut secret = [0_u8; 32];
+        getrandom::fill(&mut secret).map_err(|_| CapabilityError::RandomnessUnavailable)?;
+        Ok(Self(format!("{HANDLE_PREFIX}{}", encode_hex(&secret))))
     }
 
     /// Deliberately exposes the bearer value for delivery across a trusted sandbox boundary.
@@ -494,120 +490,24 @@ impl CapabilityService {
                 now,
             );
         };
-
-        if let Some(reason) = binding_denial(&capability, request) {
-            return commit_decision(
-                transaction,
-                Some(capability.id),
-                &handle_hash,
-                request,
-                DecisionOutcome::Deny,
-                reason,
-                now,
-            );
-        }
-        if let Some(reason) = direct_state_denial(&transaction, &capability, now)? {
-            return commit_decision(
-                transaction,
-                Some(capability.id),
-                &handle_hash,
-                request,
-                DecisionOutcome::Deny,
-                reason,
-                now,
-            );
-        }
-
-        let current_policy =
-            current_policy(&transaction, capability.session_id, capability.branch_id)?;
-        let policy_reason = match current_policy {
-            None => Some(DenialReason::PolicyUnavailable),
-            Some(current) if current != capability.policy_revision => {
-                Some(DenialReason::PolicyStale)
-            }
-            Some(current)
-                if current != i64_from_u64("policy_revision", request.policy_revision)? =>
-            {
-                Some(DenialReason::PolicyRevisionMismatch)
-            }
-            Some(_) => None,
-        };
-        if let Some(reason) = policy_reason {
-            return commit_decision(
-                transaction,
-                Some(capability.id),
-                &handle_hash,
-                request,
-                DecisionOutcome::Deny,
-                reason,
-                now,
-            );
-        }
-
-        let ancestors = load_ancestors(&transaction, capability.id)?;
-        if ancestors
-            .first()
-            .is_none_or(|ancestor| ancestor.id != capability.id)
-        {
-            return commit_decision(
-                transaction,
-                Some(capability.id),
-                &handle_hash,
-                request,
-                DecisionOutcome::Deny,
-                DenialReason::CorruptAuthority,
-                now,
-            );
-        }
-        if let Some(reason) = ancestor_denial(&transaction, &ancestors, now)? {
-            return commit_decision(
-                transaction,
-                Some(capability.id),
-                &handle_hash,
-                request,
-                DecisionOutcome::Deny,
-                reason,
-                now,
-            );
-        }
-
-        let already_authorized = transaction
-            .query_row(
-                "SELECT 1 FROM capability_authorizations \
-                 WHERE capability_id = ?1 AND request_id = ?2",
-                params![capability.id.to_string(), request.request_id],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some();
-        if already_authorized {
-            return commit_decision(
-                transaction,
-                Some(capability.id),
-                &handle_hash,
-                request,
-                DecisionOutcome::Deny,
-                DenialReason::RequestAlreadyAuthorized,
-                now,
-            );
-        }
-
-        let requested_budget = i64_from_u64("budget_units", request.budget_units)?;
-        if ancestors.iter().any(|ancestor| {
-            ancestor
-                .remaining_budget_units
-                .is_some_and(|remaining| remaining < requested_budget)
-        }) {
-            return commit_decision(
-                transaction,
-                Some(capability.id),
-                &handle_hash,
-                request,
-                DecisionOutcome::Deny,
-                DenialReason::BudgetExceeded,
-                now,
-            );
-        }
+        let (ancestors, requested_budget) =
+            match evaluate_authority(&transaction, &capability, request, now)? {
+                AuthorityEvaluation::Deny(reason) => {
+                    return commit_decision(
+                        transaction,
+                        Some(capability.id),
+                        &handle_hash,
+                        request,
+                        DecisionOutcome::Deny,
+                        reason,
+                        now,
+                    );
+                }
+                AuthorityEvaluation::Allow {
+                    ancestors,
+                    requested_budget,
+                } => (ancestors, requested_budget),
+            };
 
         for ancestor in &ancestors {
             consume_counter(&transaction, ancestor, requested_budget, now)?;
@@ -713,7 +613,7 @@ impl fmt::Debug for CapabilityAuthorizer {
             .field("handle", &self.handle)
             .field("subject", &self.subject)
             .field("budget_units", &self.budget_units)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -888,7 +788,7 @@ fn insert_capability(
     delegated_from_id: Option<CapabilityId>,
 ) -> Result<IssuedCapability, CapabilityError> {
     let capability_id = CapabilityId::new();
-    let handle = CapabilityHandle::generate();
+    let handle = CapabilityHandle::generate()?;
     transaction.execute(
         "INSERT INTO capabilities \
          (id, session_id, branch_id, subject, action, resource, constraints_json, handle_hash, \
@@ -924,13 +824,19 @@ fn validate_attenuation(
     child: &ValidatedIssue,
     now: i64,
 ) -> Result<(), CapabilityError> {
-    if parent.status != CapabilityStatus::Active {
+    if direct_state_denial(transaction, parent, now)?.is_some() {
         return Err(CapabilityError::InactiveParentCapability);
     }
-    if parent
-        .expires_at_unix_ms
-        .is_some_and(|expires| now >= expires)
+    let ancestors = load_ancestors(transaction, parent.id)?;
+    if ancestors
+        .first()
+        .is_none_or(|ancestor| ancestor.id != parent.id)
     {
+        return Err(CapabilityError::CorruptRecord {
+            field: "capability_ancestry",
+        });
+    }
+    if ancestor_denial(transaction, &ancestors, now)?.is_some() {
         return Err(CapabilityError::InactiveParentCapability);
     }
     if parent.session_id != child.session_id {
@@ -990,6 +896,80 @@ fn require_narrower_limit(
     }
 }
 
+enum AuthorityEvaluation {
+    Deny(DenialReason),
+    Allow {
+        ancestors: Vec<StoredCapability>,
+        requested_budget: i64,
+    },
+}
+
+fn evaluate_authority(
+    transaction: &Transaction<'_>,
+    capability: &StoredCapability,
+    request: &CapabilityUse,
+    now: i64,
+) -> Result<AuthorityEvaluation, CapabilityError> {
+    if let Some(reason) = binding_denial(capability, request) {
+        return Ok(AuthorityEvaluation::Deny(reason));
+    }
+    if let Some(reason) = direct_state_denial(transaction, capability, now)? {
+        return Ok(AuthorityEvaluation::Deny(reason));
+    }
+
+    let current_policy = current_policy(transaction, capability.session_id, capability.branch_id)?;
+    let policy_reason = match current_policy {
+        None => Some(DenialReason::PolicyUnavailable),
+        Some(current) if current != capability.policy_revision => Some(DenialReason::PolicyStale),
+        Some(current) if current != i64_from_u64("policy_revision", request.policy_revision)? => {
+            Some(DenialReason::PolicyRevisionMismatch)
+        }
+        Some(_) => None,
+    };
+    if let Some(reason) = policy_reason {
+        return Ok(AuthorityEvaluation::Deny(reason));
+    }
+
+    let ancestors = load_ancestors(transaction, capability.id)?;
+    if ancestors
+        .first()
+        .is_none_or(|ancestor| ancestor.id != capability.id)
+    {
+        return Ok(AuthorityEvaluation::Deny(DenialReason::CorruptAuthority));
+    }
+    if let Some(reason) = ancestor_denial(transaction, &ancestors, now)? {
+        return Ok(AuthorityEvaluation::Deny(reason));
+    }
+
+    let already_authorized = transaction
+        .query_row(
+            "SELECT 1 FROM capability_authorizations \
+             WHERE capability_id = ?1 AND request_id = ?2",
+            params![capability.id.to_string(), request.request_id],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if already_authorized {
+        return Ok(AuthorityEvaluation::Deny(
+            DenialReason::RequestAlreadyAuthorized,
+        ));
+    }
+
+    let requested_budget = i64_from_u64("budget_units", request.budget_units)?;
+    if ancestors.iter().any(|ancestor| {
+        ancestor
+            .remaining_budget_units
+            .is_some_and(|remaining| remaining < requested_budget)
+    }) {
+        return Ok(AuthorityEvaluation::Deny(DenialReason::BudgetExceeded));
+    }
+    Ok(AuthorityEvaluation::Allow {
+        ancestors,
+        requested_budget,
+    })
+}
+
 fn binding_denial(capability: &StoredCapability, request: &CapabilityUse) -> Option<DenialReason> {
     if capability.session_id != request.session_id {
         Some(DenialReason::SessionMismatch)
@@ -1017,6 +997,10 @@ fn direct_state_denial(
         CapabilityStatus::Consumed => return Ok(Some(DenialReason::Consumed)),
         CapabilityStatus::Active => {}
     }
+    if capability.remaining_uses == Some(0) || capability.remaining_budget_units == Some(0) {
+        mark_consumed(transaction, capability.id, now)?;
+        return Ok(Some(DenialReason::Consumed));
+    }
     if capability
         .expires_at_unix_ms
         .is_some_and(|expires| now >= expires)
@@ -1039,6 +1023,10 @@ fn ancestor_denial(
             CapabilityStatus::Expired => return Ok(Some(DenialReason::AncestorExpired)),
             CapabilityStatus::Consumed => return Ok(Some(DenialReason::AncestorConsumed)),
             CapabilityStatus::Active => {}
+        }
+        if ancestor.remaining_uses == Some(0) || ancestor.remaining_budget_units == Some(0) {
+            mark_consumed(transaction, ancestor.id, now)?;
+            return Ok(Some(DenialReason::AncestorConsumed));
         }
         if ancestor
             .expires_at_unix_ms
@@ -1091,6 +1079,19 @@ fn mark_expired(
 ) -> Result<(), CapabilityError> {
     transaction.execute(
         "UPDATE capabilities SET status = 'expired', updated_at_unix_ms = ?2 \
+         WHERE id = ?1 AND status = 'active'",
+        params![capability_id.to_string(), now],
+    )?;
+    Ok(())
+}
+
+fn mark_consumed(
+    transaction: &Transaction<'_>,
+    capability_id: CapabilityId,
+    now: i64,
+) -> Result<(), CapabilityError> {
+    transaction.execute(
+        "UPDATE capabilities SET status = 'consumed', updated_at_unix_ms = ?2 \
          WHERE id = ?1 AND status = 'active'",
         params![capability_id.to_string(), now],
     )?;
@@ -1294,12 +1295,16 @@ fn i64_from_u64(field: &'static str, value: u64) -> Result<i64, CapabilityError>
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
     let digest = Sha256::digest(bytes);
-    let mut encoded = String::with_capacity(64);
-    for byte in digest {
-        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
-        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    encode_hex(&digest)
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(*byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(*byte & 0x0f)]));
     }
     encoded
 }
@@ -1319,6 +1324,8 @@ pub enum CapabilityError {
     InvalidExpiration,
     #[error("trusted clock returned a pre-epoch timestamp")]
     InvalidClock,
+    #[error("operating-system randomness is unavailable")]
+    RandomnessUnavailable,
     #[error("capability policy has not been initialized for this branch")]
     PolicyNotInitialized,
     #[error("policy revision rollback from {current} to {requested} is forbidden")]

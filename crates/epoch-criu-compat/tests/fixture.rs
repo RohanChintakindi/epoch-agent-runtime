@@ -38,7 +38,11 @@ fn fixture_becomes_ready_and_exhibits_restorable_progress() {
 fn wait_for_file(path: &std::path::Path, timeout: Duration) {
     let started = Instant::now();
     while !path.is_file() {
-        assert!(started.elapsed() < timeout, "timed out waiting for {path:?}");
+        assert!(
+            started.elapsed() < timeout,
+            "timed out waiting for {}",
+            path.display()
+        );
         thread::sleep(Duration::from_millis(10));
     }
 }

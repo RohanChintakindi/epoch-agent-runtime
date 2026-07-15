@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use epoch_storage::{LATEST_SCHEMA_VERSION, Store};
+use epoch_storage::{LATEST_SCHEMA_VERSION, StorageError, Store};
 use rusqlite::{ErrorCode, params};
 
 const EXPECTED_TABLES: [&str; 15] = [
@@ -154,4 +154,115 @@ fn database_uses_wal_and_full_synchronous_mode() {
 
     assert_eq!(journal_mode, "wal");
     assert_eq!(synchronous, 2, "SQLite FULL synchronous mode is integer 2");
+}
+
+#[test]
+fn reopening_rejects_a_database_from_a_newer_binary() {
+    let database = TestDatabase::new("future-schema");
+    {
+        let store = Store::open(database.path()).expect("open database");
+        store
+            .connection()
+            .execute(
+                "INSERT INTO schema_migrations (version, name, checksum_sha256, applied_at_unix_ms) \
+                 VALUES (?1, 'future', 'future-checksum', 0)",
+                [LATEST_SCHEMA_VERSION + 1],
+            )
+            .expect("insert future migration marker");
+    }
+
+    let error = Store::open(database.path()).expect_err("future schema must be rejected");
+    assert!(matches!(
+        error,
+        StorageError::UnsupportedSchema {
+            found,
+            latest: LATEST_SCHEMA_VERSION
+        } if found == LATEST_SCHEMA_VERSION + 1
+    ));
+}
+
+#[test]
+fn reopening_detects_modified_migration_history() {
+    let database = TestDatabase::new("migration-drift");
+    {
+        let store = Store::open(database.path()).expect("open database");
+        store
+            .connection()
+            .execute(
+                "UPDATE schema_migrations SET checksum_sha256 = 'tampered' WHERE version = 1",
+                [],
+            )
+            .expect("tamper with migration metadata");
+    }
+
+    let error = Store::open(database.path()).expect_err("migration drift must be rejected");
+    assert!(matches!(error, StorageError::MigrationDrift { version: 1 }));
+}
+
+#[test]
+fn composite_foreign_keys_reject_cross_session_epochs() {
+    let database = TestDatabase::new("cross-session");
+    let store = Store::open(database.path()).expect("open database");
+    for session_id in ["session-a", "session-b"] {
+        store
+            .connection()
+            .execute(
+                "INSERT INTO sessions (id, state, created_at_unix_ms, updated_at_unix_ms) \
+                 VALUES (?1, 'created', 0, 0)",
+                [session_id],
+            )
+            .expect("insert session");
+    }
+    store
+        .connection()
+        .execute(
+            "INSERT INTO branches (id, session_id, state, created_at_unix_ms, updated_at_unix_ms) \
+             VALUES ('branch-a', 'session-a', 'created', 0, 0)",
+            [],
+        )
+        .expect("insert branch");
+
+    let error = store
+        .connection()
+        .execute(
+            "INSERT INTO epochs \
+             (id, session_id, branch_id, sequence, status, created_at_unix_ms) \
+             VALUES ('epoch-a', 'session-b', 'branch-a', 0, 'creating', 0)",
+            [],
+        )
+        .expect_err("epoch cannot claim another session's branch");
+    assert_eq!(
+        error.sqlite_error_code(),
+        Some(ErrorCode::ConstraintViolation)
+    );
+}
+
+#[test]
+fn concurrent_first_open_is_serialized_and_idempotent() {
+    use std::sync::{Arc, Barrier};
+
+    let database = TestDatabase::new("concurrent-open");
+    let path = Arc::new(database.path().to_owned());
+    let barrier = Arc::new(Barrier::new(2));
+    let handles = (0..2)
+        .map(|_| {
+            let path = Arc::clone(&path);
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                Store::open(path.as_path()).map(|store| store.schema_version())
+            })
+        })
+        .collect::<Vec<_>>();
+
+    for handle in handles {
+        assert_eq!(
+            handle
+                .join()
+                .expect("open thread must not panic")
+                .expect("concurrent open must succeed")
+                .expect("read schema version"),
+            LATEST_SCHEMA_VERSION
+        );
+    }
 }

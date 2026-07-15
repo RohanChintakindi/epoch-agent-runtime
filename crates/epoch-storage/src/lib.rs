@@ -16,6 +16,7 @@ struct Migration {
 }
 
 /// A configured connection to Epoch's trusted metadata database.
+#[derive(Debug)]
 pub struct Store {
     connection: Connection,
 }
@@ -56,6 +57,10 @@ fn apply_migrations(
 pub enum StorageError {
     #[error("SQLite storage is not implemented")]
     NotImplemented,
+    #[error("database schema version {found} is newer than supported version {latest}")]
+    UnsupportedSchema { found: i64, latest: i64 },
+    #[error("migration {version} does not match the migration compiled into this build")]
+    MigrationDrift { version: i64 },
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
 }

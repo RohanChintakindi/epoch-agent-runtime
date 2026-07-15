@@ -1,4 +1,8 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
+
+pub const PROC_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Parsed<T> {
@@ -180,7 +184,7 @@ impl EncodedValue {
     }
 }
 
-fn hex_bytes(bytes: &[u8]) -> String {
+pub(crate) fn hex_bytes(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut result = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -232,14 +236,14 @@ pub struct NamespaceIdentity {
     pub inode: u64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransportProtocol {
     Tcp,
     Udp,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkRole {
     Listener,
@@ -247,7 +251,7 @@ pub enum NetworkRole {
     Unconnected,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SocketState {
     Established,
@@ -265,13 +269,13 @@ pub enum SocketState {
     Unknown(u8),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct NetworkAddress {
     pub address: String,
     pub port: u16,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct NetworkEndpoint {
     pub protocol: TransportProtocol,
     pub role: NetworkRole,
@@ -279,4 +283,117 @@ pub struct NetworkEndpoint {
     pub local: NetworkAddress,
     pub remote: NetworkAddress,
     pub inode: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CollectorLimits {
+    pub max_processes: usize,
+    pub max_threads_per_process: usize,
+    pub max_fds_per_process: usize,
+    pub max_file_bytes: usize,
+    pub max_network_entries: usize,
+}
+
+impl Default for CollectorLimits {
+    fn default() -> Self {
+        Self {
+            max_processes: 1_024,
+            max_threads_per_process: 2_048,
+            max_fds_per_process: 4_096,
+            max_file_bytes: 8 * 1_024 * 1_024,
+            max_network_entries: 8_192,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProcManifest {
+    pub schema_version: u32,
+    pub root_pid: u32,
+    pub processes: Vec<ProcessSnapshot>,
+    pub diagnostics: Vec<CollectionDiagnostic>,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProcessSnapshot {
+    pub pid: u32,
+    pub parent_pid: Option<u32>,
+    pub status: Option<ProcessStatus>,
+    pub threads: Vec<ThreadSnapshot>,
+    pub maps: Option<MapsSummary>,
+    pub fds: Option<FdSummary>,
+    pub namespaces: Vec<NamespaceIdentity>,
+    pub cgroups: Vec<CgroupMembership>,
+    pub network_endpoints: Vec<NetworkEndpoint>,
+    pub executable: Option<ExecutableIdentity>,
+    pub command: Option<CommandIdentity>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ThreadSnapshot {
+    pub tid: u32,
+    pub name: Option<String>,
+    pub state: Option<ProcessState>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ExecutableIdentity {
+    pub target: EncodedValue,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CommandIdentity {
+    pub argument_count: usize,
+    pub sha256: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionIssueKind {
+    ProcessDisappeared,
+    PermissionDenied,
+    LimitExceeded,
+    Io,
+    Parse,
+    MalformedEntry,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionSection {
+    Discovery,
+    Status,
+    Threads,
+    Maps,
+    Fds,
+    Namespaces,
+    Cgroup,
+    Network,
+    Executable,
+    Command,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CollectionDiagnostic {
+    pub pid: Option<u32>,
+    pub tid: Option<u32>,
+    pub section: CollectionSection,
+    pub kind: CollectionIssueKind,
+    pub resource: String,
+    pub detail: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "outcome", content = "data", rename_all = "snake_case")]
+pub enum ProcCollection {
+    Collected(ProcManifest),
+    Unsupported(UnsupportedCollection),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UnsupportedCollection {
+    pub platform: String,
+    pub reason: String,
+    pub metadata: BTreeMap<String, String>,
 }

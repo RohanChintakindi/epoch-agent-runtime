@@ -1,6 +1,12 @@
 #![cfg(unix)]
 
-use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt as _, process::Command};
+use std::{
+    collections::BTreeMap,
+    fs,
+    os::unix::fs::{PermissionsExt as _, symlink},
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use epoch_blob::BlobHash;
 use epoch_checkpoint::{APPLICATION_CONTEXT_SCHEMA_VERSION, ApplicationContext, ResumeCursors};
@@ -32,7 +38,7 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn fixture_manifest(fixture: &TempDir, seed: u64) -> std::path::PathBuf {
+fn fixture_manifest(fixture: &TempDir, seed: u64) -> (PathBuf, PathBuf) {
     let safe_point_id = format!("safe-point-files-{seed:016x}");
     let state = FixtureState {
         seed,
@@ -100,16 +106,31 @@ fn fixture_manifest(fixture: &TempDir, seed: u64) -> std::path::PathBuf {
         .permissions();
     permissions.set_mode(0o700);
     fs::set_permissions(&script, permissions).expect("make script executable");
+    let workspace = fixture.path().join(format!("workspace-{seed}"));
+    fs::create_dir_all(workspace.join("nested/empty")).expect("create declared workspace");
+    fs::write(
+        workspace.join("answer.txt"),
+        format!("checkpoint payload {seed}\n"),
+    )
+    .expect("write workspace text");
+    fs::write(
+        workspace.join("nested/data.bin"),
+        [0, 1, 2, 0xff, seed as u8],
+    )
+    .expect("write workspace binary");
+    symlink("../answer.txt", workspace.join("nested/answer-link"))
+        .expect("write workspace symlink");
     let manifest = fixture.path().join(format!("recoverable-{seed}.toml"));
     fs::write(
         &manifest,
         format!(
-            "schema_version = 1\nname = \"epoch-test-agent\"\nexecutable = \"{}\"\n",
-            script.display()
+            "schema_version = 1\nname = \"epoch-test-agent\"\nexecutable = \"{}\"\nworking_directory = \"{}\"\n",
+            script.display(),
+            workspace.display()
         ),
     )
     .expect("write recoverable manifest");
-    manifest
+    (manifest, workspace)
 }
 
 fn epoch(fixture: &TempDir, arguments: &[&str]) -> std::process::Output {
@@ -131,8 +152,8 @@ fn successful_json(output: &std::process::Output, operation: &str) -> serde_json
     })
 }
 
-fn run_fixture(fixture: &TempDir, seed: u64) -> (String, String) {
-    let manifest = fixture_manifest(fixture, seed);
+fn run_fixture(fixture: &TempDir, seed: u64) -> (String, String, PathBuf) {
+    let (manifest, workspace) = fixture_manifest(fixture, seed);
     let run = Command::new(env!("CARGO_BIN_EXE_epoch"))
         .current_dir(fixture.path())
         .args(["run", "--manifest"])
@@ -140,10 +161,12 @@ fn run_fixture(fixture: &TempDir, seed: u64) -> (String, String) {
         .output()
         .expect("run fixture");
     let run = successful_json(&run, "run");
-    (
+    let identifiers = (
         run["session_id"].as_str().expect("session ID").to_owned(),
         run["branch_id"].as_str().expect("branch ID").to_owned(),
-    )
+        workspace,
+    );
+    identifiers
 }
 
 fn assert_pre_checkpoint_inspection(fixture: &TempDir, session: &str, branch: &str) {
@@ -195,21 +218,86 @@ fn checkpoint(fixture: &TempDir, session: &str, branch: &str) -> String {
     assert_eq!(checkpoint["result"]["boundary_sequence"], 2);
     assert_eq!(
         checkpoint["result"]["restore_scope"],
-        "application_context_only"
+        "application_and_workspace"
     );
+    assert_eq!(checkpoint["result"]["process_checkpointed"], false);
+    assert_eq!(
+        checkpoint["result"]["workspace"]["backend"],
+        "full-copy-cas-v1"
+    );
+    assert!(checkpoint["result"]["workspace"]["manifest_hash"].is_string());
     checkpoint["result"]["epoch_id"]
         .as_str()
         .expect("epoch ID")
         .to_owned()
 }
 
-fn restore_and_inspect(fixture: &TempDir, session: &str, epoch_id: &str) {
-    let restore = successful_json(&epoch(fixture, &["restore", epoch_id]), "restore");
+fn restore_and_inspect(
+    fixture: &TempDir,
+    session: &str,
+    epoch_id: &str,
+    source: &Path,
+    target: &Path,
+) {
+    fs::write(source.join("answer.txt"), b"mutated after checkpoint\n")
+        .expect("mutate source text");
+    fs::remove_file(source.join("nested/data.bin")).expect("remove source binary");
+    fs::write(source.join("not-in-checkpoint.txt"), b"later file")
+        .expect("add source file after checkpoint");
+
+    let restore = Command::new(env!("CARGO_BIN_EXE_epoch"))
+        .current_dir(fixture.path())
+        .args(["restore", epoch_id, "--workspace-target"])
+        .arg(target)
+        .output()
+        .expect("restore composite epoch");
+    let restore = successful_json(&restore, "restore");
     assert_eq!(restore["operation"], "restore");
     assert_eq!(restore["outcome"], "supported");
     assert_eq!(restore["result"]["activated"], true);
     assert_eq!(restore["result"]["process_restored"], false);
-    assert_eq!(restore["result"]["workspace_restored"], false);
+    assert_eq!(restore["result"]["workspace_restored"], true);
+    assert_eq!(
+        restore["result"]["workspace_target"],
+        target.display().to_string()
+    );
+    assert_eq!(
+        fs::read(target.join("answer.txt")).expect("restored workspace text"),
+        fs::read(source.join("answer.txt")).map_or_else(
+            |_| unreachable!(),
+            |_| format!(
+                "checkpoint payload {}\n",
+                source
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .trim_start_matches("workspace-")
+            )
+            .into_bytes()
+        )
+    );
+    assert_eq!(
+        fs::read(target.join("nested/data.bin")).expect("restored workspace binary")[..4],
+        [0, 1, 2, 0xff]
+    );
+    assert!(target.join("nested/empty").is_dir());
+    assert_eq!(
+        fs::read_link(target.join("nested/answer-link")).expect("restored symlink"),
+        Path::new("../answer.txt")
+    );
+    assert!(!target.join("not-in-checkpoint.txt").exists());
+
+    let no_clobber = Command::new(env!("CARGO_BIN_EXE_epoch"))
+        .current_dir(fixture.path())
+        .args(["restore", epoch_id, "--workspace-target"])
+        .arg(target)
+        .output()
+        .expect("attempt no-clobber restore");
+    assert!(!no_clobber.status.success());
+    let no_clobber: serde_json::Value =
+        serde_json::from_slice(&no_clobber.stdout).expect("no-clobber JSON");
+    assert_eq!(no_clobber["outcome"], "failed");
+    assert_eq!(no_clobber["issue"]["code"], "target_exists");
 
     let status = successful_json(&epoch(fixture, &["status", session]), "status");
     assert_eq!(status["session_id"], session);
@@ -235,6 +323,7 @@ fn assert_identical_diff(fixture: &TempDir, epoch_id: &str) {
     assert_eq!(diff["result"]["before_epoch_id"], epoch_id);
     assert_eq!(diff["result"]["after_epoch_id"], epoch_id);
     assert_eq!(diff["result"]["diff"]["identical"], true);
+    assert_eq!(diff["result"]["workspace"]["identical"], true);
     assert_eq!(
         diff["result"]["diff"]["unsupported_sections"][0]["section"],
         "capabilities"
@@ -247,14 +336,15 @@ fn cli_week_two_flow_is_restart_safe_across_three_repetitions() {
     let mut sessions = std::collections::BTreeSet::new();
 
     for seed in [73_u64, 74, 75] {
-        let (session, branch) = run_fixture(&fixture, seed);
+        let (session, branch, workspace) = run_fixture(&fixture, seed);
         assert!(
             sessions.insert(session.clone()),
             "session IDs must be fresh"
         );
         assert_pre_checkpoint_inspection(&fixture, &session, &branch);
         let epoch_id = checkpoint(&fixture, &session, &branch);
-        restore_and_inspect(&fixture, &session, &epoch_id);
+        let restore_target = fixture.path().join(format!("restored-{seed}"));
+        restore_and_inspect(&fixture, &session, &epoch_id, &workspace, &restore_target);
         assert_identical_diff(&fixture, &epoch_id);
     }
 

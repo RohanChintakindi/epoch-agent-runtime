@@ -210,6 +210,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-effects"
+version = "0.1.0"
+dependencies = [
+ "epoch-blob",
+ "epoch-core",
+ "epoch-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "epoch-events"
 version = "0.1.0"
 dependencies = [

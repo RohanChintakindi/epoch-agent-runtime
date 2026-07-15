@@ -162,11 +162,13 @@ impl DirectSupervisor {
         }
         let state_root = fs::canonicalize(requested).map_err(|error| unavailable(&error))?;
         let database_path = state_root.join("state.db");
+        let blob_root = state_root.join("blobs");
         Store::open(&database_path).map_err(|error| unavailable(&error))?;
-        let journal = EventJournal::open(&database_path, state_root.join("blobs"))
+        let journal = EventJournal::open(&database_path, &blob_root)
             .map_err(|error| unavailable(&error))?;
         Ok(Self {
             database_path,
+            blob_root,
             journal,
         })
     }

@@ -3,9 +3,7 @@
 use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt as _, process::Command};
 
 use epoch_blob::BlobHash;
-use epoch_checkpoint::{
-    APPLICATION_CONTEXT_SCHEMA_VERSION, ApplicationContext, ResumeCursors,
-};
+use epoch_checkpoint::{APPLICATION_CONTEXT_SCHEMA_VERSION, ApplicationContext, ResumeCursors};
 use serde::Serialize;
 use tempfile::TempDir;
 
@@ -98,7 +96,9 @@ fn fixture_manifest(fixture: &TempDir) -> std::path::PathBuf {
         ),
     )
     .expect("write recoverable agent");
-    let mut permissions = fs::metadata(&script).expect("script metadata").permissions();
+    let mut permissions = fs::metadata(&script)
+        .expect("script metadata")
+        .permissions();
     permissions.set_mode(0o700);
     fs::set_permissions(&script, permissions).expect("make script executable");
     let manifest = fixture.path().join("recoverable.toml");
@@ -131,7 +131,11 @@ fn cli_run_checkpoint_restore_status_is_restart_safe_json() {
         .arg(manifest)
         .output()
         .expect("run fixture");
-    assert!(run.status.success(), "{}", String::from_utf8_lossy(&run.stderr));
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
     let run: serde_json::Value = serde_json::from_slice(&run.stdout).expect("run JSON");
     let session = run["session_id"].as_str().expect("session ID");
     let branch = run["branch_id"].as_str().expect("branch ID");
@@ -163,9 +167,7 @@ fn cli_run_checkpoint_restore_status_is_restart_safe_json() {
         checkpoint["result"]["restore_scope"],
         "application_context_only"
     );
-    let epoch_id = checkpoint["result"]["epoch_id"]
-        .as_str()
-        .expect("epoch ID");
+    let epoch_id = checkpoint["result"]["epoch_id"].as_str().expect("epoch ID");
 
     let restore = epoch(&fixture, &["restore", epoch_id]);
     assert!(
@@ -173,8 +175,7 @@ fn cli_run_checkpoint_restore_status_is_restart_safe_json() {
         "{}",
         String::from_utf8_lossy(&restore.stderr)
     );
-    let restore: serde_json::Value =
-        serde_json::from_slice(&restore.stdout).expect("restore JSON");
+    let restore: serde_json::Value = serde_json::from_slice(&restore.stdout).expect("restore JSON");
     assert_eq!(restore["operation"], "restore");
     assert_eq!(restore["outcome"], "supported");
     assert_eq!(restore["result"]["activated"], true);

@@ -22,13 +22,14 @@ fn real_criu_matrix_preserves_environment_rows_logs_and_verified_success() {
         criu,
         PathBuf::from(env!("CARGO_BIN_EXE_epoch-criu-fixture")),
         RunLimits::new(30_000, 30_000, 256 * 1024).expect("limits"),
-        ScalingPlan::new(vec![4 * 1024 * 1024], vec![1]).expect("scaling"),
+        ScalingPlan::new(vec![4 * 1024 * 1024, 64 * 1024 * 1024], vec![2, 4]).expect("scaling"),
     )
     .expect("configuration");
     let evidence = CompatibilityRunner::new(config).run().expect("matrix run");
     let report = evidence.report();
+    println!("{}", report.to_stable_json().expect("report JSON"));
 
-    assert_eq!(report.rows.len(), Scenario::declared().len());
+    assert_eq!(report.rows.len(), 13);
     assert!(
         report
             .environment
@@ -58,6 +59,21 @@ fn real_criu_matrix_preserves_environment_rows_logs_and_verified_success() {
         DiagnosticCode::ExternalTcpUnsupported
     );
     assert!(external.dump.is_none() && external.restore.is_none());
+    for scenario in [
+        Scenario::SleepingProcess,
+        Scenario::OpenRegularFile,
+        Scenario::ProcessTree,
+        Scenario::LoopbackSocket,
+        Scenario::WorkspaceMutation,
+    ] {
+        assert!(
+            report
+                .rows
+                .iter()
+                .any(|row| row.scenario == scenario && row.status == RowStatus::Supported),
+            "no verified supported row for {scenario:?}"
+        );
+    }
     for row in report
         .rows
         .iter()

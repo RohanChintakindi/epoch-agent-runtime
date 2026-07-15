@@ -15,6 +15,7 @@ epoch-core = { path = "../epoch-core" }
 epoch-supervisor = { path = "../epoch-supervisor" }
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 epoch-blob.workspace = true

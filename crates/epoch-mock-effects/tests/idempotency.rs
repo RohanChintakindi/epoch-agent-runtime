@@ -94,3 +94,41 @@ fn committed_operations_survive_service_restart() {
         Some(committed)
     );
 }
+
+#[test]
+fn concurrent_retries_commit_one_identical_remote_result() {
+    use std::sync::{Arc, Barrier};
+
+    let directory = TempDir::new().expect("temporary directory");
+    let database = Arc::new(directory.path().join("effects.db"));
+    MockEffectStore::open(database.as_path()).expect("initialize store");
+    let request = Arc::new(email_request("email-005", "alice@example.test"));
+    let barrier = Arc::new(Barrier::new(8));
+    let workers = (0..8)
+        .map(|_| {
+            let database = Arc::clone(&database);
+            let request = Arc::clone(&request);
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                let mut store = MockEffectStore::open(database.as_path()).expect("open store");
+                barrier.wait();
+                let DeliveryOutcome::Respond(committed) = store
+                    .submit(&request, false)
+                    .expect("concurrent idempotent submission")
+                else {
+                    panic!("ordinary delivery must respond");
+                };
+                committed
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let committed = workers
+        .into_iter()
+        .map(|worker| worker.join().expect("worker must not panic"))
+        .collect::<Vec<_>>();
+    assert!(
+        committed.windows(2).all(|pair| pair[0] == pair[1]),
+        "every retry must observe the same committed result"
+    );
+}

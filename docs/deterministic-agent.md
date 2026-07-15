@@ -47,7 +47,8 @@ or accidental command from turning the fixture into an unbounded memory workload
 - stdout contains only newline-terminated version 1 protocol records. Every record is flushed before
   the next action, so a supervisor can retain the valid prefix after a crash.
 - stderr contains one JSON `RunSummary` on success. It includes normalized state, `state_hash`,
-  `normalized_trace_hash`, and `event_count`.
+  `normalized_trace_hash`, `event_count`, and the raw observable `checkpoint_context` bound to the
+  completed safe point. The supervisor captures these bytes before deciding whether to checkpoint.
 - No raw model/tool content, credentials, host paths, PIDs, or listener ports are written to the
   boundary stream.
 

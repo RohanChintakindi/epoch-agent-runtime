@@ -3,6 +3,7 @@
 use std::{fs, os::unix::fs::PermissionsExt as _};
 
 use epoch_blob::BlobStore;
+use epoch_checkpoint::{APPLICATION_CONTEXT_MEDIA_TYPE, ApplicationContext};
 use epoch_core::{BranchId, SessionId};
 use epoch_storage::Store;
 use epoch_supervisor::{
@@ -170,6 +171,57 @@ fn restore_reports_future_component_schema_as_unsupported() {
         panic!("future schema must be unsupported")
     };
     assert_eq!(issue.code, RecoveryCode::SchemaVersion);
+}
+
+#[test]
+fn restore_rejects_valid_json_that_is_not_the_canonical_context_encoding() {
+    let fixture = TempDir::new().expect("create noncanonical fixture");
+    let (state_root, _, _, _, checkpoint) = run_and_checkpoint(&fixture, 61);
+    let blobs = BlobStore::open(state_root.join("blobs")).expect("open blob store");
+    let canonical = blobs
+        .read(&checkpoint.component_hash)
+        .expect("read canonical checkpoint");
+    let context: ApplicationContext =
+        serde_json::from_slice(&canonical).expect("decode canonical checkpoint");
+    let pretty = serde_json::to_vec_pretty(&context).expect("pretty checkpoint JSON");
+    let replacement = blobs
+        .put(&pretty, APPLICATION_CONTEXT_MEDIA_TYPE)
+        .expect("store noncanonical fixture");
+    let store = Store::open(state_root.join("state.db")).expect("open metadata store");
+    store
+        .connection()
+        .execute(
+            "INSERT INTO blobs (hash, byte_length, media_type, created_at_unix_ms) \
+             VALUES (?1, ?2, ?3, 1)",
+            (
+                replacement.hash.to_string(),
+                i64::try_from(replacement.length).expect("fixture length"),
+                APPLICATION_CONTEXT_MEDIA_TYPE,
+            ),
+        )
+        .expect("register noncanonical fixture");
+    store
+        .connection()
+        .execute(
+            "UPDATE snapshot_components \
+             SET blob_hash = ?2, checksum_sha256 = ?2, byte_length = ?3 \
+             WHERE epoch_id = ?1",
+            (
+                checkpoint.epoch_id.to_string(),
+                replacement.hash.to_string(),
+                i64::try_from(replacement.length).expect("fixture length"),
+            ),
+        )
+        .expect("point component at noncanonical fixture");
+    drop(store);
+
+    let supervisor = DirectSupervisor::open(&state_root).expect("restart supervisor");
+    let RecoveryOutcome::Failed(issue) =
+        supervisor.restore_application(checkpoint.epoch_id, ApplicationRestoreMode::Activate)
+    else {
+        panic!("noncanonical context must fail restore")
+    };
+    assert_eq!(issue.code, RecoveryCode::NonCanonical);
 }
 
 #[test]

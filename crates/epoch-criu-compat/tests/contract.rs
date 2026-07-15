@@ -55,6 +55,10 @@ fn unavailable_criu_preserves_every_row_without_false_success() {
         .run()
         .expect("unsupported report is still a successful experiment run");
     assert_eq!(evidence.report().schema_version, 1);
+    assert!(
+        evidence.report().code_revision == "unavailable"
+            || evidence.report().code_revision.len() == 40
+    );
     assert_eq!(evidence.report().rows.len(), Scenario::declared().len());
     assert!(evidence.report().rows.iter().all(|row| {
         let expected_code = if row.scenario == Scenario::ExternalTcp {
@@ -82,6 +86,7 @@ fn stable_json_and_markdown_keep_unsupported_rows_and_thresholds() {
         assert!(first.contains(scenario.as_str()));
     }
     let markdown = evidence.report().to_markdown();
+    assert!(markdown.contains("Code revision"));
     assert!(markdown.contains("| Scenario | Memory bytes | Processes | Status |"));
     assert!(markdown.contains("1000 ms"));
     assert!(markdown.contains("3000 ms"));

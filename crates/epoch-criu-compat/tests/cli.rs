@@ -32,6 +32,8 @@ fn cli_writes_complete_evidence_for_structured_unsupported_host() {
     )
     .expect("JSON");
     assert_eq!(report["schema_version"], 1);
+    assert!(report["code_revision"].is_string());
+    assert!(report["code_dirty"].is_boolean());
     assert!(
         report["rows"]
             .as_array()

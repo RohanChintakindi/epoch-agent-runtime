@@ -35,6 +35,7 @@ epoch-capabilities = { path = "crates/epoch-capabilities" }
 epoch-checkpoint = { path = "crates/epoch-checkpoint" }
 epoch-core = { path = "crates/epoch-core" }
 epoch-effects = { path = "crates/epoch-effects" }
+epoch-performance-matrix = { path = "crates/epoch-performance-matrix" }
 epoch-sandbox = { path = "crates/epoch-sandbox" }
 epoch-storage = { path = "crates/epoch-storage" }
 epoch-workspace = { path = "crates/epoch-workspace" }

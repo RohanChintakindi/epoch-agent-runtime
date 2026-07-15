@@ -185,6 +185,7 @@ dependencies = [
  "epoch-checkpoint",
  "epoch-core",
  "epoch-effects",
+ "epoch-performance-matrix",
  "epoch-storage",
  "epoch-workspace",
  "rusqlite",

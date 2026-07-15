@@ -16,11 +16,18 @@ pub const MAX_WARMUPS: u32 = 10_000;
 pub const MAX_REPETITIONS: u32 = 100_000;
 
 pub use environment::EnvironmentError;
+pub use epoch_performance_matrix::{
+    BenchmarkEnvironment as FinalBenchmarkEnvironment, CowMatrixConfig as FinalCowMatrixConfig,
+    HostMemory as FinalHostMemory, IsolationConfig as FinalIsolationConfig,
+    PerformanceConfig as FinalPerformanceConfig, PerformanceReport as FinalPerformanceReport,
+    discover_environment as discover_final_environment,
+};
 pub use suites::{
     CheckpointSuiteConfig, CheckpointSuiteEvidence, CompatibilityMatrix, CowConfig, CowEvidence,
     CowSummary, Decision, DecisionEvidence, DecisionThresholds, EvidenceBundle, EvidenceKind,
-    FaultMatrix, SuiteError, SuiteName, SuiteRequest, run_checkpoint_suite,
-    run_compatibility_matrix, run_cow_experiment, run_fault_matrix, run_suite,
+    FaultMatrix, PerformanceSuiteRequest, SuiteError, SuiteName, SuiteRequest,
+    run_checkpoint_suite, run_compatibility_matrix, run_cow_experiment, run_fault_matrix,
+    run_suite,
 };
 
 /// Whether boundary tracing is enabled for a benchmark run.

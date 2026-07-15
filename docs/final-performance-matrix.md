@@ -1,9 +1,9 @@
 # Final COW and isolation performance matrix
 
-`epoch-performance-matrix` closes the two required Phase E evidence gaps without changing the
-effect, capability, demo, supervisor, or existing benchmark schemas. It is both a Rust library and
-a standalone evidence command. Every configured point remains in JSON, CSV, and Markdown even when
-the host cannot run it.
+`epoch-performance-matrix` closes the two required Phase E evidence gaps. It is both a Rust library
+and a standalone evidence command, and `epoch bench run all` embeds its report in the version-2
+benchmark evidence schema. Every configured point remains in JSON, CSV, and Markdown even when the
+host cannot run it.
 
 ## Evidence contract
 
@@ -49,8 +49,9 @@ target/debug/epoch-performance-matrix \
 
 macOS retains all 60 COW rows as `platform_not_linux`. If isolation fixture paths are not supplied,
 both isolation rows are explicitly `fixture_unconfigured`. The checked-in
-[macOS evidence](evidence/performance-macos-arm64/RESULTS.md) demonstrates this contract at the
-source revision recorded in its report.
+[macOS evidence](evidence/performance-macos-arm64/RESULTS.md) is a historical standalone baseline
+pinned to source revision `26b389efa9ac0dc42095b63833d3039a3b1d6a67`. Final acceptance must use
+a new report whose embedded revision matches the clean candidate.
 
 ## Frozen Oracle ARM64 run
 
@@ -100,8 +101,9 @@ Copy the complete directory without regenerating individual files. `report.json`
 ## Acceptance integration
 
 The library entry points are `PerformanceRunner::new(...).run()`, `run_cow_matrix`,
-`run_isolation_comparison`, and `write_artifacts`. An `epoch bench run all` adapter can call these
-directly after adding the workspace dependency. Until that thin adapter lands, the stable binary
-above is the required performance subcommand in the final runbook. It requires an exact 40-character
-lowercase revision and refuses to overwrite an evidence directory.
-
+`run_isolation_comparison`, and `write_artifacts`. `epoch bench run all` now calls the library
+directly and embeds the 60 COW rows plus the isolation comparison under `performance`; the same
+rows are flattened into its CSV and summarized in its Markdown report. The standalone binary stays
+available for a separately checksummed performance-only artifact. Both paths require an exact
+40-character lowercase revision, and the standalone writer refuses to overwrite an evidence
+directory.

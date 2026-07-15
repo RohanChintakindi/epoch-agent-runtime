@@ -55,6 +55,16 @@ fn performance_request() -> PerformanceSuiteRequest {
     }
 }
 
+fn assert_final_performance(report: &epoch_bench::EvidenceBundle) {
+    let performance = report
+        .performance
+        .as_ref()
+        .expect("final performance matrix");
+    assert_eq!(performance.cow.rows.len(), 60);
+    assert_eq!(performance.cow.summary.total_rows, 60);
+    assert_eq!(performance.isolation.status, "unsupported");
+}
+
 #[test]
 fn collects_and_validates_real_environment_metadata() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -230,10 +240,7 @@ fn all_suite_emits_stable_json_csv_and_threshold_backed_decisions() {
     };
     let report = run_suite(&request, environment()).expect("all suite");
 
-    let performance = report.performance.as_ref().expect("final performance matrix");
-    assert_eq!(performance.cow.rows.len(), 60);
-    assert_eq!(performance.cow.summary.total_rows, 60);
-    assert_eq!(performance.isolation.status, "unsupported");
+    assert_final_performance(&report);
 
     let cow_matrix = report.cow.as_ref().expect("COW matrix");
     assert!(cow_matrix.points.len() >= 4);

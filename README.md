@@ -59,6 +59,9 @@ The [Week 4 benchmark guide](docs/benchmarking.md) documents the real checkpoint
 COW-memory, and fault suites; frozen thresholds; stable artifacts; safety bounds; and the exact
 Oracle ARM64 evidence command.
 
+The [final performance matrix](docs/final-performance-matrix.md) defines the complete 60-key COW
+campaign and direct-vs-Linux cold/warm isolation comparison embedded by `epoch bench run all`.
+
 The [CRIU compatibility guide](docs/criu-compatibility.md) documents the standalone runner,
 structured matrix, Oracle ARM64 evidence, preliminary decision gates, and integration limitations.
 

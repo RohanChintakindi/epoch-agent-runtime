@@ -11,6 +11,7 @@ epoch-capabilities.workspace = true
 epoch-checkpoint.workspace = true
 epoch-core.workspace = true
 epoch-effects.workspace = true
+epoch-performance-matrix.workspace = true
 epoch-storage.workspace = true
 epoch-workspace.workspace = true
 rusqlite.workspace = true

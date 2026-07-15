@@ -244,6 +244,16 @@ enum BenchCommand {
         cow_dirty_basis_points: u32,
         #[arg(long, default_value_t = 3)]
         cow_repetitions: u32,
+        #[arg(long, default_value_t = 3)]
+        performance_repetitions: u16,
+        #[arg(long, default_value_t = 5)]
+        isolation_repetitions: u16,
+        #[arg(long, default_value_t = 4 * 1024 * 1024 * 1024_u64)]
+        performance_max_memory_bytes: u64,
+        #[arg(long)]
+        performance_sandbox_helper: Option<PathBuf>,
+        #[arg(long)]
+        performance_workspace: Option<PathBuf>,
     },
     Report {
         run: String,
@@ -773,6 +783,11 @@ fn execute_bench(command: BenchCommand) -> ExitCode {
             cow_children,
             cow_dirty_basis_points,
             cow_repetitions,
+            performance_repetitions,
+            isolation_repetitions,
+            performance_max_memory_bytes,
+            performance_sandbox_helper,
+            performance_workspace,
         } => bench::run(&bench::RunOptions {
             suite,
             root,
@@ -785,6 +800,11 @@ fn execute_bench(command: BenchCommand) -> ExitCode {
             cow_children,
             cow_dirty_basis_points,
             cow_repetitions,
+            performance_repetitions,
+            isolation_repetitions,
+            performance_max_memory_bytes,
+            performance_sandbox_helper,
+            performance_workspace,
         }),
         BenchCommand::Report { run, root, format } => bench::report(&run, &root, format),
     }

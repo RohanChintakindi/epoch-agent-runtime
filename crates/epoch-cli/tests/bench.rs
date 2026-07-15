@@ -24,6 +24,40 @@ fn run_checkpoint(root: &std::path::Path) -> std::process::Output {
         .expect("run checkpoint benchmark")
 }
 
+fn run_all(root: &std::path::Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_epoch"))
+        .current_dir(root.parent().expect("benchmark root parent"))
+        .args([
+            "bench",
+            "run",
+            "all",
+            "--root",
+            root.to_str().expect("UTF-8 root"),
+            "--warmups",
+            "0",
+            "--repetitions",
+            "1",
+            "--fixture-bytes",
+            "4096",
+            "--fixture-files",
+            "2",
+            "--cow-allocation-bytes",
+            "4194304",
+            "--cow-children",
+            "1",
+            "--cow-repetitions",
+            "1",
+            "--performance-repetitions",
+            "1",
+            "--isolation-repetitions",
+            "2",
+            "--performance-max-memory-bytes",
+            "1",
+        ])
+        .output()
+        .expect("run all benchmark")
+}
+
 #[test]
 fn bench_run_persists_every_stable_artifact_and_report_reloads_it() {
     let temp = TempDir::new().expect("temp");
@@ -91,6 +125,40 @@ fn bench_report_supports_csv_and_markdown_without_recomputing() {
         assert!(report.status.success());
         assert!(String::from_utf8_lossy(&report.stdout).starts_with(prefix));
     }
+}
+
+#[test]
+fn bench_run_all_embeds_the_final_60_row_performance_campaign() {
+    let temp = TempDir::new().expect("temp");
+    let root = temp.path().join("benchmarks");
+    let output = run_all(&root);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let summary: serde_json::Value = serde_json::from_slice(&output.stdout).expect("run summary");
+    let run_id = summary["run_id"].as_str().expect("run ID");
+    let report: serde_json::Value = serde_json::from_slice(
+        &fs::read(root.join(run_id).join("report.json")).expect("report JSON"),
+    )
+    .expect("parse report JSON");
+    assert_eq!(report["schema_version"], 2);
+    assert_eq!(
+        report["performance"]["cow"]["rows"]
+            .as_array()
+            .unwrap()
+            .len(),
+        60
+    );
+    assert!(report["performance"]["isolation"].is_object());
+
+    let csv = fs::read_to_string(root.join(run_id).join("samples.csv")).expect("samples CSV");
+    assert!(csv.contains("final_cow"));
+    assert!(csv.contains("final_isolation"));
+    let markdown =
+        fs::read_to_string(root.join(run_id).join("RESULTS.md")).expect("results Markdown");
+    assert!(markdown.contains("## Final performance matrix"));
 }
 
 #[test]

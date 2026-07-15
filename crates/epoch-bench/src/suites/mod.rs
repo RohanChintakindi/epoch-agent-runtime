@@ -4,6 +4,10 @@ mod fault;
 
 use std::{collections::BTreeMap, fmt::Write as _, path::PathBuf, str::FromStr};
 
+use epoch_performance_matrix::{
+    BenchmarkEnvironment as FinalBenchmarkEnvironment, PerformanceConfig,
+    PerformanceReport as FinalPerformanceReport, PerformanceRunner,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -231,8 +235,19 @@ pub struct SuiteRequest {
     pub checkpoint: CheckpointSuiteConfig,
     /// COW configuration.
     pub cow: CowConfig,
+    /// Full 60-key COW and direct-vs-Linux isolation request, required by `all`.
+    pub performance: Option<PerformanceSuiteRequest>,
     /// Predeclared decision thresholds.
     pub thresholds: DecisionThresholds,
+}
+
+/// Configuration and discovered host facts for the final performance campaign.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PerformanceSuiteRequest {
+    /// Frozen matrix and isolation configuration.
+    pub config: PerformanceConfig,
+    /// Revision-pinned host memory and kernel facts.
+    pub environment: FinalBenchmarkEnvironment,
 }
 
 /// One correctness validation performed alongside timed samples.
@@ -419,6 +434,8 @@ pub struct EvidenceBundle {
     pub compatibility: Option<CompatibilityMatrix>,
     /// COW suite when requested.
     pub cow: Option<CowMatrixEvidence>,
+    /// Full final COW and isolation performance evidence for `all`.
+    pub performance: Option<FinalPerformanceReport>,
     /// Fault matrix when requested.
     pub faults: Option<FaultMatrix>,
     /// Derived keep/narrow/kill decisions.
@@ -457,6 +474,7 @@ impl EvidenceBundle {
         append_checkpoint_csv(&mut output, self)?;
         append_compatibility_csv(&mut output, self)?;
         append_cow_csv(&mut output, self)?;
+        append_performance_csv(&mut output, self)?;
         append_fault_csv(&mut output, self)?;
         Ok(output)
     }
@@ -496,6 +514,20 @@ impl EvidenceBundle {
                 output,
                 "| {:?} | {} | {} |",
                 decision.decision, decision.mechanism, evidence
+            );
+        }
+        if let Some(performance) = &self.performance {
+            let _ = writeln!(
+                output,
+                "\n## Final performance matrix\n\nCOW rows: {} total, {} supported, {} skipped, {} unsupported, {} failed. Isolation comparison: `{}` (direct `{}`, Linux `{}`).",
+                performance.cow.summary.total_rows,
+                performance.cow.summary.supported_rows,
+                performance.cow.summary.skipped_rows,
+                performance.cow.summary.unsupported_rows,
+                performance.cow.summary.failed_rows,
+                performance.isolation.status,
+                performance.isolation.direct.status,
+                performance.isolation.linux.status,
             );
         }
         output.push_str(
@@ -604,6 +636,95 @@ fn append_cow_csv(output: &mut String, bundle: &EvidenceBundle) -> serde_json::R
     Ok(())
 }
 
+fn append_performance_csv(output: &mut String, bundle: &EvidenceBundle) -> serde_json::Result<()> {
+    let Some(performance) = &bundle.performance else {
+        return Ok(());
+    };
+    for row in &performance.cow.rows {
+        let case = format!(
+            "{}-{}-{}",
+            row.key.allocation_bytes, row.key.fanout, row.key.dirty_basis_points
+        );
+        if row.samples.is_empty() {
+            csv_row(
+                output,
+                bundle,
+                CsvRow {
+                    section: "final_cow",
+                    case: &case,
+                    status: &row.status,
+                    elapsed_ns: 0,
+                    message: row
+                        .diagnostic
+                        .as_ref()
+                        .map_or("", |diagnostic| diagnostic.detail.as_str()),
+                    evidence: &serde_json::to_string(row)?,
+                },
+            );
+        } else {
+            for sample in &row.samples {
+                csv_row(
+                    output,
+                    bundle,
+                    CsvRow {
+                        section: "final_cow",
+                        case: &format!("{case}-sample-{}", sample.ordinal),
+                        status: &row.status,
+                        elapsed_ns: sample.runtime_ns,
+                        message: "",
+                        evidence: &serde_json::to_string(sample)?,
+                    },
+                );
+            }
+        }
+    }
+    for backend in [&performance.isolation.direct, &performance.isolation.linux] {
+        let case = format!("{:?}", backend.backend).to_lowercase();
+        if backend.samples.is_empty() {
+            csv_row(
+                output,
+                bundle,
+                CsvRow {
+                    section: "final_isolation",
+                    case: &case,
+                    status: &backend.status,
+                    elapsed_ns: 0,
+                    message: backend
+                        .diagnostic
+                        .as_ref()
+                        .map_or("", |diagnostic| diagnostic.detail.as_str()),
+                    evidence: &serde_json::to_string(backend)?,
+                },
+            );
+        } else {
+            for sample in &backend.samples {
+                csv_row(
+                    output,
+                    bundle,
+                    CsvRow {
+                        section: "final_isolation",
+                        case: &format!("{case}-sample-{}", sample.ordinal),
+                        status: if sample.status
+                            == epoch_performance_matrix::SampleStatus::Supported
+                        {
+                            "supported"
+                        } else {
+                            "failed"
+                        },
+                        elapsed_ns: sample.total_ns,
+                        message: sample
+                            .diagnostic
+                            .as_ref()
+                            .map_or("", |diagnostic| diagnostic.detail.as_str()),
+                        evidence: &serde_json::to_string(sample)?,
+                    },
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn append_fault_csv(output: &mut String, bundle: &EvidenceBundle) -> serde_json::Result<()> {
     let Some(faults) = &bundle.faults else {
         return Ok(());
@@ -661,6 +782,16 @@ pub fn run_suite(
         .transpose()?;
     let cow = matches!(request.suite, SuiteName::Cow | SuiteName::All)
         .then(|| run_cow_matrix(&request.cow, &environment));
+    let performance = if request.suite == SuiteName::All {
+        let request = request.performance.as_ref().ok_or_else(|| {
+            SuiteError::InvalidConfig(
+                "the all suite requires the final performance matrix configuration".to_owned(),
+            )
+        })?;
+        Some(PerformanceRunner::new(request.config.clone(), request.environment.clone()).run())
+    } else {
+        None
+    };
     let faults = matches!(request.suite, SuiteName::Faults | SuiteName::All)
         .then(|| run_fault_matrix(&request.checkpoint.root.join("faults")))
         .transpose()?;
@@ -671,7 +802,7 @@ pub fn run_suite(
         &request.thresholds,
     );
     Ok(EvidenceBundle {
-        schema_version: 1,
+        schema_version: 2,
         run_id: format!("bench-{}", Uuid::new_v4()),
         suite: request.suite,
         environment,
@@ -679,6 +810,7 @@ pub fn run_suite(
         checkpoint,
         compatibility,
         cow,
+        performance,
         faults,
         decisions,
     })

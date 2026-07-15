@@ -7,7 +7,8 @@ use std::{
 
 use epoch_bench::{
     BenchmarkEnvironment, CheckpointSuiteConfig, CowConfig, DecisionThresholds, EvidenceBundle,
-    SampleOutcome, SuiteName, SuiteRequest, run_suite,
+    FinalCowMatrixConfig, FinalIsolationConfig, FinalPerformanceConfig, PerformanceSuiteRequest,
+    SampleOutcome, SuiteName, SuiteRequest, discover_final_environment, run_suite,
 };
 use serde::Serialize;
 use uuid::Uuid;
@@ -30,6 +31,11 @@ pub(super) struct RunOptions {
     pub cow_children: u32,
     pub cow_dirty_basis_points: u32,
     pub cow_repetitions: u32,
+    pub performance_repetitions: u16,
+    pub isolation_repetitions: u16,
+    pub performance_max_memory_bytes: u64,
+    pub performance_sandbox_helper: Option<PathBuf>,
+    pub performance_workspace: Option<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -85,10 +91,19 @@ pub(super) fn run(options: &RunOptions) -> ExitCode {
     if let Err(error) = checkpoint.validate() {
         return input_error(&error.to_string());
     }
+    let performance = if suite == SuiteName::All {
+        match performance_request(options, &repository, scratch.path(), &environment) {
+            Ok(request) => Some(request),
+            Err(error) => return input_error(&error),
+        }
+    } else {
+        None
+    };
     let request = SuiteRequest {
         suite,
         checkpoint,
         cow,
+        performance,
         thresholds: DecisionThresholds::week4(),
     };
     let bundle = match run_suite(&request, environment) {
@@ -100,7 +115,7 @@ pub(super) fn run(options: &RunOptions) -> ExitCode {
         return benchmark_error(&error);
     }
     let summary = RunSummary {
-        schema_version: 1,
+        schema_version: 2,
         run_id: bundle.run_id.clone(),
         suite,
         status: completion_status(&bundle),
@@ -116,6 +131,85 @@ pub(super) fn run(options: &RunOptions) -> ExitCode {
         }
         Err(error) => benchmark_error(&error.to_string()),
     }
+}
+
+fn performance_request(
+    options: &RunOptions,
+    repository: &Path,
+    scratch: &Path,
+    environment: &BenchmarkEnvironment,
+) -> Result<PerformanceSuiteRequest, String> {
+    if options.performance_repetitions == 0 {
+        return Err("performance repetitions must be at least one".to_owned());
+    }
+    if options.isolation_repetitions < 2 {
+        return Err(
+            "isolation repetitions must include one cold and at least one warm run".to_owned(),
+        );
+    }
+    if options.performance_max_memory_bytes == 0 {
+        return Err("performance memory ceiling must be nonzero".to_owned());
+    }
+    let executable_directory = std::env::current_exe()
+        .map_err(|error| format!("cannot locate benchmark executable: {error}"))?
+        .parent()
+        .ok_or_else(|| "benchmark executable has no parent directory".to_owned())?
+        .to_path_buf();
+    let probe = executable_directory.join("epoch-performance-probe");
+    let default_helper = executable_directory.join("epoch-sandbox-init");
+    let helper = options
+        .performance_sandbox_helper
+        .clone()
+        .unwrap_or(default_helper);
+    let workspace = options
+        .performance_workspace
+        .clone()
+        .unwrap_or_else(|| scratch.join("performance-workspace"));
+    prepare_performance_workspace(&workspace)?;
+
+    let mut cow = FinalCowMatrixConfig::required();
+    cow.repetitions = options.performance_repetitions;
+    cow.helper =
+        Some(repository.join("crates/epoch-performance-matrix/helpers/cow_matrix_probe.py"));
+    let isolation = FinalIsolationConfig {
+        repetitions: options.isolation_repetitions,
+        probe: probe.is_file().then_some(probe),
+        trusted_sandbox_helper: helper.is_file().then_some(helper),
+        workspace: Some(workspace),
+        ..FinalIsolationConfig::disabled_fixture()
+    };
+    let final_environment = discover_final_environment(
+        &environment.code_revision,
+        options.performance_max_memory_bytes,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(PerformanceSuiteRequest {
+        config: FinalPerformanceConfig {
+            code_revision: environment.code_revision.clone(),
+            cow,
+            isolation,
+        },
+        environment: final_environment,
+    })
+}
+
+fn prepare_performance_workspace(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        validate_existing_directory(path)?;
+    } else {
+        fs::create_dir_all(path).map_err(|error| error.to_string())?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let mut permissions = fs::metadata(path)
+            .map_err(|error| error.to_string())?
+            .permissions();
+        permissions.set_mode(0o777);
+        fs::set_permissions(path, permissions).map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 pub(super) fn report(run_id: &str, root: &Path, format: BenchFormat) -> ExitCode {
@@ -251,7 +345,10 @@ fn completion_status(bundle: &EvidenceBundle) -> &'static str {
                     || matches!(row.outcome, SampleOutcome::Failed { .. }))
         })
     });
-    if checkpoint_failed || cow_failed || fault_failed {
+    let performance_failed = bundle.performance.as_ref().is_some_and(|performance| {
+        performance.cow.summary.failed_rows > 0 || performance.isolation.status == "failed"
+    });
+    if checkpoint_failed || cow_failed || fault_failed || performance_failed {
         "completed_with_failures"
     } else if bundle.cow.as_ref().is_some_and(|matrix| {
         matrix
@@ -263,6 +360,10 @@ fn completion_status(bundle: &EvidenceBundle) -> &'static str {
             .rows
             .iter()
             .any(|row| matches!(row.outcome, SampleOutcome::Unsupported { .. }))
+    }) || bundle.performance.as_ref().is_some_and(|performance| {
+        performance.cow.summary.skipped_rows > 0
+            || performance.cow.summary.unsupported_rows > 0
+            || performance.isolation.status == "unsupported"
     }) {
         "completed_with_unsupported"
     } else {

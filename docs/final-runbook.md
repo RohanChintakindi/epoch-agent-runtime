@@ -56,7 +56,10 @@ BENCH_ROOT="$PWD/.epoch/final-benchmarks"
   --cow-allocation-bytes 67108864 \
   --cow-children 4 \
   --cow-dirty-basis-points 2500 \
-  --cow-repetitions 5
+  --cow-repetitions 5 \
+  --performance-repetitions 3 \
+  --isolation-repetitions 5 \
+  --performance-max-memory-bytes 4294967296
 
 ./target/debug/epoch bench report <emitted-run-id> \
   --root "$BENCH_ROOT" \
@@ -64,10 +67,12 @@ BENCH_ROOT="$PWD/.epoch/final-benchmarks"
 ```
 
 The JSON, CSV, and Markdown artifacts are the same evidence in three stable views. The `all` run
-must include real checkpoint/restore samples, compatibility rows, a bounded COW matrix, workspace
-fault injection, 100 effect replays with exactly one deterministic dispatch, unknown-effect branch
-suspension, and revocation/policy-resurrection rejection. A deterministic local dispatcher proves
-the runtime protocol; it does not prove a live provider's commit semantics.
+must include real checkpoint/restore samples, compatibility rows, all 60 final COW matrix keys,
+direct-vs-Linux isolation rows, workspace fault injection, 100 effect replays with exactly one
+deterministic dispatch, unknown-effect branch suspension, and revocation/policy-resurrection
+rejection. On non-Linux hosts the 60 COW keys and Linux isolation row remain structured unsupported,
+not omitted. A deterministic local dispatcher proves the runtime protocol; it does not prove a
+live provider's commit semantics.
 
 ## 4. Privileged Oracle ARM64 gates
 
@@ -78,6 +83,34 @@ the user's Rust toolchain paths when invoking only the explicitly privileged tes
 cargo build --workspace --bins --locked
 cargo test --workspace --all-targets --all-features --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+sudo install -d -o root -g root -m 0755 /usr/local/libexec
+sudo install -o root -g root -m 0755 \
+  target/debug/epoch-sandbox-init \
+  /usr/local/libexec/epoch-sandbox-init
+sudo install -d -m 0777 /var/tmp/epoch-performance-workspace
+
+sudo env \
+  PATH=/home/ubuntu/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  GIT_CONFIG_COUNT=1 \
+  GIT_CONFIG_KEY_0=safe.directory \
+  GIT_CONFIG_VALUE_0="$PWD" \
+  ./target/debug/epoch bench run all \
+  --root /var/tmp/epoch-final-linux-benchmarks \
+  --warmups 2 \
+  --repetitions 10 \
+  --fixture-bytes 1048576 \
+  --fixture-files 16 \
+  --seed 24301 \
+  --cow-allocation-bytes 67108864 \
+  --cow-children 4 \
+  --cow-dirty-basis-points 2500 \
+  --cow-repetitions 5 \
+  --performance-repetitions 3 \
+  --isolation-repetitions 7 \
+  --performance-max-memory-bytes 4294967296 \
+  --performance-sandbox-helper /usr/local/libexec/epoch-sandbox-init \
+  --performance-workspace /var/tmp/epoch-performance-workspace
 
 sudo env \
   HOME=/home/ubuntu \

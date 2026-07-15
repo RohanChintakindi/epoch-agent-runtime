@@ -14,7 +14,7 @@ infer external exactly-once delivery from local rollback.
 | `cow` | A bounded multi-point Linux fork/COW matrix spanning clean, fully dirty, scale, and fan-out controls; child minor/major faults; aggregate RSS/PSS; a real sequential full-copy control; raw samples and percentile/ratio summaries |
 | `compatibility` | Combined scaling rows plus typed future-schema, missing-reference, missing-workspace, special-file, and unregistered process-checkpoint rows |
 | `faults` | Actual workspace/application injection hooks plus the integrated effect campaign: 100 stable replays, unknown-outcome branch suspension, and revocation/policy-resurrection rejection; unavailable live-provider reconciliation remains symbolic |
-| `all` | Every required suite above in one evidence bundle |
+| `all` | Every required suite above plus the final 60-key COW campaign and direct-vs-Linux cold/warm isolation comparison in one version-2 evidence bundle |
 
 Unsupported and failed matrix rows are retained in JSON and CSV. A detected executable or kernel
 feature never changes a backend to supported by itself.
@@ -78,10 +78,19 @@ requests are rejected.
 The native Linux evidence command is intentionally fixed before collection:
 
 ```bash
-cargo build --locked -p epoch-cli
-ROOT="$(pwd)/.epoch/benchmarks"
-./target/debug/epoch bench run all \
-  --root "$ROOT" \
+cargo build --workspace --bins --locked
+sudo install -d -o root -g root -m 0755 /usr/local/libexec
+sudo install -o root -g root -m 0755 \
+  target/debug/epoch-sandbox-init \
+  /usr/local/libexec/epoch-sandbox-init
+sudo install -d -m 0777 /var/tmp/epoch-performance-workspace
+sudo env \
+  PATH=/home/ubuntu/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  GIT_CONFIG_COUNT=1 \
+  GIT_CONFIG_KEY_0=safe.directory \
+  GIT_CONFIG_VALUE_0="$PWD" \
+  ./target/debug/epoch bench run all \
+  --root /var/tmp/epoch-final-linux-benchmarks \
   --warmups 2 \
   --repetitions 10 \
   --fixture-bytes 1048576 \
@@ -90,13 +99,23 @@ ROOT="$(pwd)/.epoch/benchmarks"
   --cow-allocation-bytes 67108864 \
   --cow-children 4 \
   --cow-dirty-basis-points 2500 \
-  --cow-repetitions 5
+  --cow-repetitions 5 \
+  --performance-repetitions 3 \
+  --isolation-repetitions 7 \
+  --performance-max-memory-bytes 4294967296 \
+  --performance-sandbox-helper /usr/local/libexec/epoch-sandbox-init \
+  --performance-workspace /var/tmp/epoch-performance-workspace
 ```
 
 The requested 64 MiB/four-child/25%-dirty point is retained alongside the suite's frozen clean,
 fully dirty, smaller-allocation, and fan-out controls. The helper and Rust front end independently
 reject more than 256 MiB per allocation, 16 children, 512 MiB allocation times fan-out, ratios
 above 100%, or more than 100 COW repetitions.
+
+The embedded final campaign independently retains all 60 combinations of 128 MiB, 512 MiB, and
+1 GiB allocations; fan-out 1, 2, 4, and 8; and 0%, 1%, 10%, 50%, and 100% dirty pages. Live-memory
+preflight marks unsafe keys `skipped` rather than omitting them. Its isolation rows compare the same
+probe through the direct and native Linux backends without fallback.
 
 The checked-in [Oracle ARM64 evidence index](../results/oracle-arm64/README.md) currently preserves
 the pre-integration run as a historical baseline. It names its older revision explicitly and must

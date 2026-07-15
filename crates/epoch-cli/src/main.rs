@@ -1,3 +1,6 @@
+mod bench;
+mod demo;
+
 use std::{env, path::PathBuf, process::ExitCode, str::FromStr as _, sync::Arc};
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
@@ -128,7 +131,20 @@ enum Command {
         bind: String,
     },
     /// Run the complete deterministic interview demonstration.
-    Demo,
+    Demo {
+        /// Explicit deterministic test-agent executable.
+        #[arg(long)]
+        agent: PathBuf,
+        /// Dedicated demo-owned root. Existing unowned content is refused.
+        #[arg(long)]
+        root: PathBuf,
+        /// Demo-owned workspace base inside `root`.
+        #[arg(long)]
+        workspace: PathBuf,
+        /// Emit the complete machine-readable report to stdout.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
@@ -206,8 +222,55 @@ struct ResolveEffect {
 
 #[derive(Debug, Subcommand)]
 enum BenchCommand {
-    Run { suite: String },
-    Report { run: String },
+    Run {
+        suite: String,
+        #[arg(long, default_value = ".epoch/benchmarks")]
+        root: PathBuf,
+        #[arg(long, default_value_t = 1)]
+        warmups: u32,
+        #[arg(long, default_value_t = 5)]
+        repetitions: u32,
+        #[arg(long, default_value_t = 1_048_576)]
+        fixture_bytes: u64,
+        #[arg(long, default_value_t = 16)]
+        fixture_files: u32,
+        #[arg(long, default_value_t = 24_301)]
+        seed: u64,
+        #[arg(long, default_value_t = 33_554_432)]
+        cow_allocation_bytes: u64,
+        #[arg(long, default_value_t = 2)]
+        cow_children: u32,
+        #[arg(long, default_value_t = 2_500)]
+        cow_dirty_basis_points: u32,
+        #[arg(long, default_value_t = 3)]
+        cow_repetitions: u32,
+        #[arg(long, default_value_t = 3)]
+        performance_repetitions: u16,
+        #[arg(long, default_value_t = 5)]
+        isolation_repetitions: u16,
+        #[arg(long, default_value_t = 4 * 1024 * 1024 * 1024_u64)]
+        performance_max_memory_bytes: u64,
+        #[arg(long)]
+        performance_sandbox_helper: Option<PathBuf>,
+        #[arg(long)]
+        performance_probe: Option<PathBuf>,
+        #[arg(long)]
+        performance_workspace: Option<PathBuf>,
+    },
+    Report {
+        run: String,
+        #[arg(long, default_value = ".epoch/benchmarks")]
+        root: PathBuf,
+        #[arg(long, value_enum, default_value_t = BenchFormat::Markdown)]
+        format: BenchFormat,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum BenchFormat {
+    Markdown,
+    Json,
+    Csv,
 }
 
 #[derive(Debug, Subcommand)]
@@ -433,6 +496,18 @@ fn execute(command: Command) -> ExitCode {
         Command::Branch { command } => execute_branch_command(command),
         Command::Capability { command } => execute_capability_command(command),
         Command::Effects { command } => execute_effects_command(command),
+        Command::Demo {
+            agent,
+            root,
+            workspace,
+            json,
+        } => demo::run(&demo::DemoConfig {
+            agent,
+            root,
+            workspace,
+            json,
+        }),
+        Command::Bench { command } => execute_bench(command),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -694,6 +769,49 @@ fn user_security_error(detail: impl AsRef<str>) -> ExitCode {
 fn trusted_security_error(detail: impl AsRef<str>) -> ExitCode {
     eprintln!("trusted state is unavailable: {}", detail.as_ref());
     ExitCode::from(SUPERVISOR_FAILURE_EXIT)
+}
+
+fn execute_bench(command: BenchCommand) -> ExitCode {
+    match command {
+        BenchCommand::Run {
+            suite,
+            root,
+            warmups,
+            repetitions,
+            fixture_bytes,
+            fixture_files,
+            seed,
+            cow_allocation_bytes,
+            cow_children,
+            cow_dirty_basis_points,
+            cow_repetitions,
+            performance_repetitions,
+            isolation_repetitions,
+            performance_max_memory_bytes,
+            performance_sandbox_helper,
+            performance_probe,
+            performance_workspace,
+        } => bench::run(&bench::RunOptions {
+            suite,
+            root,
+            warmups,
+            repetitions,
+            fixture_bytes,
+            fixture_files,
+            seed,
+            cow_allocation_bytes,
+            cow_children,
+            cow_dirty_basis_points,
+            cow_repetitions,
+            performance_repetitions,
+            isolation_repetitions,
+            performance_max_memory_bytes,
+            performance_sandbox_helper,
+            performance_probe,
+            performance_workspace,
+        }),
+        BenchCommand::Report { run, root, format } => bench::report(&run, &root, format),
+    }
 }
 
 fn inspect_status(raw_session: &str) -> ExitCode {
@@ -1112,7 +1230,7 @@ impl Command {
             Self::Bench { .. } => "bench",
             Self::Fault { .. } => "fault",
             Self::Serve { .. } => "serve",
-            Self::Demo => "demo",
+            Self::Demo { .. } => "demo",
         }
     }
 }
@@ -1278,6 +1396,25 @@ mod tests {
             ],
             vec!["epoch", "effects", "resolve", "effect-1", "--committed"],
             vec!["epoch", "branch", "inspect", "branch-1"],
+            vec![
+                "epoch",
+                "demo",
+                "--agent",
+                "/tmp/epoch-test-agent",
+                "--root",
+                "/tmp/epoch-demo",
+                "--workspace",
+                "/tmp/epoch-demo/workspaces",
+                "--json",
+            ],
+            vec![
+                "epoch",
+                "bench",
+                "run",
+                "all",
+                "--performance-probe",
+                "/usr/local/libexec/epoch-performance-probe",
+            ],
             vec!["epoch", "serve", "--bind", "127.0.0.1:9090"],
         ] {
             Cli::try_parse_from(arguments).expect("specified command must parse");

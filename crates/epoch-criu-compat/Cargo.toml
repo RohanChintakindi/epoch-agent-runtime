@@ -1,0 +1,25 @@
+[package]
+name = "epoch-criu-compat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+clap.workspace = true
+nix.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+
+[[bin]]
+name = "epoch-criu-fixture"
+path = "src/bin/epoch-criu-fixture.rs"
+
+[[bin]]
+name = "epoch-criu-compat"
+path = "src/bin/epoch-criu-compat.rs"
+
+[lints]
+workspace = true

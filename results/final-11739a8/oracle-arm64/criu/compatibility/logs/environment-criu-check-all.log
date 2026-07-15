@@ -1,0 +1,6 @@
+Looks good but some kernel features are missing
+which, depending on your process tree, may cause
+dump or restore failure.
+Warn  (criu/cr-check.c:824): Dirty tracking is OFF. Memory snapshot will not work.
+Warn  (criu/cr-check.c:1259): Do not have API to map vDSO - will use mremap() to restore vDSO
+Warn  (criu/cr-check.c:1179): CRIU built without CONFIG_COMPAT - can't C/R compatible tasks

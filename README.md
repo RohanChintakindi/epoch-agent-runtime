@@ -12,6 +12,7 @@ Linux isolation and checkpoint backends are added only after that vertical slice
 
 - `epoch-blob`: private, atomic SHA-256 storage with bounded verified reads and media-type locking.
 - `epoch-checkpoint`: versioned, blob-backed observable application checkpoints.
+- `epoch-criu-compat`: bounded CRIU dump/restore compatibility and scaling evidence runner.
 - `epoch-core`: stable identifiers, lifecycle state machines, and shared domain types.
 - `epoch-events`: append-only execution history with deterministic queries and external payloads.
 - `epoch-protocol`: versioned JSONL messages at the agent/supervisor boundary.
@@ -49,6 +50,23 @@ promotion limitations.
 The [Linux sandbox guide](docs/linux-sandbox.md) documents backend discovery, namespace/cgroup/
 seccomp boundaries, the threat model, native Oracle validation, measured launch samples, and the
 prototype's explicit limitations.
+
+The [five-minute interview demo](docs/interview-demo.md) provides the exact reproducible command,
+talk track, evidence contract, safety rules, and integration hooks for the implemented vertical
+slice.
+
+The [Week 4 benchmark guide](docs/benchmarking.md) documents the real checkpoint, compatibility,
+COW-memory, and fault suites; frozen thresholds; stable artifacts; safety bounds; and the exact
+Oracle ARM64 evidence command.
+
+The [final performance matrix](docs/final-performance-matrix.md) defines the complete 60-key COW
+campaign and direct-vs-Linux cold/warm isolation comparison embedded by `epoch bench run all`.
+
+The [CRIU compatibility guide](docs/criu-compatibility.md) documents the standalone runner,
+structured matrix, Oracle ARM64 evidence, preliminary decision gates, and integration limitations.
+
+The [final Week 4 acceptance runbook](docs/final-runbook.md) is the single demo, benchmark, Linux,
+CRIU, evidence, and interview-Q&A gate for a clean candidate revision.
 
 ## Development
 

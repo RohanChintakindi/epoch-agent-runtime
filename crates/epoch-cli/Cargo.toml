@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+epoch-bench.workspace = true
 epoch-capabilities.workspace = true
 epoch-core = { path = "../epoch-core" }
 epoch-effects.workspace = true
@@ -20,6 +21,9 @@ epoch-supervisor = { path = "../epoch-supervisor" }
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
+toml.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 epoch-blob.workspace = true

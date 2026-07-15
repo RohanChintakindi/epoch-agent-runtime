@@ -1,0 +1,10 @@
+{
+  "schema_version": 2,
+  "run_id": "bench-a6c32a7b-e437-4a70-8f8b-980d60e28a83",
+  "suite": "all",
+  "status": "completed_with_unsupported",
+  "artifact_root": "/var/tmp/epoch-final-11739a8e3f2da9673d642ac718cee8bbb39dc229/bench/bench-a6c32a7b-e437-4a70-8f8b-980d60e28a83",
+  "report_json": "/var/tmp/epoch-final-11739a8e3f2da9673d642ac718cee8bbb39dc229/bench/bench-a6c32a7b-e437-4a70-8f8b-980d60e28a83/report.json",
+  "samples_csv": "/var/tmp/epoch-final-11739a8e3f2da9673d642ac718cee8bbb39dc229/bench/bench-a6c32a7b-e437-4a70-8f8b-980d60e28a83/samples.csv",
+  "results_markdown": "/var/tmp/epoch-final-11739a8e3f2da9673d642ac718cee8bbb39dc229/bench/bench-a6c32a7b-e437-4a70-8f8b-980d60e28a83/RESULTS.md"
+}

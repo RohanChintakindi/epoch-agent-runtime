@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+  "code_dirty": false,
+  "outcome": "completed_with_unsupported",
+  "run_id": "run-4951c71f-e8bd-4182-9d87-1815cdefd570",
+  "run_root": "/var/tmp/epoch-final-11739a8e3f2da9673d642ac718cee8bbb39dc229/linux-demo/state/runs/run-4951c71f-e8bd-4182-9d87-1815cdefd570",
+  "workspace_root": "/var/tmp/epoch-final-11739a8e3f2da9673d642ac718cee8bbb39dc229/linux-demo/state/workspaces/run-4951c71f-e8bd-4182-9d87-1815cdefd570",
+  "report_path": "/var/tmp/epoch-final-11739a8e3f2da9673d642ac718cee8bbb39dc229/linux-demo/state/runs/run-4951c71f-e8bd-4182-9d87-1815cdefd570/report.json",
+  "phases": [
+    {
+      "name": "doctor",
+      "status": "succeeded",
+      "duration_ms": 2,
+      "evidence": {
+        "architecture": "aarch64",
+        "backends": {
+          "application_checkpoint": {
+            "backend": "cooperative-w02-v1",
+            "reason": "the cooperative W02 application checkpoint backend is registered",
+            "registered": true,
+            "scope": "application_context_only",
+            "status": "supported"
+          },
+          "criu_checkpoint": {
+            "backend": null,
+            "dependency_detected": true,
+            "reason": "CRIU integration is not registered; tool presence alone is insufficient",
+            "registered": false,
+            "scope": "process_tree",
+            "status": "unsupported"
+          },
+          "direct_execution": {
+            "backend": "direct-process-v1",
+            "reason": "the direct process supervisor is compiled and registered",
+            "registered": true,
+            "scope": "process_lifecycle",
+            "status": "supported"
+          },
+          "linux_isolation": {
+            "backend": "linux",
+            "diagnostics": [
+              {
+                "code": "privilege_required",
+                "detail": "this host blocks the required unprivileged user namespace; run through an explicitly privileged supervisor (effective UID is 1001)",
+                "facility": "user_namespace"
+              }
+            ],
+            "status": "unsupported"
+          },
+          "process_checkpoint": {
+            "backend": null,
+            "reason": "no process checkpoint backend is registered",
+            "registered": false,
+            "scope": "process_memory",
+            "status": "unsupported"
+          },
+          "workspace_checkpoint": {
+            "backend": "full-copy-cas-v1",
+            "reason": "the deterministic full-copy CAS workspace backend is registered",
+            "registered": true,
+            "scope": "workspace_files_without_process_memory",
+            "status": "supported"
+          }
+        },
+        "control_plane": "available",
+        "os": "linux"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "run_baseline",
+      "status": "succeeded",
+      "duration_ms": 163,
+      "evidence": {
+        "branch_id": "834b5a7e-0dd8-4eae-95b6-c2dd069fde25",
+        "protocol_records": 11,
+        "session_id": "6b137e18-6ec6-4d8a-b120-bad4b807aa2d",
+        "termination": "succeeded"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "status_before_checkpoint",
+      "status": "succeeded",
+      "duration_ms": 16,
+      "evidence": {
+        "branch_count": 1,
+        "session_id": "6b137e18-6ec6-4d8a-b120-bad4b807aa2d",
+        "state": "completed"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "events",
+      "status": "succeeded",
+      "duration_ms": 11,
+      "evidence": {
+        "branch_id": "834b5a7e-0dd8-4eae-95b6-c2dd069fde25",
+        "event_count": 16,
+        "first_event_id": "bbcde1c9-6831-4447-9916-c03059056617",
+        "last_event_id": "eb4931b1-d596-4a24-be57-6a20c0159066",
+        "session_id": "6b137e18-6ec6-4d8a-b120-bad4b807aa2d"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "checkpoint_baseline",
+      "status": "succeeded",
+      "duration_ms": 68,
+      "evidence": {
+        "boundary_sequence": 9,
+        "branch_id": "834b5a7e-0dd8-4eae-95b6-c2dd069fde25",
+        "component_hash": "efdfd14368ca0798943eba4acc070cb5656430544d69d19a3acd0ba021d98467",
+        "epoch_id": "c7128289-2bf3-4ff4-ab25-13b0d5c7643c",
+        "restore_scope": "application_and_workspace",
+        "session_id": "6b137e18-6ec6-4d8a-b120-bad4b807aa2d"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "controlled_workspace_change",
+      "status": "succeeded",
+      "duration_ms": 0,
+      "evidence": {
+        "artifact": "/var/tmp/epoch-final-11739a8e3f2da9673d642ac718cee8bbb39dc229/linux-demo/state/workspaces/run-4951c71f-e8bd-4182-9d87-1815cdefd570/baseline/artifact.txt",
+        "changed": true,
+        "workspace_checkpoint": "captured_before_change"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "run_variant",
+      "status": "succeeded",
+      "duration_ms": 85,
+      "evidence": {
+        "branch_id": "698b0163-832b-4876-9706-1353fcbafb81",
+        "protocol_records": 11,
+        "session_id": "91cded54-2b6b-4ae0-aa1d-52c66a3b6b20",
+        "termination": "succeeded"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "checkpoint_variant",
+      "status": "succeeded",
+      "duration_ms": 100,
+      "evidence": {
+        "boundary_sequence": 9,
+        "branch_id": "698b0163-832b-4876-9706-1353fcbafb81",
+        "component_hash": "50d7f1b8a489a17f555c4e1bbd557dea6eca36535e52574d86c20fc45fc5ac5f",
+        "epoch_id": "16314bca-22f0-48ff-8e3c-c284a066a2f8",
+        "restore_scope": "application_and_workspace",
+        "session_id": "91cded54-2b6b-4ae0-aa1d-52c66a3b6b20"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "restore_baseline",
+      "status": "succeeded",
+      "duration_ms": 37,
+      "evidence": {
+        "activated": true,
+        "epoch_id": "c7128289-2bf3-4ff4-ab25-13b0d5c7643c",
+        "process_restored": false,
+        "workspace_restored": true,
+        "workspace_target": "/var/tmp/epoch-final-11739a8e3f2da9673d642ac718cee8bbb39dc229/linux-demo/state/workspaces/run-4951c71f-e8bd-4182-9d87-1815cdefd570/restored-baseline"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "status_after_restore",
+      "status": "succeeded",
+      "duration_ms": 22,
+      "evidence": {
+        "current_epoch_id": "c7128289-2bf3-4ff4-ab25-13b0d5c7643c",
+        "original_workspace_change_preserved": true,
+        "restored_workspace_matches_checkpoint": true,
+        "session_id": "6b137e18-6ec6-4d8a-b120-bad4b807aa2d",
+        "state": "completed"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "semantic_diff",
+      "status": "succeeded",
+      "duration_ms": 20,
+      "evidence": {
+        "after_epoch_id": "16314bca-22f0-48ff-8e3c-c284a066a2f8",
+        "before_epoch_id": "c7128289-2bf3-4ff4-ab25-13b0d5c7643c",
+        "capabilities": {
+          "advanced_since_after": false,
+          "advanced_since_before": false,
+          "after_frontier": 0,
+          "before_frontier": 0,
+          "changed_between_epochs": false,
+          "current_after_scope": 0,
+          "current_before_scope": 0
+        },
+        "change_count": 2,
+        "effects": {
+          "advanced_since_after": false,
+          "advanced_since_before": false,
+          "after_frontier": 0,
+          "before_frontier": 0,
+          "changed_between_epochs": false,
+          "current_after_scope": 0,
+          "current_before_scope": 0
+        },
+        "identical": false,
+        "workspace": {
+          "after_manifest_hash": "56e51b0b20e17950fb484fcca4bdccab5b9d11bf57e2584f94ab7cf34af1434f",
+          "before_manifest_hash": "bd2c5b266253e8a3ea28670c11c21dd982908c6a4070968b1edb639a582e2ec4",
+          "identical": false
+        }
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "fork",
+      "status": "succeeded",
+      "duration_ms": 25,
+      "evidence": {
+        "branch_id": "3fc48063-bedf-4840-bae6-99c01c54919e",
+        "effect_frontier": "unsupported",
+        "fork_epoch_id": "c7128289-2bf3-4ff4-ab25-13b0d5c7643c",
+        "fork_point_sequence": 9,
+        "parent_branch_id": "834b5a7e-0dd8-4eae-95b6-c2dd069fde25",
+        "replay_continuation": "unsupported",
+        "session_id": "6b137e18-6ec6-4d8a-b120-bad4b807aa2d"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "branch_inspect",
+      "status": "succeeded",
+      "duration_ms": 14,
+      "evidence": {
+        "branch_id": "3fc48063-bedf-4840-bae6-99c01c54919e",
+        "effect_frontier": "unsupported",
+        "fork_epoch_id": "c7128289-2bf3-4ff4-ab25-13b0d5c7643c",
+        "fork_point_sequence": 9,
+        "parent_branch_id": "834b5a7e-0dd8-4eae-95b6-c2dd069fde25",
+        "replay_continuation": "unsupported",
+        "session_id": "6b137e18-6ec6-4d8a-b120-bad4b807aa2d"
+      },
+      "diagnostic": null
+    }
+  ],
+  "unsupported_sections": [
+    {
+      "section": "continuation",
+      "outcome": "unsupported",
+      "code": "autonomous_branch_continuation_pending",
+      "detail": "fork lineage is durable but autonomous execution continuation is not registered"
+    },
+    {
+      "section": "effects",
+      "outcome": "unsupported",
+      "code": "external_effect_delivery_reconciliation_pending",
+      "detail": "effect frontiers are durable but live provider delivery reconciliation is not registered"
+    },
+    {
+      "section": "isolation",
+      "outcome": "unsupported",
+      "code": "linux_supervisor_adapter_pending",
+      "detail": "the native-tested Linux backend is not composed into the supervisor launch path"
+    },
+    {
+      "section": "process",
+      "outcome": "unsupported",
+      "code": "process_checkpoint_backend_not_registered",
+      "detail": "application and workspace state restore without live process memory"
+    }
+  ],
+  "summary": "Epoch demo completed: 13/13 real phases succeeded; four narrow boundaries remain explicitly unsupported.",
+  "failure": null
+}

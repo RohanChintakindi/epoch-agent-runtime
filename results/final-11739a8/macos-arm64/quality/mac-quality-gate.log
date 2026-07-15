@@ -1,0 +1,667 @@
++zsh:4> git rev-parse HEAD
++zsh:4> test 11739a8e3f2da9673d642ac718cee8bbb39dc229 '=' 11739a8e3f2da9673d642ac718cee8bbb39dc229
++zsh:4> git status --porcelain
++zsh:4> test -z ''
++zsh:4> cargo test --workspace --all-targets --all-features --locked
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.30s
+     Running unittests src/lib.rs (target/debug/deps/epoch_bench-50d19db826473fbb)
+
+running 1 test
+test environment::tests::parses_native_cpu_model_without_architecture_specific_placeholders ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/harness.rs (target/debug/deps/harness-b4d320bc0b78c938)
+
+running 5 tests
+test rejects_ambiguous_or_unbounded_configurations ... ok
+test runs_warmups_then_retains_every_measured_outcome ... ok
+test percentile_summary_uses_nearest_rank_over_successful_samples ... ok
+test trace_mode_is_part_of_the_authoritative_configuration ... ok
+test serialization_is_stable_and_csv_keeps_failures_and_unsupported_rows ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/week4_suites.rs (target/debug/deps/week4_suites-73967fb42b11a1ae)
+
+running 6 tests
+test cow_configuration_is_bounded_and_non_linux_is_structured_unsupported ... ok
+test collects_and_validates_real_environment_metadata ... ok
+test compatibility_matrix_preserves_supported_unsupported_and_failed_rows ... ok
+test fault_matrix_runs_effect_replay_unknown_and_authority_resurrection_campaigns ... ok
+test real_checkpoint_suite_separates_trace_modes_and_validates_restores ... ok
+test all_suite_emits_stable_json_csv_and_threshold_backed_decisions ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.09s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_blob-d14e4f9c3031fe33)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/blob_store.rs (target/debug/deps/blob_store-bf423cf987e7a093)
+
+running 19 tests
+test blob_hash_parser_accepts_only_canonical_lowercase_sha256 ... ok
+test deserialization_cannot_bypass_blob_hash_validation ... ok
+test interrupted_temp_write_never_appears_as_a_valid_blob ... ok
+test explicit_cleanup_removes_only_managed_temporary_files ... ok
+test opening_a_store_cleans_only_old_managed_temporary_files ... ok
+test rejects_a_symlink_as_the_blob_root_without_touching_its_target ... ok
+test rejects_an_insecure_existing_root_instead_of_silently_chmodding_it ... ok
+test duplicate_content_rejects_a_conflicting_media_type_even_after_reopen ... ok
+test concurrent_conflicting_media_types_choose_exactly_one_canonical_value ... ok
+test creates_private_directories_and_blob_files ... ok
+test duplicate_content_has_one_canonical_file ... ok
+test rejects_symlinks_inside_the_managed_store ... ok
+test put_returns_hash_length_and_media_type_and_read_verifies_content ... ok
+test read_rejects_a_symlink_at_the_canonical_blob_path ... ok
+test configured_size_limit_bounds_put_and_read ... ok
+test concurrent_duplicate_writers_publish_one_verified_blob ... ok
+test rejects_unbounded_or_control_character_media_types_before_writing ... ok
+test temporary_cleanup_rejects_symlinks_without_touching_the_target ... ok
+test tampered_blob_is_rejected_on_read_and_duplicate_put ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_capabilities-d1e55343e3178d01)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/effect_adapter.rs (target/debug/deps/effect_adapter-3a99b95b555076e0)
+
+running 2 tests
+test failed_effect_intent_insert_rolls_back_one_use_capability_consumption ... ok
+test effect_gateway_adapter_consumes_current_branch_bound_capability ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests/service.rs (target/debug/deps/service-0312dfe9e2dc932e)
+
+running 12 tests
+test policy_revision_claim_must_match_current_trusted_policy ... ok
+test opaque_handle_is_not_authoritative_plaintext_at_rest ... ok
+test capability_can_be_inspected_and_revoked_by_non_secret_identity ... ok
+test budget_is_transactionally_enforced ... ok
+test attenuation_rejects_every_supported_scope_widening ... ok
+test attenuation_can_only_narrow_and_shares_ancestor_counters ... ok
+test expiry_revocation_and_policy_change_defeat_restored_stale_handles ... ok
+test authorization_is_exactly_bound_and_every_decision_is_audited ... ok
+test database_guards_authority_monotonicity_and_append_only_audit ... ok
+test revoking_an_ancestor_invalidates_every_delegated_handle ... ok
+test unknown_well_formed_handle_is_denied_and_audited ... ok
+test concurrent_one_use_authorization_has_exactly_one_winner ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_checkpoint-3a042c64eacc4aa7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/application.rs (target/debug/deps/application-bfb8e2c7987e9577)
+
+running 5 tests
+test capture_fails_when_observable_content_was_not_ingested ... ok
+test unsupported_context_schema_is_distinct_from_failed_restore ... ok
+test capture_is_deterministic_and_restore_preserves_w02_resume_cursors ... ok
+test corrupted_checkpoint_blob_is_rejected_as_integrity_failure ... ok
+test valid_but_noncanonical_or_metadata_mismatched_context_is_rejected ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running unittests src/main.rs (target/debug/deps/epoch-95efdc8bab720d9a)
+
+running 8 tests
+test tests::unfinished_commands_return_an_explicit_failure ... ok
+test tests::support_display_is_unambiguous ... ok
+test tests::nested_command_groups_match_the_runtime_spec ... ok
+test tests::effect_resolution_requires_exactly_one_outcome ... ok
+test tests::command_tree_exposes_the_complete_runtime_spec_surface ... ok
+test tests::current_host_always_supports_control_plane ... ok
+test tests::backend_discovery_reports_only_registered_implementations_as_supported ... ok
+test tests::representative_spec_commands_parse ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bench.rs (target/debug/deps/bench-67e7bf7a9e164f10)
+
+running 4 tests
+test bench_rejects_unknown_suite_and_report_path_traversal_without_creating_artifacts ... ok
+test bench_run_persists_every_stable_artifact_and_report_reloads_it ... ok
+test bench_report_supports_csv_and_markdown_without_recomputing ... ok
+test bench_run_all_embeds_the_final_60_row_performance_campaign ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.25s
+
+     Running tests/demo.rs (target/debug/deps/demo-f4520c17616f9185)
+
+running 3 tests
+test demo_refuses_unowned_or_external_targets_without_mutating_them ... ok
+test demo_failure_preserves_bounded_diagnostics_and_partial_evidence ... ok
+test demo_runs_real_composite_recovery_flow_and_reports_only_current_gaps ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.97s
+
+     Running tests/doctor.rs (target/debug/deps/doctor-2853742787d747e6)
+
+running 1 test
+test doctor_distinguishes_registered_backends_from_detected_host_tools ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/inspection.rs (target/debug/deps/inspection-22b39f6d1ad1fce7)
+
+running 3 tests
+test inspection_distinguishes_missing_and_corrupt_trusted_state ... ok
+test fresh_process_queries_durable_status_and_bounded_events ... ok
+test inspection_rejects_bad_ids_unknown_state_and_unbounded_pages ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+
+     Running tests/recovery.rs (target/debug/deps/recovery-d2541138507b44dd)
+
+running 4 tests
+test cli_returns_explicit_machine_readable_failed_and_unsupported_outcomes ... ok
+test cli_fork_and_branch_inspection_are_restart_safe_and_promotion_is_explicit ... ok
+test cli_week_two_flow_is_restart_safe_across_three_repetitions ... ok
+test trusted_security_state_survives_restore_and_fork_three_times ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.74s
+
+     Running tests/run.rs (target/debug/deps/run-4cf8a55d2477e6b2)
+
+running 4 tests
+test explicit_linux_selection_never_falls_back_to_direct_execution ... ok
+test run_executes_a_manifest_and_reports_durable_execution_ids ... ok
+test run_preserves_a_normal_nonzero_agent_exit ... ok
+test run_reserves_exit_125_for_supervisor_failures ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running tests/security.rs (target/debug/deps/security-c8153ac28030716c)
+
+running 2 tests
+test capability_grant_rejects_ambiguous_or_unknown_constraints ... ok
+test capability_and_effect_commands_have_stable_non_secret_json_contracts ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_core-7a00851f090a9bc0)
+
+running 9 tests
+test state::tests::abandoned_branch_is_terminal ... ok
+test state::tests::branch_can_be_promoted_only_after_completion ... ok
+test state::tests::invalid_session_transition_preserves_state ... ok
+test id::tests::identifiers_round_trip_through_strings ... ok
+test id::tests::identifier_types_are_not_interchangeable ... ok
+test event::tests::event_kind_accepts_namespaced_values ... ok
+test event::tests::event_kind_rejects_ambiguous_or_unbounded_values ... ok
+test state::tests::session_happy_path_is_valid ... ok
+test state::tests::terminal_session_states_cannot_transition ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_criu_compat-26c086980aaf5a62)
+
+running 3 tests
+test tests::failure_classifier_preserves_failed_and_unsupported_results ... ok
+test tests::bounded_command_timeout_kills_the_process_group ... ok
+test tests::command_output_is_drained_but_retained_only_to_the_configured_bound ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running unittests src/bin/epoch-criu-compat.rs (target/debug/deps/epoch_criu_compat-0840db5a6fa33eb0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/epoch-criu-fixture.rs (target/debug/deps/epoch_criu_fixture-e2534fad2abe86e5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/debug/deps/cli-d56101ff3d08e6ea)
+
+running 2 tests
+test cli_refuses_existing_output_without_touching_sentinel ... ok
+test cli_writes_complete_evidence_for_structured_unsupported_host ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+
+     Running tests/contract.rs (target/debug/deps/contract-ad9a66e5063acc98)
+
+running 5 tests
+test declared_scenarios_are_versioned_and_stably_ordered ... ok
+test resource_and_scaling_bounds_are_enforced_before_execution ... ok
+test unavailable_criu_preserves_every_row_without_false_success ... ok
+test stable_json_and_markdown_keep_unsupported_rows_and_thresholds ... ok
+test evidence_writer_never_overwrites_user_data ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/fixture.rs (target/debug/deps/fixture-fef6ddfd52dba31a)
+
+running 1 test
+test fixture_becomes_ready_and_exhibits_restorable_progress ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+     Running tests/linux_native.rs (target/debug/deps/linux_native-3199cb3d2b1d333b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_diff-aed882c5c7ca4dc6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/application_diff.rs (target/debug/deps/application_diff-9df557950d8b4cfa)
+
+running 10 tests
+test unsupported_sections_are_explicit_not_fabricated_from_context ... ok
+test refuses_checkpoint_records_that_have_not_passed_metadata_validation ... ok
+test compact_json_encoding_is_repeatable_and_machine_readable ... ok
+test refuses_corrupted_checkpoint_before_comparison ... ok
+test identical_validated_snapshots_have_no_changes_and_stable_json ... ok
+test classifies_added_removed_and_changed_keyed_state_deterministically ... ok
+test detects_semantically_meaningful_task_queue_reordering ... ok
+test detects_message_reordering_as_reasoning_context_change_without_hidden_state ... ok
+test distinguishes_future_schema_from_invalid_or_unknown_fields ... ok
+test reports_cursor_task_memory_and_reference_changes_with_json_pointer_paths ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_effects-e4a1e620d363e769)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/gateway.rs (target/debug/deps/gateway-db97a6c913af249d)
+
+running 14 tests
+test canonical_intent_and_operation_id_are_stable_across_object_insertion_order ... ok
+test concurrent_duplicate_is_suppressed_while_first_dispatch_is_in_flight ... ok
+test denial_is_durable_and_dispatch_is_never_called ... ok
+test provider_credential_fields_are_rejected_before_authorization_or_storage ... ok
+test fault_before_dispatch_is_known_not_sent_and_remains_prepared ... ok
+test bounded_dispatch_failure_is_durable_in_transition_and_attempt_history ... ok
+test intent_and_started_attempt_are_durable_before_dispatcher_invocation ... ok
+test committed_duplicate_replays_exact_recorded_bytes_without_authorize_or_dispatch ... ok
+test duplicate_suppression_holds_across_independent_gateway_connections ... ok
+test effect_history_lists_deterministic_session_and_branch_scoped_records ... ok
+test faults_at_or_after_dispatch_are_conservatively_unknown_and_never_retried ... ok
+test supplied_deterministic_dispatcher_is_idempotent_and_gateway_replays_it ... ok
+test same_operation_id_with_materially_different_input_fails_closed ... ok
+test transition_history_is_database_enforced_append_only ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_events-b18c13677ddfa217)
+
+running 1 test
+test tests::failure_after_sequence_allocation_rolls_back_counter_and_event ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/journal.rs (target/debug/deps/journal-c83623fe3ca1e206)
+
+running 9 tests
+test invalid_sequence_range_is_rejected ... ok
+test branch_and_query_session_scope_mismatches_are_typed_errors ... ok
+test missing_input_or_output_blob_is_rejected_without_consuming_sequence ... ok
+test database_triggers_reject_event_update_and_delete ... ok
+test append_allocates_branch_sequences_and_queries_with_deterministic_filters ... ok
+test causal_parents_and_epoch_references_cannot_cross_scope ... ok
+test bounded_pages_preserve_the_full_querys_deterministic_order ... ok
+test large_payload_is_replaced_by_a_verified_blob_reference ... ok
+test concurrent_appends_across_connections_never_duplicate_a_branch_sequence ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_performance_matrix-f9fc9c00e2f704ce)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/epoch-performance-matrix.rs (target/debug/deps/epoch_performance_matrix-5611066f9a549db3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/epoch-performance-probe.rs (target/debug/deps/epoch_performance_probe-13251b3e3457f2de)
+
+running 1 test
+test tests::direct_and_linux_samples_never_share_a_workspace_marker_owner ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/isolation_contract.rs (target/debug/deps/isolation_contract-008d18097a7c65a9)
+
+running 2 tests
+test unsupported_linux_is_explicit_and_never_populated_with_direct_samples ... ok
+test isolation_summary_keeps_cold_separate_from_warm_percentiles ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/matrix_contract.rs (target/debug/deps/matrix_contract-1c4c5bf889ac552e)
+
+running 3 tests
+test required_cow_matrix_is_complete_unique_and_stably_ordered ... ok
+test non_linux_host_retains_structured_unsupported_rows ... ok
+test preflight_keeps_every_declared_row_but_skips_unsafe_processes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/report_contract.rs (target/debug/deps/report_contract-6601541c6f33fe71)
+
+running 2 tests
+test revision_metadata_is_exact_and_rejects_symbolic_or_dirty_values ... ok
+test mac_like_run_is_structured_and_artifacts_are_stable_and_non_overwriting ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_proc-3a44fa0d41aa334b)
+
+running 2 tests
+test collector::tests::permission_denied_is_a_distinct_diagnostic_kind ... ok
+test collector::tests::not_found_is_treated_as_a_process_race ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/collector.rs (target/debug/deps/collector-26bbfa55080b8e3b)
+
+running 5 tests
+test live_collection_is_explicitly_unsupported_off_linux ... ok
+test collection_limits_bound_reads_and_process_count ... ok
+test declared_child_that_disappears_is_a_diagnostic_not_a_failure ... ok
+test collects_versioned_process_tree_and_partial_semantic_state ... ok
+test manifest_json_carries_the_schema_version ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/kernel_links_and_network.rs (target/debug/deps/kernel_links_and_network-4772b8b49f73f5ef)
+
+running 7 tests
+test encoded_value_utf8_has_no_redundant_raw_copy ... ok
+test fd_targets_are_semantic_and_do_not_depend_on_fd_numbers ... ok
+test non_utf8_fd_links_keep_exact_bytes_with_a_diagnostic ... ok
+test namespace_links_become_typed_inode_identities ... ok
+test tcp4_table_decodes_addresses_roles_states_and_retains_good_rows ... ok
+test tcp6_word_endianness_is_normalized ... ok
+test fd_summary_groups_equivalent_targets_and_sorts_stably ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/parsers.rs (target/debug/deps/parsers-e0b159052172008d)
+
+running 6 tests
+test capability_decoder_is_stable_and_retains_unknown_bits ... ok
+test cgroup_parser_supports_v2_and_v1_and_diagnoses_bad_lines ... ok
+test non_utf8_parser_input_is_diagnostic_not_a_panic ... ok
+test malformed_status_retains_valid_fields_and_reports_each_bad_field ... ok
+test maps_summary_normalizes_addresses_and_paths_into_semantic_totals ... ok
+test parses_selected_status_fields_and_decoded_capabilities ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_protocol-2fef09fa8e839c8f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/protocol.rs (target/debug/deps/protocol-fcac600ea96fd2f2)
+
+running 12 tests
+test exposes_typed_message_payloads ... ok
+test encoder_validates_programmatically_constructed_envelopes ... ok
+test rejects_bare_carriage_returns_and_duplicate_json_keys ... ok
+test encoder_emits_exactly_one_newline_terminated_record ... ok
+test rejects_unsupported_protocol_versions_before_dispatch ... ok
+test exposes_referenced_hashes_for_supervisor_ingestion ... ok
+test preserves_unknown_fields_for_forward_compatible_round_trips ... ok
+test returns_typed_errors_for_input_boundaries ... ok
+test decodes_every_v1_boundary_message ... ok
+test returns_typed_errors_for_unknown_types_and_invalid_payloads ... ok
+test rejects_noncanonical_hashes_integer_overflow_and_oversized_names ... ok
+test supervisor_rejects_missing_and_corrupted_blob_references ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/stream.rs (target/debug/deps/stream-fb7e91da6c7cae14)
+
+running 8 tests
+test missing_blob_rejection_does_not_advance_stream_state ... ok
+test requires_exactly_one_start_and_supervisor_binding ... ok
+test claims_only_ingest_validates_stream_without_claiming_blob_verification ... ok
+test enforces_strictly_monotonic_sequences_and_context_revisions_atomically ... ok
+test accepts_a_coherent_supervisor_bound_stream ... ok
+test safe_points_require_current_context_and_no_outstanding_operations ... ok
+test rejects_completion_with_pending_work_and_every_message_after_completion ... ok
+test correlates_model_requests_and_tool_calls_without_id_reuse ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_sandbox-ce1e10c9aa5aad6e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/epoch-sandbox-init.rs (target/debug/deps/epoch_sandbox_init-d4287b518b6b2176)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/epoch-sandbox-probe.rs (target/debug/deps/epoch_sandbox_probe-406e256b5f217ec5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/backend_contract.rs (target/debug/deps/backend_contract-6de4c3284fa76832)
+
+running 7 tests
+test resource_limits_are_bounded_before_command_construction ... ok
+test non_linux_hosts_report_structured_unsupported ... ok
+test linux_plan_has_every_required_boundary_and_no_shell_interpolation ... ok
+test linux_backend_never_silently_falls_back_to_direct ... ok
+test direct_backend_is_preserved_behind_the_common_interface ... ok
+test direct_backend_can_launch_without_a_shell ... ok
+test request_validation_rejects_symlink_escapes_and_unsafe_environment ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/linux_native.rs (target/debug/deps/linux_native-9953f566b2782592)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_storage-47c16239ad3903aa)
+
+running 3 tests
+test tests::non_lock_errors_are_not_retried ... ok
+test tests::failed_migration_rolls_back_without_damaging_previous_schema ... ok
+test tests::transient_busy_errors_are_retried_during_initialization ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/migrations.rs (target/debug/deps/migrations-f6322865117f795e)
+
+running 11 tests
+test database_uses_wal_and_full_synchronous_mode ... ok
+test fresh_database_migrates_to_the_complete_latest_schema ... ok
+test composite_foreign_keys_reject_cross_session_epochs ... ok
+test foreign_keys_are_enabled_and_reject_orphaned_rows ... ok
+test event_schema_supports_external_payloads_and_rejects_mutation ... ok
+test durable_effect_history_cannot_be_erased ... ok
+test fork_lineage_is_complete_scoped_exact_and_immutable ... ok
+test reopening_an_existing_database_is_idempotent ... ok
+test reopening_detects_modified_migration_history ... ok
+test reopening_rejects_a_database_from_a_newer_binary ... ok
+test concurrent_first_open_is_serialized_and_idempotent ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_supervisor-ae2c3e6bba90b532)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/direct_supervisor.rs (target/debug/deps/direct_supervisor-5fcba11c65216cf4)
+
+running 7 tests
+test supervisor_failure_history_preserves_the_valid_protocol_prefix ... ok
+test partial_final_stdout_record_is_reported_explicitly ... ok
+test malformed_stdout_is_a_supervisor_failure_and_cleans_up_the_process_group ... ok
+test nonzero_agent_exit_is_a_successful_supervision_result_with_failed_lifecycle ... ok
+test large_stderr_is_drained_concurrently_and_bounded ... ok
+test committed_history_is_queryable_after_supervisor_restart ... ok
+test successful_run_persists_lifecycle_boundary_events_and_stderr ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.45s
+
+     Running tests/manifest.rs (target/debug/deps/manifest-9324509b4a26e53c)
+
+running 6 tests
+test rejects_oversized_manifest_before_parsing ... ok
+test defaults_working_directory_to_manifest_directory ... ok
+test rejects_unsupported_versions_and_unsafe_names ... ok
+test rejects_unknown_environment_and_secret_fields ... ok
+test loads_a_minimal_manifest_and_resolves_paths_relative_to_it ... ok
+test rejects_nonexecutables_missing_directories_and_argument_abuse ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_test_agent-8019344e0d84f5e7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/epoch_test_agent-ef6b47c4cea8da4c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/checkpoint.rs (target/debug/deps/checkpoint-d5047159d1ecde76)
+
+running 2 tests
+test serialized_w02_summary_carries_the_raw_cooperative_checkpoint_context ... ok
+test completed_w02_run_resumes_from_its_observable_safe_point_cursors ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/cli.rs (target/debug/deps/cli-b9a03992d70f43f4)
+
+running 4 tests
+test cli_rejects_an_incomplete_supervisor_binding ... ok
+test cli_crash_point_exits_nonzero_after_flushing_partial_trace ... ok
+test cli_uses_the_supervisors_trusted_execution_binding ... ok
+test cli_selects_scenario_and_emits_machine_readable_summary ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests/determinism.rs (target/debug/deps/determinism-f107127b881c5cfe)
+
+running 6 tests
+test full_trace_satisfies_supervisor_stream_invariants ... ok
+test configured_crashes_leave_a_valid_deterministic_partial_trace ... ok
+test full_scenario_exercises_state_process_workspace_and_loopback_network ... ok
+test individual_scenarios_execute_only_the_selected_tools ... ok
+test seed_changes_both_trace_and_state_hash ... ok
+test same_seed_produces_identical_trace_and_normalized_state ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/supervised.rs (target/debug/deps/supervised-6c798c5275576b14)
+
+running 1 test
+test real_agent_stream_runs_under_the_supervisors_execution_binding ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/supervised_diff.rs (target/debug/deps/supervised_diff-45ce0ffa72c75b91)
+
+running 2 tests
+test durable_epoch_diff_handles_identical_and_changed_validated_contexts ... ok
+test epoch_diff_refuses_corrupt_missing_and_future_components ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s
+
+     Running tests/supervised_fork.rs (target/debug/deps/supervised_fork-47e5a7fa35bb400d)
+
+running 4 tests
+test child_event_sequence_and_state_are_independent_from_parent ... ok
+test concurrent_same_name_forks_have_one_durable_winner ... ok
+test fork_inherits_validated_context_without_mutating_parent_or_effects ... ok
+test fork_rejects_invalid_name_uncommitted_epoch_and_corrupt_component ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running tests/supervised_recovery.rs (target/debug/deps/supervised_recovery-f7e7cd9a0edd6d1a)
+
+running 5 tests
+test checkpoint_is_explicitly_unsupported_without_a_cooperative_w02_summary ... ok
+test restore_reports_future_component_schema_as_unsupported ... ok
+test restore_rejects_valid_json_that_is_not_the_canonical_context_encoding ... ok
+test restore_rejects_corrupt_and_missing_component_bytes ... ok
+test three_restart_safe_run_checkpoint_mutate_restore_inspect_cycles_need_no_repair ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+     Running unittests src/lib.rs (target/debug/deps/epoch_workspace-e007e60ddd287dd1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/workspace.rs (target/debug/deps/workspace-c23755467f52d5ac)
+
+running 20 tests
+test configured_file_total_depth_and_path_limits_fail_before_manifest_commit ... ok
+test every_resource_dimension_has_a_typed_limit ... ok
+test concurrent_empty_restore_has_exactly_one_no_clobber_winner ... ok
+test concurrent_snapshots_converge_on_one_manifest_hash ... ok
+test blob_state_root_is_excluded_when_nested_and_rejected_when_equal_to_workspace ... ok
+test corrupt_manifest_blob_is_rejected_before_target_or_staging_creation ... ok
+test non_utf8_names_are_rejected_without_lossy_normalization ... ok
+test hardlinks_are_explicitly_materialized_as_independent_files ... ok
+test interrupted_restore_cleans_staging_even_with_inaccessible_final_directory_mode ... ok
+test future_noncanonical_and_wrong_length_manifests_are_rejected_before_mutation ... ok
+test nested_epoch_state_is_never_captured ... ok
+test symlink_escape_and_special_files_are_explicitly_unsupported ... ok
+test restore_preserves_workspace_root_mode ... ok
+test absolute_windows_reserved_and_separator_paths_are_rejected_before_staging ... ok
+test manifest_structure_and_file_metadata_are_validated_before_staging ... ok
+test restore_validates_every_blob_before_creating_the_target ... ok
+test traversal_manifest_and_existing_target_fail_closed_without_escape_or_clobber ... ok
+test snapshot_is_stable_and_immutable_after_source_mutation ... ok
+test snapshot_restore_preserves_tree_bytes_modes_empty_files_and_symlink_text ... ok
+test injected_restore_interrupts_remove_staging_and_never_publish_partial_target ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+
++zsh:4> cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.28s
++zsh:4> cargo fmt --all -- --check
++zsh:4> git diff --check
++zsh:4> git status --porcelain
++zsh:4> test -z ''

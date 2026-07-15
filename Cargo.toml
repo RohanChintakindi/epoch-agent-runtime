@@ -1,8 +1,10 @@
 [workspace]
 members = [
+    "crates/epoch-bench",
     "crates/epoch-blob",
     "crates/epoch-capabilities",
     "crates/epoch-checkpoint",
+    "crates/epoch-criu-compat",
     "crates/epoch-cli",
     "crates/epoch-core",
     "crates/epoch-diff",
@@ -10,6 +12,7 @@ members = [
     "crates/epoch-effects",
     "crates/epoch-proc",
     "crates/epoch-protocol",
+    "crates/epoch-performance-matrix",
     "crates/epoch-sandbox",
     "crates/epoch-storage",
     "crates/epoch-supervisor",
@@ -26,11 +29,13 @@ rust-version = "1.85"
 
 [workspace.dependencies]
 clap = { version = "4.5", features = ["derive"] }
+epoch-bench = { path = "crates/epoch-bench" }
 epoch-blob = { path = "crates/epoch-blob" }
 epoch-capabilities = { path = "crates/epoch-capabilities" }
 epoch-checkpoint = { path = "crates/epoch-checkpoint" }
 epoch-core = { path = "crates/epoch-core" }
 epoch-effects = { path = "crates/epoch-effects" }
+epoch-performance-matrix = { path = "crates/epoch-performance-matrix" }
 epoch-sandbox = { path = "crates/epoch-sandbox" }
 epoch-storage = { path = "crates/epoch-storage" }
 epoch-workspace = { path = "crates/epoch-workspace" }

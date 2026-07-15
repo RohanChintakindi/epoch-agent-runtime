@@ -1,0 +1,2185 @@
+{
+  "schema_version": 2,
+  "run_id": "bench-4a118fc7-ad7c-4161-9c87-8d0371bbbd6c",
+  "suite": "all",
+  "environment": {
+    "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+    "code_dirty": false,
+    "os": "macos",
+    "architecture": "aarch64",
+    "kernel_release": "25.5.0",
+    "cpu_model": "Apple M4",
+    "cpu_count": 10,
+    "total_memory_bytes": 17179869184,
+    "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+    "extra": {
+      "collector": "epoch-bench-v1",
+      "repository": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration"
+    }
+  },
+  "thresholds": {
+    "checkpoint_capture_p95_ns": 2000000000,
+    "checkpoint_restore_p95_ns": 2000000000,
+    "checkpoint_validation_failures": 0,
+    "cow_pss_ratio_basis_points": 7500
+  },
+  "checkpoint": {
+    "reports": [
+      {
+        "schema_version": 1,
+        "config": {
+          "suite": "application_workspace_checkpoint",
+          "backend": "cooperative-v1+full-copy-cas-v1",
+          "trace_mode": "off",
+          "seed": 24301,
+          "warmups": 2,
+          "repetitions": 10
+        },
+        "environment": {
+          "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+          "code_dirty": false,
+          "os": "macos",
+          "architecture": "aarch64",
+          "kernel_release": "25.5.0",
+          "cpu_model": "Apple M4",
+          "cpu_count": 10,
+          "total_memory_bytes": 17179869184,
+          "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+          "extra": {
+            "collector": "epoch-bench-v1",
+            "repository": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration"
+          }
+        },
+        "samples": [
+          {
+            "ordinal": 0,
+            "seed": 6727192872932819891,
+            "elapsed_ns": 697856500,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 51686417.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 235208.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 528081500.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 98553291.0,
+              "workspace_validation_ns": 19263209.0
+            }
+          },
+          {
+            "ordinal": 1,
+            "seed": 8129731167615341197,
+            "elapsed_ns": 702291209,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 25833542.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 304042.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 547269208.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 101215417.0,
+              "workspace_validation_ns": 27634500.0
+            }
+          },
+          {
+            "ordinal": 2,
+            "seed": 860951788085400693,
+            "elapsed_ns": 692744792,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051902,
+            "bytes_written": 1051902,
+            "metrics": {
+              "application_capture_ns": 36727833.0,
+              "application_checkpoint_bytes": 398.0,
+              "application_restore_ns": 252208.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 527887583.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 102238917.0,
+              "workspace_validation_ns": 25601583.0
+            }
+          },
+          {
+            "ordinal": 3,
+            "seed": 6825197725885693130,
+            "elapsed_ns": 701734458,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 30883833.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 939083.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 548464417.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 96367625.0,
+              "workspace_validation_ns": 25040541.0
+            }
+          },
+          {
+            "ordinal": 4,
+            "seed": 2984990394097172368,
+            "elapsed_ns": 709644167,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 25813333.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 399042.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 552068709.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 104534500.0,
+              "workspace_validation_ns": 26806250.0
+            }
+          },
+          {
+            "ordinal": 5,
+            "seed": 1335781936353846705,
+            "elapsed_ns": 664392708,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 30057500.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 234833.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 518834792.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 97557958.0,
+              "workspace_validation_ns": 17682292.0
+            }
+          },
+          {
+            "ordinal": 6,
+            "seed": 15754294878416903795,
+            "elapsed_ns": 671840208,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 30743709.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 216083.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 529097083.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 94318833.0,
+              "workspace_validation_ns": 17439083.0
+            }
+          },
+          {
+            "ordinal": 7,
+            "seed": 4526273042308876071,
+            "elapsed_ns": 703987584,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 30086083.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 401083.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 551977708.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 94848750.0,
+              "workspace_validation_ns": 26645750.0
+            }
+          },
+          {
+            "ordinal": 8,
+            "seed": 6387777158891554393,
+            "elapsed_ns": 685000125,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 28892916.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 239417.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 545088458.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 90221083.0,
+              "workspace_validation_ns": 20532583.0
+            }
+          },
+          {
+            "ordinal": 9,
+            "seed": 7285346741127956506,
+            "elapsed_ns": 683993042,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1051904,
+            "bytes_written": 1051904,
+            "metrics": {
+              "application_capture_ns": 27975375.0,
+              "application_checkpoint_bytes": 400.0,
+              "application_restore_ns": 464084.0,
+              "trace_records": 0.0,
+              "workspace_capture_ns": 530115084.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 97180333.0,
+              "workspace_validation_ns": 28231833.0
+            }
+          }
+        ],
+        "summary": {
+          "succeeded": 10,
+          "unsupported": 0,
+          "failed": 0,
+          "latency_ns": {
+            "sample_count": 10,
+            "min": 664392708,
+            "p50": 692744792,
+            "p95": 709644167,
+            "p99": 709644167,
+            "max": 709644167
+          }
+        }
+      },
+      {
+        "schema_version": 1,
+        "config": {
+          "suite": "application_workspace_checkpoint",
+          "backend": "cooperative-v1+full-copy-cas-v1",
+          "trace_mode": "on",
+          "seed": 24301,
+          "warmups": 2,
+          "repetitions": 10
+        },
+        "environment": {
+          "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+          "code_dirty": false,
+          "os": "macos",
+          "architecture": "aarch64",
+          "kernel_release": "25.5.0",
+          "cpu_model": "Apple M4",
+          "cpu_count": 10,
+          "total_memory_bytes": 17179869184,
+          "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+          "extra": {
+            "collector": "epoch-bench-v1",
+            "repository": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration"
+          }
+        },
+        "samples": [
+          {
+            "ordinal": 0,
+            "seed": 6727192872932819891,
+            "elapsed_ns": 676914875,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 31915125.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 5578542.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 525328958.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 96339250.0,
+              "workspace_validation_ns": 17702125.0
+            }
+          },
+          {
+            "ordinal": 1,
+            "seed": 8129731167615341197,
+            "elapsed_ns": 693608666,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 33582417.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 5645167.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 538027542.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 99348000.0,
+              "workspace_validation_ns": 16979833.0
+            }
+          },
+          {
+            "ordinal": 2,
+            "seed": 860951788085400693,
+            "elapsed_ns": 660634709,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060020,
+            "bytes_written": 1060020,
+            "metrics": {
+              "application_capture_ns": 35438000.0,
+              "application_checkpoint_bytes": 8516.0,
+              "application_restore_ns": 7887709.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 498277042.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 95212167.0,
+              "workspace_validation_ns": 23778792.0
+            }
+          },
+          {
+            "ordinal": 3,
+            "seed": 6825197725885693130,
+            "elapsed_ns": 695700500,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 36779667.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 6749542.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 532059417.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 97701084.0,
+              "workspace_validation_ns": 22380958.0
+            }
+          },
+          {
+            "ordinal": 4,
+            "seed": 2984990394097172368,
+            "elapsed_ns": 775097959,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 45252750.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 8739291.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 592012083.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 106028042.0,
+              "workspace_validation_ns": 23038333.0
+            }
+          },
+          {
+            "ordinal": 5,
+            "seed": 1335781936353846705,
+            "elapsed_ns": 735792166,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 37707042.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 6195875.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 572036209.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 101837541.0,
+              "workspace_validation_ns": 17993958.0
+            }
+          },
+          {
+            "ordinal": 6,
+            "seed": 15754294878416903795,
+            "elapsed_ns": 721764375,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 39051334.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 5990958.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 538833375.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 113213875.0,
+              "workspace_validation_ns": 24638083.0
+            }
+          },
+          {
+            "ordinal": 7,
+            "seed": 4526273042308876071,
+            "elapsed_ns": 745855875,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 40758917.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 6265750.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 572172917.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 105171708.0,
+              "workspace_validation_ns": 21446292.0
+            }
+          },
+          {
+            "ordinal": 8,
+            "seed": 6387777158891554393,
+            "elapsed_ns": 729836042,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 33874250.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 6634042.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 566013708.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 105501542.0,
+              "workspace_validation_ns": 17778583.0
+            }
+          },
+          {
+            "ordinal": 9,
+            "seed": 7285346741127956506,
+            "elapsed_ns": 1193441167,
+            "outcome": {
+              "status": "succeeded"
+            },
+            "bytes_read": 1060022,
+            "bytes_written": 1060022,
+            "metrics": {
+              "application_capture_ns": 59806584.0,
+              "application_checkpoint_bytes": 8518.0,
+              "application_restore_ns": 5349834.0,
+              "trace_records": 64.0,
+              "workspace_capture_ns": 927773459.0,
+              "workspace_file_bytes": 1048576.0,
+              "workspace_manifest_bytes": 2928.0,
+              "workspace_restore_ns": 183625500.0,
+              "workspace_validation_ns": 16850209.0
+            }
+          }
+        ],
+        "summary": {
+          "succeeded": 10,
+          "unsupported": 0,
+          "failed": 0,
+          "latency_ns": {
+            "sample_count": 10,
+            "min": 660634709,
+            "p50": 721764375,
+            "p95": 1193441167,
+            "p99": 1193441167,
+            "max": 1193441167
+          }
+        }
+      }
+    ],
+    "validation_cases": [
+      {
+        "name": "future_application_schema_rejected",
+        "passed": true,
+        "detail": "application context schema 2 is unsupported; expected 1"
+      },
+      {
+        "name": "missing_application_reference_rejected",
+        "passed": true,
+        "detail": "observable context references missing blob 0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "name": "workspace_restore_refuses_clobber",
+        "passed": true,
+        "detail": "target_rejected=true, sentinel_preserved=true"
+      }
+    ]
+  },
+  "compatibility": {
+    "environment": {
+      "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+      "code_dirty": false,
+      "os": "macos",
+      "architecture": "aarch64",
+      "kernel_release": "25.5.0",
+      "cpu_model": "Apple M4",
+      "cpu_count": 10,
+      "total_memory_bytes": 17179869184,
+      "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+      "extra": {
+        "collector": "epoch-bench-v1",
+        "repository": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration"
+      }
+    },
+    "rows": [
+      {
+        "case": "combined_4096_bytes",
+        "component": "application_and_workspace",
+        "configuration": {
+          "fixture_bytes": "4096",
+          "fixture_files": "4"
+        },
+        "outcome": {
+          "status": "succeeded"
+        },
+        "elapsed_ns": 492714917,
+        "evidence": {
+          "bytes_written": "5256",
+          "trace_mode": "off"
+        }
+      },
+      {
+        "case": "combined_65536_bytes",
+        "component": "application_and_workspace",
+        "configuration": {
+          "fixture_bytes": "65536",
+          "fixture_files": "4"
+        },
+        "outcome": {
+          "status": "succeeded"
+        },
+        "elapsed_ns": 246820666,
+        "evidence": {
+          "bytes_written": "66700",
+          "trace_mode": "off"
+        }
+      },
+      {
+        "case": "combined_1048576_bytes",
+        "component": "application_and_workspace",
+        "configuration": {
+          "fixture_bytes": "1048576",
+          "fixture_files": "4"
+        },
+        "outcome": {
+          "status": "succeeded"
+        },
+        "elapsed_ns": 305060541,
+        "evidence": {
+          "bytes_written": "1049744",
+          "trace_mode": "off"
+        }
+      },
+      {
+        "case": "application_future_schema",
+        "component": "application_checkpoint",
+        "configuration": {
+          "schema_version": "2"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "application context schema 2 is unsupported; expected 1"
+        },
+        "elapsed_ns": 5250,
+        "evidence": {
+          "expected": "typed unsupported"
+        }
+      },
+      {
+        "case": "application_missing_reference",
+        "component": "application_checkpoint",
+        "configuration": {
+          "reference": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "outcome": {
+          "status": "failed",
+          "error": "observable context references missing blob 0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "elapsed_ns": 33500,
+        "evidence": {
+          "validation_stage": "capture"
+        }
+      },
+      {
+        "case": "workspace_missing_source",
+        "component": "workspace_checkpoint",
+        "configuration": {
+          "source": "absent"
+        },
+        "outcome": {
+          "status": "failed",
+          "error": "No such file or directory (os error 2)"
+        },
+        "elapsed_ns": 17833,
+        "evidence": {
+          "validation_stage": "capture"
+        }
+      },
+      {
+        "case": "workspace_special_file",
+        "component": "workspace_checkpoint",
+        "configuration": {
+          "entry": "unix_socket"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "SpecialFile { path: \"socket\", kind: \"socket\" }"
+        },
+        "elapsed_ns": 111333,
+        "evidence": {
+          "policy": "special files require cooperation"
+        }
+      },
+      {
+        "case": "process_threads",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "threads"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      },
+      {
+        "case": "process_child_processes",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "child_processes"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      },
+      {
+        "case": "process_pipes",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "pipes"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      },
+      {
+        "case": "process_unix_sockets",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "unix_sockets"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      },
+      {
+        "case": "process_tcp_connections",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "tcp_connections"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      },
+      {
+        "case": "process_timers_signals",
+        "component": "process_checkpoint",
+        "configuration": {
+          "workload": "timers_signals"
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "no process checkpoint backend is registered on this revision"
+        },
+        "elapsed_ns": 0,
+        "evidence": {
+          "backend": "unregistered"
+        }
+      }
+    ]
+  },
+  "cow": {
+    "points": [
+      {
+        "config": {
+          "allocation_bytes": 67108864,
+          "child_fanout": 4,
+          "dirty_ratio_basis_points": 2500,
+          "repetitions": 5
+        },
+        "environment": {
+          "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+          "code_dirty": false,
+          "os": "macos",
+          "architecture": "aarch64",
+          "kernel_release": "25.5.0",
+          "cpu_model": "Apple M4",
+          "cpu_count": 10,
+          "total_memory_bytes": 17179869184,
+          "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+          "extra": {
+            "collector": "epoch-bench-v1",
+            "repository": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration"
+          }
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "fork COW metrics require Linux /proc/self/smaps_rollup"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "config": {
+          "allocation_bytes": 4194304,
+          "child_fanout": 1,
+          "dirty_ratio_basis_points": 0,
+          "repetitions": 5
+        },
+        "environment": {
+          "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+          "code_dirty": false,
+          "os": "macos",
+          "architecture": "aarch64",
+          "kernel_release": "25.5.0",
+          "cpu_model": "Apple M4",
+          "cpu_count": 10,
+          "total_memory_bytes": 17179869184,
+          "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+          "extra": {
+            "collector": "epoch-bench-v1",
+            "repository": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration"
+          }
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "fork COW metrics require Linux /proc/self/smaps_rollup"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "config": {
+          "allocation_bytes": 4194304,
+          "child_fanout": 1,
+          "dirty_ratio_basis_points": 10000,
+          "repetitions": 5
+        },
+        "environment": {
+          "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+          "code_dirty": false,
+          "os": "macos",
+          "architecture": "aarch64",
+          "kernel_release": "25.5.0",
+          "cpu_model": "Apple M4",
+          "cpu_count": 10,
+          "total_memory_bytes": 17179869184,
+          "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+          "extra": {
+            "collector": "epoch-bench-v1",
+            "repository": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration"
+          }
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "fork COW metrics require Linux /proc/self/smaps_rollup"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "config": {
+          "allocation_bytes": 33554432,
+          "child_fanout": 2,
+          "dirty_ratio_basis_points": 2500,
+          "repetitions": 5
+        },
+        "environment": {
+          "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+          "code_dirty": false,
+          "os": "macos",
+          "architecture": "aarch64",
+          "kernel_release": "25.5.0",
+          "cpu_model": "Apple M4",
+          "cpu_count": 10,
+          "total_memory_bytes": 17179869184,
+          "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+          "extra": {
+            "collector": "epoch-bench-v1",
+            "repository": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration"
+          }
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "fork COW metrics require Linux /proc/self/smaps_rollup"
+        },
+        "samples": [],
+        "summary": null
+      },
+      {
+        "config": {
+          "allocation_bytes": 33554432,
+          "child_fanout": 4,
+          "dirty_ratio_basis_points": 2500,
+          "repetitions": 5
+        },
+        "environment": {
+          "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+          "code_dirty": false,
+          "os": "macos",
+          "architecture": "aarch64",
+          "kernel_release": "25.5.0",
+          "cpu_model": "Apple M4",
+          "cpu_count": 10,
+          "total_memory_bytes": 17179869184,
+          "runtime_version": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+          "extra": {
+            "collector": "epoch-bench-v1",
+            "repository": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration"
+          }
+        },
+        "outcome": {
+          "status": "unsupported",
+          "reason": "fork COW metrics require Linux /proc/self/smaps_rollup"
+        },
+        "samples": [],
+        "summary": null
+      }
+    ]
+  },
+  "performance": {
+    "schema_version": 1,
+    "config": {
+      "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+      "cow": {
+        "allocations_bytes": [
+          134217728,
+          536870912,
+          1073741824
+        ],
+        "fanouts": [
+          1,
+          2,
+          4,
+          8
+        ],
+        "dirty_basis_points": [
+          0,
+          100,
+          1000,
+          5000,
+          10000
+        ],
+        "repetitions": 3,
+        "helper": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration/crates/epoch-cli/../../crates/epoch-performance-matrix/helpers/cow_matrix_probe.py",
+        "python": "/usr/bin/python3",
+        "timeout_ms": 180000
+      },
+      "isolation": {
+        "repetitions": 5,
+        "probe": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration/target/debug/epoch-performance-probe",
+        "trusted_sandbox_helper": "/Users/rohanchintakindi/clawshell/epoch-worktrees/week4-integration/target/debug/epoch-sandbox-init",
+        "workspace": "/tmp/epoch-final-11739a8/mac-bench/.epoch-bench-scratch-cL6O2d/performance-workspace",
+        "memory_limit_bytes": 134217728,
+        "pids_limit": 16,
+        "cpu_percent": 100
+      }
+    },
+    "environment": {
+      "operating_system": "macos",
+      "architecture": "aarch64",
+      "kernel_release": "25.5.0",
+      "logical_cpus": 10,
+      "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+      "host_memory": {
+        "available_bytes": 0,
+        "safety_budget_bytes": 0
+      }
+    },
+    "cow": {
+      "rows": [
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 1,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 1,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 1,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 1,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 1,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 2,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 2,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 2,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 2,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 2,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 4,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 4,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 4,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 4,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 4,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 8,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 8,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 8,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 8,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 134217728,
+            "fanout": 8,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 1,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 1,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 1,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 1,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 1,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 2,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 2,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 2,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 2,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 2,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 4,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 4,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 4,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 4,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 4,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 8,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 8,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 8,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 8,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 536870912,
+            "fanout": 8,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 1,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 1,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 1,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 1,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 1,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 2,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 2,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 2,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 2,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 2,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 4,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 4,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 4,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 4,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 4,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 8,
+            "dirty_basis_points": 0
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 8,
+            "dirty_basis_points": 100
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 8,
+            "dirty_basis_points": 1000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 8,
+            "dirty_basis_points": 5000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        },
+        {
+          "key": {
+            "allocation_bytes": 1073741824,
+            "fanout": 8,
+            "dirty_basis_points": 10000
+          },
+          "status": "unsupported",
+          "estimated_peak_bytes": null,
+          "diagnostic": {
+            "code": "platform_not_linux",
+            "detail": "fork/COW PSS evidence requires Linux /proc"
+          },
+          "samples": [],
+          "summary": null
+        }
+      ],
+      "summary": {
+        "total_rows": 60,
+        "supported_rows": 0,
+        "skipped_rows": 0,
+        "unsupported_rows": 60,
+        "failed_rows": 0
+      }
+    },
+    "isolation": {
+      "status": "unsupported",
+      "direct": {
+        "backend": "direct",
+        "status": "supported",
+        "diagnostic": null,
+        "samples": [
+          {
+            "backend": "direct",
+            "phase": "cold",
+            "ordinal": 0,
+            "status": "supported",
+            "total_ns": 370496834,
+            "launch_overhead_ns": 337839375,
+            "workload_runtime_ns": 32657459,
+            "cpu_user_ns": 31097000,
+            "cpu_system_ns": 1405000,
+            "peak_rss_bytes": 10027008,
+            "compatibility": "completed",
+            "diagnostic": null
+          },
+          {
+            "backend": "direct",
+            "phase": "warm",
+            "ordinal": 1,
+            "status": "supported",
+            "total_ns": 22109959,
+            "launch_overhead_ns": 2278418,
+            "workload_runtime_ns": 19831541,
+            "cpu_user_ns": 19346000,
+            "cpu_system_ns": 484000,
+            "peak_rss_bytes": 10027008,
+            "compatibility": "completed",
+            "diagnostic": null
+          },
+          {
+            "backend": "direct",
+            "phase": "warm",
+            "ordinal": 2,
+            "status": "supported",
+            "total_ns": 22547833,
+            "launch_overhead_ns": 1743333,
+            "workload_runtime_ns": 20804500,
+            "cpu_user_ns": 20212000,
+            "cpu_system_ns": 591000,
+            "peak_rss_bytes": 10027008,
+            "compatibility": "completed",
+            "diagnostic": null
+          },
+          {
+            "backend": "direct",
+            "phase": "warm",
+            "ordinal": 3,
+            "status": "supported",
+            "total_ns": 18745917,
+            "launch_overhead_ns": 1592667,
+            "workload_runtime_ns": 17153250,
+            "cpu_user_ns": 16713000,
+            "cpu_system_ns": 435000,
+            "peak_rss_bytes": 10027008,
+            "compatibility": "completed",
+            "diagnostic": null
+          },
+          {
+            "backend": "direct",
+            "phase": "warm",
+            "ordinal": 4,
+            "status": "supported",
+            "total_ns": 17568417,
+            "launch_overhead_ns": 1403125,
+            "workload_runtime_ns": 16165292,
+            "cpu_user_ns": 15639000,
+            "cpu_system_ns": 526000,
+            "peak_rss_bytes": 10027008,
+            "compatibility": "completed",
+            "diagnostic": null
+          }
+        ],
+        "summary": {
+          "cold_total_ns": 370496834,
+          "warm_total_p50_ns": 22109959,
+          "warm_total_p95_ns": 22547833,
+          "warm_launch_overhead_p50_ns": 1743333,
+          "warm_cpu_p50_ns": 19830000,
+          "peak_rss_bytes": 10027008
+        },
+        "checkpoint_interaction": {
+          "backend": "direct",
+          "status": "unsupported",
+          "detail": "the standalone performance probe has no cooperative application checkpoint boundary"
+        }
+      },
+      "linux": {
+        "backend": "linux",
+        "status": "unsupported",
+        "diagnostic": {
+          "code": "platformnotlinux",
+          "detail": "Linux isolation requires Linux; current OS is macos"
+        },
+        "samples": [],
+        "summary": null,
+        "checkpoint_interaction": {
+          "backend": "linux",
+          "status": "unsupported",
+          "detail": "epoch-sandbox is not composed with the CRIU or composite-checkpoint coordinator"
+        }
+      },
+      "checkpoint_interactions": [
+        {
+          "backend": "direct",
+          "status": "unsupported",
+          "detail": "the standalone performance probe has no cooperative application checkpoint boundary"
+        },
+        {
+          "backend": "linux",
+          "status": "unsupported",
+          "detail": "epoch-sandbox is not composed with the CRIU or composite-checkpoint coordinator"
+        }
+      ]
+    }
+  },
+  "faults": {
+    "rows": [
+      {
+        "stage": "workspace_restore_after_staging",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "fault": "AfterStagingCreated",
+          "staging_clean": "true",
+          "target_absent": "true"
+        }
+      },
+      {
+        "stage": "workspace_restore_after_first_entry",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "fault": "AfterFirstEntry",
+          "staging_clean": "true",
+          "target_absent": "true"
+        }
+      },
+      {
+        "stage": "workspace_restore_before_publish",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "fault": "BeforePublish",
+          "staging_clean": "true",
+          "target_absent": "true"
+        }
+      },
+      {
+        "stage": "application_capture_missing_reference",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "diagnostic": "observable context references missing blob ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "validation_stage": "capture"
+        }
+      },
+      {
+        "stage": "effect_replay_100_runs",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "attempts": "100",
+          "correct_receipts": "100",
+          "dispatcher_scope": "deterministic_local",
+          "downstream_dispatches": "1",
+          "durable_intents": "1"
+        }
+      },
+      {
+        "stage": "effect_unknown_suspends_branch",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "branch_state": "suspended",
+          "downstream_dispatches": "1",
+          "effect_state": "Unknown",
+          "retry_blocked": "true"
+        }
+      },
+      {
+        "stage": "capability_revocation_resurrection_blocked",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "current_state": "Revoked",
+          "downstream_dispatches": "0",
+          "gateway_denied": "true",
+          "raw_resurrection_blocked": "true"
+        }
+      },
+      {
+        "stage": "capability_policy_rollback_blocked",
+        "evidence_kind": "actual",
+        "outcome": {
+          "status": "succeeded"
+        },
+        "containment_verified": true,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "current_policy_revision": "2",
+          "downstream_dispatches": "0",
+          "gateway_denied": "true",
+          "raw_policy_rollback_blocked": "true"
+        }
+      },
+      {
+        "stage": "composite_after_application_before_workspace",
+        "evidence_kind": "symbolic",
+        "outcome": {
+          "status": "unsupported",
+          "reason": "the composite checkpoint coordinator has no stage injection API on this revision"
+        },
+        "containment_verified": false,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "api": "unavailable",
+          "claim": "unsupported"
+        }
+      },
+      {
+        "stage": "external_provider_reconciliation",
+        "evidence_kind": "symbolic",
+        "outcome": {
+          "status": "unsupported",
+          "reason": "the deterministic gateway fixture does not prove a live provider's reconciliation contract"
+        },
+        "containment_verified": false,
+        "claims_external_exactly_once": false,
+        "evidence": {
+          "api": "unavailable",
+          "claim": "unsupported"
+        }
+      }
+    ]
+  },
+  "decisions": [
+    {
+      "mechanism": "cooperative application + full-copy workspace checkpoint",
+      "decision": "keep",
+      "threshold": "zero unsupported/failed samples and <= 0 validation failures",
+      "evidence": [
+        "successful_samples=20",
+        "validation_failures=0",
+        "capture_p95_ns=637264833",
+        "restore_p95_ns=143842916"
+      ]
+    },
+    {
+      "mechanism": "fork COW process-memory optimization",
+      "decision": "narrow",
+      "threshold": "PSS/full-copy <= 7500 bp and Linux compatibility only",
+      "evidence": [
+        "matrix_points=5; succeeded=0; unsupported=5; failed=0; maximum_pss_to_full_copy_basis_points=unavailable; scope remains process-memory compatibility only"
+      ]
+    },
+    {
+      "mechanism": "durable effect gateway replay and fail-closed authority",
+      "decision": "keep",
+      "threshold": "100 stable replays cause one deterministic dispatch; unknown outcomes suspend; revoked/stale authority stays denied",
+      "evidence": [
+        "effect_replay_100_runs=succeeded",
+        "effect_unknown_suspends_branch=succeeded",
+        "capability_revocation_resurrection_blocked=succeeded",
+        "capability_policy_rollback_blocked=succeeded"
+      ]
+    },
+    {
+      "mechanism": "transparent external exactly-once through rollback",
+      "decision": "kill",
+      "threshold": "requires a downstream idempotency/reconciliation API and crash evidence",
+      "evidence": [
+        "the integrated gateway proves durable local duplicate suppression, not a live provider's commit semantics",
+        "live provider reconciliation remains an explicit unsupported matrix row"
+      ]
+    }
+  ]
+}

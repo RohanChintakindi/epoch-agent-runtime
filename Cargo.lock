@@ -177,6 +177,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-bench"
+version = "0.1.0"
+dependencies = [
+ "epoch-blob",
+ "epoch-capabilities",
+ "epoch-checkpoint",
+ "epoch-core",
+ "epoch-effects",
+ "epoch-performance-matrix",
+ "epoch-storage",
+ "epoch-workspace",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "epoch-blob"
 version = "0.1.0"
 dependencies = [
@@ -222,6 +242,7 @@ name = "epoch-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "epoch-bench",
  "epoch-blob",
  "epoch-capabilities",
  "epoch-checkpoint",
@@ -234,6 +255,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "toml",
+ "uuid",
 ]
 
 [[package]]
@@ -243,6 +266,18 @@ dependencies = [
  "serde",
  "thiserror",
  "uuid",
+]
+
+[[package]]
+name = "epoch-criu-compat"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "nix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -282,6 +317,20 @@ dependencies = [
  "epoch-storage",
  "rusqlite",
  "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "epoch-performance-matrix"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "epoch-sandbox",
+ "nix",
+ "serde",
+ "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
 ]

@@ -499,3 +499,21 @@ pub enum ExportError {
     #[error("trajectory write failed: {0}")]
     Io(#[from] std::io::Error),
 }
+
+impl ExportError {
+    /// Returns true when the caller can fix the request without repairing trusted state.
+    #[must_use]
+    pub const fn is_user_error(&self) -> bool {
+        matches!(
+            self,
+            Self::InvalidTaskGroup
+                | Self::InvalidLimits
+                | Self::SessionNotFound { .. }
+                | Self::BranchLimitExceeded { .. }
+                | Self::EventLimitExceeded { .. }
+                | Self::OutputAlreadyExists
+                | Self::Output { .. }
+                | Self::Io(_)
+        )
+    }
+}

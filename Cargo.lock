@@ -195,6 +195,7 @@ dependencies = [
  "epoch-core",
  "epoch-effects",
  "epoch-storage",
+ "getrandom",
  "rusqlite",
  "serde",
  "serde_json",

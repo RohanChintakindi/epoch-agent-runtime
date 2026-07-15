@@ -26,6 +26,7 @@ epoch-capabilities = { path = "crates/epoch-capabilities" }
 epoch-core = { path = "crates/epoch-core" }
 epoch-effects = { path = "crates/epoch-effects" }
 epoch-storage = { path = "crates/epoch-storage" }
+getrandom = "0.4"
 nix = { version = "0.30", features = ["process", "signal"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }

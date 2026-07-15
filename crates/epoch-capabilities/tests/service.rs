@@ -36,7 +36,7 @@ impl Clock for ManualClock {
 }
 
 struct Fixture {
-    _directory: TempDir,
+    directory: TempDir,
     database: std::path::PathBuf,
     session: SessionId,
     branch: BranchId,
@@ -64,7 +64,7 @@ impl Fixture {
             params![branch.to_string(), session.to_string()],
         ).expect("branch");
         Self {
-            _directory: directory,
+            directory,
             database,
             session,
             branch,
@@ -126,17 +126,25 @@ fn opaque_handle_is_not_authoritative_plaintext_at_rest() {
     fixture.initialize(&service);
     let issued = service.issue(&fixture.issue_request()).expect("issue");
 
-    let bytes = std::fs::read(&fixture.database).expect("database bytes");
-    assert!(
-        !bytes
-            .windows(issued.handle.expose().len())
-            .any(|window| { window == issued.handle.expose().as_bytes() })
-    );
+    for entry in std::fs::read_dir(fixture.directory.path()).expect("runtime files") {
+        let entry = entry.expect("runtime entry");
+        if entry.file_type().expect("file type").is_file() {
+            let bytes = std::fs::read(entry.path()).expect("runtime bytes");
+            assert!(
+                !bytes
+                    .windows(issued.handle.expose().len())
+                    .any(|window| { window == issued.handle.expose().as_bytes() }),
+                "opaque bearer token leaked into {}",
+                entry.path().display()
+            );
+        }
+    }
     assert!(!format!("{:?}", issued.handle).contains(issued.handle.expose()));
     assert!(CapabilityHandle::from_str(issued.handle.expose()).is_ok());
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn authorization_is_exactly_bound_and_every_decision_is_audited() {
     let fixture = Fixture::new();
     let service = fixture.service();
@@ -247,6 +255,93 @@ fn authorization_is_exactly_bound_and_every_decision_is_audited() {
 }
 
 #[test]
+fn policy_revision_claim_must_match_current_trusted_policy() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    fixture.initialize(&service);
+    let issued = service.issue(&fixture.issue_request()).expect("issue");
+    let stale_claim = CapabilityUse::new(
+        fixture.session,
+        fixture.branch,
+        "agent-1",
+        "email.send",
+        "mailbox:test",
+        6,
+        1,
+        "stale-claim",
+        &"9".repeat(64),
+    )
+    .expect("request");
+
+    assert_denied(
+        &service
+            .authorize_and_consume(&issued.handle, &stale_claim)
+            .expect("deny"),
+        DenialReason::PolicyRevisionMismatch,
+    );
+}
+
+#[test]
+fn revoking_an_ancestor_invalidates_every_delegated_handle() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    fixture.initialize(&service);
+    let root = service.issue(&fixture.issue_request()).expect("root");
+    let child = service
+        .attenuate(&root.handle, &fixture.issue_request())
+        .expect("child");
+    service.revoke(&root.handle).expect("revoke root");
+
+    assert_denied(
+        &service
+            .authorize_and_consume(&child.handle, &fixture.use_request("child-after-revoke"))
+            .expect("deny"),
+        DenialReason::AncestorRevoked,
+    );
+    assert!(
+        service
+            .attenuate(&child.handle, &fixture.issue_request())
+            .is_err(),
+        "inactive delegated authority cannot mint another handle"
+    );
+}
+
+#[test]
+fn database_guards_authority_monotonicity_and_append_only_audit() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    fixture.initialize(&service);
+    let issued = service.issue(&fixture.issue_request()).expect("issue");
+    service
+        .authorize_and_consume(&issued.handle, &fixture.use_request("guarded"))
+        .expect("allow");
+
+    let store = Store::open(&fixture.database).expect("store");
+    for statement in [
+        "DELETE FROM capability_decisions",
+        "UPDATE capability_decisions SET reason = 'allowed'",
+        "DELETE FROM capability_authorizations",
+        "DELETE FROM capability_ancestry",
+        "DELETE FROM capabilities",
+        "UPDATE capabilities SET remaining_uses = 99",
+        "UPDATE capability_policy_revisions SET current_revision = 6",
+    ] {
+        assert!(
+            store.connection().execute(statement, []).is_err(),
+            "database must reject: {statement}"
+        );
+    }
+    service.revoke(&issued.handle).expect("revoke");
+    assert!(
+        store
+            .connection()
+            .execute("UPDATE capabilities SET status = 'active'", [])
+            .is_err(),
+        "database must reject authority resurrection"
+    );
+}
+
+#[test]
 fn expiry_revocation_and_policy_change_defeat_restored_stale_handles() {
     let fixture = Fixture::new();
     let service = fixture.service();
@@ -322,6 +417,44 @@ fn attenuation_can_only_narrow_and_shares_ancestor_counters() {
             .expect("root exhausted"),
         DenialReason::AncestorConsumed,
     );
+}
+
+#[test]
+fn attenuation_rejects_every_supported_scope_widening() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    fixture.initialize(&service);
+    let root = service.issue(&fixture.issue_request()).expect("root");
+
+    let mut attempts = Vec::new();
+    let mut request = fixture.issue_request();
+    request.subject = "agent-2".to_owned();
+    attempts.push(request);
+    let mut request = fixture.issue_request();
+    request.action = "email.read".to_owned();
+    attempts.push(request);
+    let mut request = fixture.issue_request();
+    request.resource = "mailbox:other".to_owned();
+    attempts.push(request);
+    let mut request = fixture.issue_request();
+    request.constraints.max_uses = None;
+    attempts.push(request);
+    let mut request = fixture.issue_request();
+    request.constraints.budget_units = None;
+    attempts.push(request);
+    let mut request = fixture.issue_request();
+    request.expires_at_unix_ms = None;
+    attempts.push(request);
+    let mut request = fixture.issue_request();
+    request.policy_revision = 8;
+    attempts.push(request);
+
+    for widened in attempts {
+        assert!(
+            service.attenuate(&root.handle, &widened).is_err(),
+            "attenuation accepted a widened request: {widened:?}"
+        );
+    }
 }
 
 #[test]

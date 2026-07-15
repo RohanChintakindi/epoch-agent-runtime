@@ -8,12 +8,16 @@ rust-version.workspace = true
 [dependencies]
 clap.workspace = true
 epoch-blob = { path = "../epoch-blob" }
+epoch-checkpoint = { path = "../epoch-checkpoint" }
 epoch-protocol = { path = "../epoch-protocol" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+epoch-core.workspace = true
+epoch-diff = { path = "../epoch-diff" }
+epoch-storage.workspace = true
 epoch-supervisor = { path = "../epoch-supervisor" }
 tempfile.workspace = true
 

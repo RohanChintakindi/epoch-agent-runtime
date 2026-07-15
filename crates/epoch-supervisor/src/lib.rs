@@ -1,11 +1,17 @@
 //! Direct-process supervision for observable Epoch workloads.
 
 mod manifest;
+mod recovery;
 mod stream;
 mod supervisor;
 
 pub use manifest::{
     MAX_ARGUMENT_BYTES, MAX_ARGUMENTS, MAX_MANIFEST_BYTES, ManifestError, WorkloadManifest,
+};
+pub use recovery::{
+    ApplicationCheckpointReport, ApplicationEpochDiffReport, ApplicationRestoreMode,
+    ApplicationRestoreReport, ApplicationStatusReport, RecoveryCode, RecoveryIssue,
+    RecoveryOutcome, RestoreScope, WorkspaceCheckpointReport, WorkspaceEpochDiff,
 };
 pub use supervisor::{
     AgentTermination, BranchStatus, DirectSupervisor, EventPageReport, EventPageRequest,

@@ -312,7 +312,7 @@ fn exposes_referenced_hashes_for_supervisor_ingestion() {
 #[test]
 fn supervisor_rejects_missing_and_corrupted_blob_references() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let store = BlobStore::open(temp.path()).expect("blob store");
+    let store = BlobStore::open(temp.path().join("blobs")).expect("blob store");
     let bytes = b"trusted model input";
     let expected = BlobHash::digest(bytes);
     let envelope = decode_line(&record(

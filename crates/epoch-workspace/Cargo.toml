@@ -1,21 +1,19 @@
 [package]
-name = "epoch-blob"
+name = "epoch-workspace"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+epoch-blob.workspace = true
+libc.workspace = true
 serde.workspace = true
-sha2.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 
-[target.'cfg(unix)'.dependencies]
-libc.workspace = true
-
 [dev-dependencies]
-serde_json.workspace = true
 tempfile.workspace = true
 
 [lints]

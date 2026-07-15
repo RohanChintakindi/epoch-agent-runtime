@@ -10,11 +10,14 @@ Linux isolation and checkpoint backends are added only after that vertical slice
 
 ## Workspace
 
-- `epoch-blob`: atomic, SHA-256-addressed artifact storage with verified reads.
+- `epoch-blob`: private, atomic SHA-256 storage with bounded verified reads and media-type locking.
+- `epoch-checkpoint`: versioned, blob-backed observable application checkpoints.
 - `epoch-core`: stable identifiers, lifecycle state machines, and shared domain types.
 - `epoch-events`: append-only execution history with deterministic queries and external payloads.
 - `epoch-protocol`: versioned JSONL messages at the agent/supervisor boundary.
+- `epoch-supervisor`: direct execution plus restart-safe cooperative application recovery.
 - `epoch-test-agent`: seeded workload for repeatable execution, tracing, and fault experiments.
+- `epoch-workspace`: deterministic full-copy workspace snapshots and no-clobber restore.
 - `epoch-cli`: command-line entry point and host capability diagnostics.
 
 The wire contract and its forward-compatibility rules are documented in the
@@ -29,9 +32,13 @@ cargo run -p epoch-test-agent -- \
   --workspace .epoch/workload
 ```
 
-Its JSONL boundary history is written to stdout and its normalized state/trace hashes are written
-as one JSON object to stderr. See the [deterministic agent guide](docs/deterministic-agent.md) for
-scenarios and crash points.
+Its JSONL boundary history is written to stdout and its normalized state, trace hashes, and raw
+cooperative checkpoint context are written as one JSON object to stderr. See the
+[deterministic agent guide](docs/deterministic-agent.md) for scenarios and crash points.
+
+The [application checkpoint guide](docs/application-checkpoints.md) and
+[workspace checkpoint guide](docs/workspace-checkpoint.md) document the Week 2 composite
+checkpoint/restore/status/diff flow and its explicit process-memory limitations.
 
 ## Development
 

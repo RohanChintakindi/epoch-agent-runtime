@@ -118,8 +118,9 @@ struct ExecutionIds {
 
 #[derive(Debug)]
 pub struct DirectSupervisor {
-    database_path: PathBuf,
-    journal: EventJournal,
+    pub(crate) database_path: PathBuf,
+    pub(crate) blob_root: PathBuf,
+    pub(crate) journal: EventJournal,
 }
 
 impl DirectSupervisor {
@@ -140,6 +141,7 @@ impl DirectSupervisor {
             .map_err(|error| initialization(&error))?;
         Ok(Self {
             database_path,
+            blob_root,
             journal,
         })
     }
@@ -160,11 +162,13 @@ impl DirectSupervisor {
         }
         let state_root = fs::canonicalize(requested).map_err(|error| unavailable(&error))?;
         let database_path = state_root.join("state.db");
+        let blob_root = state_root.join("blobs");
         Store::open(&database_path).map_err(|error| unavailable(&error))?;
-        let journal = EventJournal::open(&database_path, state_root.join("blobs"))
-            .map_err(|error| unavailable(&error))?;
+        let journal =
+            EventJournal::open(&database_path, &blob_root).map_err(|error| unavailable(&error))?;
         Ok(Self {
             database_path,
+            blob_root,
             journal,
         })
     }
@@ -340,6 +344,13 @@ impl DirectSupervisor {
         ids: ExecutionIds,
         started: Instant,
     ) -> Result<RunOutcome, ExecutionError> {
+        let working_directory =
+            manifest
+                .working_directory
+                .to_str()
+                .ok_or_else(|| ExecutionError::Internal {
+                    message: "declared workload workspace is not valid UTF-8".to_owned(),
+                })?;
         self.append_event(
             ids,
             started,
@@ -350,6 +361,7 @@ impl DirectSupervisor {
                 "backend": "direct",
                 "workload": manifest.name,
                 "argument_count": manifest.arguments.len(),
+                "working_directory": working_directory,
             }),
         )?;
 

@@ -1,13 +1,16 @@
-use std::{env, path::PathBuf, process::ExitCode};
+use std::{env, path::PathBuf, process::ExitCode, str::FromStr as _};
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-use epoch_core::{BranchId, SessionId};
+use epoch_core::{BranchId, EpochId, SessionId};
 use epoch_supervisor::{
-    AgentTermination, DirectSupervisor, EventPageRequest, InspectionError, RunOutcome,
+    AgentTermination, ApplicationRestoreMode, DirectSupervisor, EventPageRequest, InspectionError,
+    RecoveryCode, RecoveryIssue, RecoveryOutcome, RunOutcome, SessionStatusReport,
 };
 use serde::Serialize;
+use serde_json::json;
 
 const SUPERVISOR_FAILURE_EXIT: u8 = 125;
+const RECOVERY_UNSUPPORTED_EXIT: u8 = 3;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -63,6 +66,9 @@ enum Command {
         epoch: String,
         #[arg(long, value_enum, default_value_t = RestoreMode::Strict)]
         mode: RestoreMode,
+        /// New directory where the checkpointed workspace is published without clobbering.
+        #[arg(long)]
+        workspace_target: Option<PathBuf>,
     },
     /// Create a new logical branch from an epoch.
     Fork {
@@ -180,6 +186,7 @@ struct HostCapabilities {
     os: &'static str,
     architecture: &'static str,
     control_plane: Support,
+    backends: BackendCapabilities,
     linux_execution: Support,
     procfs: Support,
     cgroup_v2: Support,
@@ -192,6 +199,33 @@ struct HostCapabilities {
 }
 
 #[derive(Debug, Serialize)]
+struct BackendCapabilities {
+    direct_execution: BackendCapability,
+    application_checkpoint: BackendCapability,
+    process_checkpoint: BackendCapability,
+    criu_checkpoint: BackendCapability,
+    workspace_checkpoint: BackendCapability,
+}
+
+#[derive(Debug, Serialize)]
+struct BackendCapability {
+    status: BackendStatus,
+    registered: bool,
+    backend: Option<&'static str>,
+    scope: &'static str,
+    reason: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dependency_detected: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum BackendStatus {
+    Supported,
+    Unsupported,
+}
+
+#[derive(Debug, Serialize)]
 struct RunReport {
     session_id: String,
     branch_id: String,
@@ -200,6 +234,13 @@ struct RunReport {
     signal: Option<i32>,
     protocol_records: usize,
     stderr_bytes: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct IntegratedStatusReport {
+    #[serde(flatten)]
+    execution: SessionStatusReport,
+    application: serde_json::Value,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -228,13 +269,24 @@ impl std::fmt::Display for Support {
     }
 }
 
+impl std::fmt::Display for BackendStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Supported => formatter.write_str("supported"),
+            Self::Unsupported => formatter.write_str("unsupported"),
+        }
+    }
+}
+
 impl HostCapabilities {
     fn detect() -> Self {
         let linux = cfg!(target_os = "linux");
+        let criu = find_in_path("criu");
         Self {
             os: env::consts::OS,
             architecture: env::consts::ARCH,
             control_plane: Support::Available,
+            backends: BackendCapabilities::detect(criu.is_some()),
             linux_execution: linux.into(),
             procfs: (linux && std::path::Path::new("/proc/self/status").is_file()).into(),
             cgroup_v2: (linux
@@ -242,10 +294,57 @@ impl HostCapabilities {
             .into(),
             overlayfs: (linux && filesystem_lists("overlay", "/proc/filesystems")).into(),
             kvm: (linux && std::path::Path::new("/dev/kvm").exists()).into(),
-            criu: find_in_path("criu"),
+            criu,
             strace: find_in_path("strace"),
             perf: find_in_path("perf"),
             unshare: find_in_path("unshare"),
+        }
+    }
+}
+
+impl BackendCapabilities {
+    const fn detect(criu_dependency_detected: bool) -> Self {
+        Self {
+            direct_execution: BackendCapability {
+                status: BackendStatus::Supported,
+                registered: true,
+                backend: Some("direct-process-v1"),
+                scope: "process_lifecycle",
+                reason: "the direct process supervisor is compiled and registered",
+                dependency_detected: None,
+            },
+            application_checkpoint: BackendCapability {
+                status: BackendStatus::Supported,
+                registered: true,
+                backend: Some("cooperative-w02-v1"),
+                scope: "application_context_only",
+                reason: "the cooperative W02 application checkpoint backend is registered",
+                dependency_detected: None,
+            },
+            process_checkpoint: BackendCapability {
+                status: BackendStatus::Unsupported,
+                registered: false,
+                backend: None,
+                scope: "process_memory",
+                reason: "no process checkpoint backend is registered",
+                dependency_detected: None,
+            },
+            criu_checkpoint: BackendCapability {
+                status: BackendStatus::Unsupported,
+                registered: false,
+                backend: None,
+                scope: "process_tree",
+                reason: "CRIU integration is not registered; tool presence alone is insufficient",
+                dependency_detected: Some(criu_dependency_detected),
+            },
+            workspace_checkpoint: BackendCapability {
+                status: BackendStatus::Supported,
+                registered: true,
+                backend: Some("full-copy-cas-v1"),
+                scope: "workspace_files_without_process_memory",
+                reason: "the deterministic full-copy CAS workspace backend is registered",
+                dependency_detected: None,
+            },
         }
     }
 }
@@ -279,6 +378,21 @@ fn execute(command: Command) -> ExitCode {
             offset,
             limit,
         } => inspect_events(&session, branch.as_deref(), offset, limit),
+        Command::Checkpoint {
+            session,
+            branch,
+            label,
+        } => checkpoint_application(&session, branch.as_deref(), label.as_deref()),
+        Command::Restore {
+            epoch,
+            mode,
+            workspace_target,
+        } => restore_application(&epoch, mode, workspace_target.as_deref()),
+        Command::Diff {
+            left,
+            right,
+            json: _,
+        } => diff_application_epochs(&left, &right),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -293,6 +407,26 @@ fn execute(command: Command) -> ExitCode {
                 println!("Epoch host diagnostics");
                 println!("  host: {}/{}", capabilities.os, capabilities.architecture);
                 println!("  control plane: {}", capabilities.control_plane);
+                println!(
+                    "  direct execution backend: {}",
+                    capabilities.backends.direct_execution.status
+                );
+                println!(
+                    "  application checkpoint backend: {}",
+                    capabilities.backends.application_checkpoint.status
+                );
+                println!(
+                    "  process checkpoint backend: {}",
+                    capabilities.backends.process_checkpoint.status
+                );
+                println!(
+                    "  CRIU checkpoint backend: {}",
+                    capabilities.backends.criu_checkpoint.status
+                );
+                println!(
+                    "  workspace checkpoint backend: {}",
+                    capabilities.backends.workspace_checkpoint.status
+                );
                 println!("  Linux execution: {}", capabilities.linux_execution);
                 println!("  procfs: {}", capabilities.procfs);
                 println!("  cgroup v2: {}", capabilities.cgroup_v2);
@@ -327,7 +461,10 @@ fn inspect_status(raw_session: &str) -> ExitCode {
         Err(error) => return report_inspection_error(&error),
     };
     match supervisor.session_status(session_id) {
-        Ok(report) => print_json(&report),
+        Ok(execution) => print_json(&IntegratedStatusReport {
+            execution,
+            application: recovery_value(supervisor.application_status(session_id, None)),
+        }),
         Err(error) => report_inspection_error(&error),
     }
 }
@@ -391,6 +528,187 @@ fn print_json(value: &impl Serialize) -> ExitCode {
         }
         Err(error) => {
             eprintln!("failed to encode inspection report: {error}");
+            ExitCode::from(SUPERVISOR_FAILURE_EXIT)
+        }
+    }
+}
+
+fn checkpoint_application(session: &str, branch: Option<&str>, label: Option<&str>) -> ExitCode {
+    let session_id = match SessionId::from_str(session) {
+        Ok(session_id) => session_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "checkpoint",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid session ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let branch_id = match branch.map(BranchId::from_str).transpose() {
+        Ok(branch_id) => branch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "checkpoint",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid branch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("checkpoint") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery(
+        "checkpoint",
+        supervisor.checkpoint_application(session_id, branch_id, label),
+    )
+}
+
+fn restore_application(
+    epoch: &str,
+    mode: RestoreMode,
+    workspace_target: Option<&std::path::Path>,
+) -> ExitCode {
+    let epoch_id = match EpochId::from_str(epoch) {
+        Ok(epoch_id) => epoch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "restore",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid epoch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let mode = match mode {
+        RestoreMode::Strict => ApplicationRestoreMode::Activate,
+        RestoreMode::Inspect => ApplicationRestoreMode::Inspect,
+        RestoreMode::ForkOnDivergence => {
+            return emit_recovery_issue(
+                "restore",
+                "unsupported",
+                RecoveryCode::UnsupportedMode,
+                "fork-on-divergence requires logical branching and is not application restore"
+                    .to_owned(),
+                ExitCode::from(RECOVERY_UNSUPPORTED_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("restore") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery(
+        "restore",
+        supervisor.restore_application(epoch_id, mode, workspace_target),
+    )
+}
+
+fn diff_application_epochs(before: &str, after: &str) -> ExitCode {
+    let before_epoch_id = match EpochId::from_str(before) {
+        Ok(epoch_id) => epoch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "diff",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid before epoch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let after_epoch_id = match EpochId::from_str(after) {
+        Ok(epoch_id) => epoch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "diff",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid after epoch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("diff") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery(
+        "diff",
+        supervisor.diff_application_epochs(before_epoch_id, after_epoch_id),
+    )
+}
+
+fn recovery_supervisor(operation: &str) -> Result<DirectSupervisor, ExitCode> {
+    DirectSupervisor::open(".epoch").map_err(|error| {
+        emit_recovery_issue(
+            operation,
+            "failed",
+            RecoveryCode::Persistence,
+            error.to_string(),
+            ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+        )
+    })
+}
+
+fn emit_recovery<T: Serialize>(operation: &str, outcome: RecoveryOutcome<T>) -> ExitCode {
+    let exit = match &outcome {
+        RecoveryOutcome::Supported(_) => ExitCode::SUCCESS,
+        RecoveryOutcome::Unsupported(_) => ExitCode::from(RECOVERY_UNSUPPORTED_EXIT),
+        RecoveryOutcome::Failed(_) => ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+    };
+    let mut document = recovery_value(outcome);
+    document["operation"] = json!(operation);
+    emit_recovery_json(&document, exit)
+}
+
+fn recovery_value<T: Serialize>(outcome: RecoveryOutcome<T>) -> serde_json::Value {
+    match outcome {
+        RecoveryOutcome::Supported(result) => json!({
+            "outcome": "supported",
+            "result": result,
+        }),
+        RecoveryOutcome::Unsupported(issue) => json!({
+            "outcome": "unsupported",
+            "issue": issue,
+        }),
+        RecoveryOutcome::Failed(issue) => json!({
+            "outcome": "failed",
+            "issue": issue,
+        }),
+    }
+}
+
+fn emit_recovery_issue(
+    operation: &str,
+    outcome: &str,
+    code: RecoveryCode,
+    detail: String,
+    exit: ExitCode,
+) -> ExitCode {
+    emit_recovery_json(
+        &json!({
+            "operation": operation,
+            "outcome": outcome,
+            "issue": RecoveryIssue { code, detail },
+        }),
+        exit,
+    )
+}
+
+fn emit_recovery_json(document: &serde_json::Value, exit: ExitCode) -> ExitCode {
+    match serde_json::to_string(document) {
+        Ok(encoded) => {
+            println!("{encoded}");
+            exit
+        }
+        Err(error) => {
+            eprintln!("failed to encode recovery report: {error}");
             ExitCode::from(SUPERVISOR_FAILURE_EXIT)
         }
     }
@@ -494,6 +812,45 @@ mod tests {
     fn support_display_is_unambiguous() {
         assert_eq!(Support::Available.to_string(), "available");
         assert_eq!(Support::Unavailable.to_string(), "unavailable");
+    }
+
+    #[test]
+    fn backend_discovery_reports_only_registered_implementations_as_supported() {
+        let capabilities = HostCapabilities::detect();
+
+        assert_eq!(
+            capabilities.backends.direct_execution.status,
+            BackendStatus::Supported
+        );
+        assert!(capabilities.backends.direct_execution.registered);
+        assert_eq!(
+            capabilities.backends.application_checkpoint.status,
+            BackendStatus::Supported
+        );
+        assert!(capabilities.backends.application_checkpoint.registered);
+
+        assert_eq!(
+            capabilities.backends.workspace_checkpoint.status,
+            BackendStatus::Supported
+        );
+        assert!(capabilities.backends.workspace_checkpoint.registered);
+        assert_eq!(
+            capabilities.backends.workspace_checkpoint.backend,
+            Some("full-copy-cas-v1")
+        );
+
+        for backend in [
+            &capabilities.backends.process_checkpoint,
+            &capabilities.backends.criu_checkpoint,
+        ] {
+            assert_eq!(backend.status, BackendStatus::Unsupported);
+            assert!(!backend.registered);
+            assert!(backend.backend.is_none());
+        }
+        assert_eq!(
+            capabilities.backends.criu_checkpoint.dependency_detected,
+            Some(capabilities.criu.is_some())
+        );
     }
 
     #[test]

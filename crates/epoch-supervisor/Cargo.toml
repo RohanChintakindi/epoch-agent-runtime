@@ -7,11 +7,14 @@ rust-version.workspace = true
 
 [dependencies]
 epoch-blob.workspace = true
+epoch-checkpoint.workspace = true
 epoch-core.workspace = true
+epoch-diff = { path = "../epoch-diff" }
 epoch-events = { path = "../epoch-events" }
 epoch-proc = { path = "../epoch-proc" }
 epoch-protocol = { path = "../epoch-protocol" }
 epoch-storage.workspace = true
+epoch-workspace.workspace = true
 nix.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

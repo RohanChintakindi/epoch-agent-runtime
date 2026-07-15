@@ -180,6 +180,7 @@ dependencies = [
 name = "epoch-blob"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "serde",
  "serde_json",
  "sha2",
@@ -189,10 +190,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "epoch-blob",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "epoch-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "epoch-blob",
+ "epoch-checkpoint",
  "epoch-core",
  "epoch-supervisor",
  "serde",
@@ -207,6 +221,18 @@ dependencies = [
  "serde",
  "thiserror",
  "uuid",
+]
+
+[[package]]
+name = "epoch-diff"
+version = "0.1.0"
+dependencies = [
+ "epoch-blob",
+ "epoch-checkpoint",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -258,11 +284,14 @@ name = "epoch-supervisor"
 version = "0.1.0"
 dependencies = [
  "epoch-blob",
+ "epoch-checkpoint",
  "epoch-core",
+ "epoch-diff",
  "epoch-events",
  "epoch-proc",
  "epoch-protocol",
  "epoch-storage",
+ "epoch-workspace",
  "nix",
  "rusqlite",
  "serde",
@@ -278,12 +307,29 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "epoch-blob",
+ "epoch-checkpoint",
+ "epoch-core",
+ "epoch-diff",
  "epoch-protocol",
+ "epoch-storage",
  "epoch-supervisor",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "epoch-workspace"
+version = "0.1.0"
+dependencies = [
+ "epoch-blob",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "uuid",
 ]
 
 [[package]]

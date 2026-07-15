@@ -11,6 +11,7 @@ use std::{
 
 use clap::ValueEnum;
 use epoch_blob::BlobHash;
+use epoch_checkpoint::{APPLICATION_CONTEXT_SCHEMA_VERSION, ApplicationContext, ResumeCursors};
 use epoch_protocol::{
     AgentStart, Completion, CompletionOutcome, ContextUpdate, Envelope, Extensions, Message,
     ModelRequest, ModelResponse, ProtocolError, SafePoint, ToolCall, ToolOutcome, ToolResult,
@@ -140,6 +141,63 @@ pub struct RunSummary {
     pub state_hash: BlobHash,
     pub normalized_trace_hash: BlobHash,
     pub event_count: u64,
+    /// Raw, observable cooperative state captured by the supervisor from this summary.
+    pub checkpoint_context: ApplicationContext,
+}
+
+impl RunSummary {
+    /// Convert a completed deterministic run into observable resumable application state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the run summary does not contain a completed safe-point cursor.
+    pub fn to_application_context(&self) -> Result<ApplicationContext, WorkloadError> {
+        let derived = application_context(&self.state, self.event_count)?;
+        if derived != self.checkpoint_context {
+            return Err(WorkloadError::CheckpointAdapter(
+                "serialized checkpoint context does not match the completed run".to_owned(),
+            ));
+        }
+        Ok(derived)
+    }
+}
+
+fn application_context(
+    state: &NormalizedState,
+    event_count: u64,
+) -> Result<ApplicationContext, WorkloadError> {
+    let boundary_sequence = event_count.checked_sub(2).ok_or_else(|| {
+        WorkloadError::CheckpointAdapter(
+            "completed trace does not contain safe-point and completion records".to_owned(),
+        )
+    })?;
+    let completed_count = u64::try_from(state.completed_tools.len()).map_err(|error| {
+        WorkloadError::CheckpointAdapter(format!("completed tool count is invalid: {error}"))
+    })?;
+    let tool_registry = state
+        .completed_tools
+        .iter()
+        .map(|tool| (tool.clone(), "fixture-v1".to_owned()))
+        .collect();
+    Ok(ApplicationContext {
+        schema_version: APPLICATION_CONTEXT_SCHEMA_VERSION,
+        safe_point_id: deterministic_id("safe-point", state.seed, state.scenario),
+        deterministic_seed: state.seed,
+        context_revision: 1,
+        cursors: ResumeCursors {
+            boundary_sequence,
+            message_cursor: 2,
+            tool_cursor: completed_count,
+            task_cursor: completed_count,
+        },
+        model_identifier: "recorded-model-v1".to_owned(),
+        tool_registry,
+        messages: Vec::new(),
+        pending_tasks: Vec::new(),
+        pending_model_request_ids: Vec::new(),
+        pending_tool_call_ids: Vec::new(),
+        user_visible_summary_hash: None,
+    })
 }
 
 #[derive(Debug, Error)]
@@ -158,6 +216,8 @@ pub enum WorkloadError {
     StateEncoding(String),
     #[error("injected crash at {point:?}")]
     InjectedCrash { point: CrashPoint },
+    #[error("cannot build application checkpoint context: {0}")]
+    CheckpointAdapter(String),
 }
 
 /// Execute a deterministic workload and write its agent boundary history to `output`.
@@ -267,11 +327,13 @@ pub fn run_workload(
     }))?;
 
     let (normalized_trace_hash, event_count) = emitter.finish();
+    let checkpoint_context = application_context(&state, event_count)?;
     Ok(RunSummary {
         state,
         state_hash,
         normalized_trace_hash,
         event_count,
+        checkpoint_context,
     })
 }
 

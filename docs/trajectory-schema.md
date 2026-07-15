@@ -9,6 +9,8 @@ The exporter reads durable runtime metadata and deliberately omits event payload
 reasoning text, tool arguments and results, paths, URLs, blob hashes, capability handles, effect
 arguments, credentials, and raw runtime identifiers. Raw session, branch, task, and candidate
 identifiers are replaced with domain-separated SHA-256 pseudonyms before they leave trusted state.
+Pseudonymization is not anonymization: `--task-group` must itself be a non-sensitive stable token,
+because a predictable low-entropy value could be guessed from its digest.
 
 Event kinds use a finite taxonomy. Known runtime events retain their registered category; every
 unknown or dynamically named event becomes `other`. This prevents an arbitrary normalized string

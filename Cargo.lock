@@ -420,6 +420,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-trajectory"
+version = "0.1.0"
+dependencies = [
+ "epoch-core",
+ "epoch-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "epoch-workspace"
 version = "0.1.0"
 dependencies = [

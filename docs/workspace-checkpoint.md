@@ -54,12 +54,15 @@ parent-traversing, Windows-drive, backslash-separated, empty, duplicate, reserve
 overlong manifest paths fail closed. Symlink targets must remain lexically inside the restored
 workspace; they are created but never followed by restore.
 
-The target policy is new-directory/no-clobber. The backend checks before staging and immediately
-before publication, and a same-parent rename gives atomic visibility on supported local
-filesystems. Rust's portable directory rename API does not expose `RENAME_NOREPLACE` on every
-supported host, so the target parent is a trusted single-writer control-plane directory. A hostile
-process racing an empty target directory into that parent is outside this prototype guarantee and
-should be closed with a platform-specific no-replace publish primitive in the isolation backend.
+The target policy is new-directory/no-clobber. After complete input validation, a deterministic
+create-new per-target lock serializes Epoch restorers, including concurrent publication of an empty
+workspace. The backend checks the target before staging and immediately before publication, and a
+same-parent rename gives atomic visibility on supported local filesystems. Rust's portable
+directory rename API does not expose `RENAME_NOREPLACE` on every supported host, so a hostile
+non-Epoch process racing an empty target directory into the trusted control-plane parent remains
+outside this prototype guarantee. The isolation backend should eventually use a platform-specific
+no-replace publish primitive. An ungraceful process kill can leave the fail-closed lock file for
+operator cleanup; normal returns and injected failures remove and sync it.
 
 Injected failures after staging creation, after the first entry, and immediately before publication
 exercise cleanup. Cleanup first restores owner access on staged real directories/files, does not

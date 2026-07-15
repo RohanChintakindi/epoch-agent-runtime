@@ -214,6 +214,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-diff"
+version = "0.1.0"
+dependencies = [
+ "epoch-blob",
+ "epoch-checkpoint",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "epoch-protocol"
 version = "0.1.0"
 dependencies = [

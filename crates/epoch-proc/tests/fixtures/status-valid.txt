@@ -1,0 +1,32 @@
+Name:	epoch-agent
+Umask:	0022
+State:	S (sleeping)
+Tgid:	4242
+Pid:	4242
+PPid:	4000
+TracerPid:	0
+Uid:	1000	1001	1002	1003
+Gid:	2000	2001	2002	2003
+NSpid:	4242	7
+VmSize:	16384 kB
+VmRSS:	4096 kB
+RssAnon:	2048 kB
+RssFile:	1536 kB
+RssShmem:	512 kB
+VmData:	8192 kB
+VmStk:	132 kB
+VmExe:	64 kB
+VmLib:	1024 kB
+VmPTE:	48 kB
+VmSwap:	256 kB
+Threads:	3
+CapInh:	0000000000000001
+CapPrm:	0000010000000401
+CapEff:	0000010000000401
+CapBnd:	0000010000000401
+CapAmb:	0000000000000000
+NoNewPrivs:	1
+Seccomp:	2
+Seccomp_filters:	1
+voluntary_ctxt_switches:	17
+nonvoluntary_ctxt_switches:	5

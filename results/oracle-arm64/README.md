@@ -1,6 +1,7 @@
-# Oracle ARM64 evidence index
+# Historical Oracle ARM64 evidence index
 
-The canonical Week 4 native run is
+This directory is a pre-integration baseline, not the final Week 4 acceptance run. It predates the
+integrated capability/effect gateway campaigns and bounded COW matrix. The preserved run is
 [`bench-da1681b5-799e-40ac-afdb-dfa37e94328c`](bench-da1681b5-799e-40ac-afdb-dfa37e94328c/RESULTS.md).
 It measured clean source revision `463e130b628bd641cdf4be6dd516f4ef0a4fd75f` with the frozen
 command in [`docs/benchmarking.md`](../../docs/benchmarking.md).
@@ -28,5 +29,7 @@ f2cf3c28e7353cd5805cce8f5828dc94d9a64c634a8adbedc1f52f834a1da2aa  samples.csv
 4fb09cae581e9e53942ab525bdc3dbb47a258613d75bbf8bbdc429420482c56e  RESULTS.md
 ```
 
-The JSON is authoritative. The index and generated Markdown summarize it without replacing raw
-samples or unsupported/failed rows.
+The JSON is authoritative for revision `463e130b628bd641cdf4be6dd516f4ef0a4fd75f` only. The index
+and generated Markdown summarize it without replacing raw samples or unsupported/failed rows. Do
+not cite it as final proof for the current revision; use the final acceptance runbook and its
+revision-pinned evidence.

@@ -11,9 +11,9 @@ infer external exactly-once delivery from local rollback.
 | Suite | Evidence collected |
 |---|---|
 | `checkpoint` | Real Week 2 application-context plus full-copy workspace capture, validate, and restore calls; separate trace-off and trace-on reports; raw capture/restore latency and logical artifact sizes |
-| `cow` | Linux fork COW allocation/fan-out/dirty-ratio probe; child minor/major faults; aggregate RSS/PSS; a real sequential full-copy control; raw samples and percentile/ratio summary |
+| `cow` | A bounded multi-point Linux fork/COW matrix spanning clean, fully dirty, scale, and fan-out controls; child minor/major faults; aggregate RSS/PSS; a real sequential full-copy control; raw samples and percentile/ratio summaries |
 | `compatibility` | Combined scaling rows plus typed future-schema, missing-reference, missing-workspace, special-file, and unregistered process-checkpoint rows |
-| `faults` | Actual workspace restore and application capture injection hooks, followed by symbolic composite/effect stages wherever no injection or reconciliation API exists |
+| `faults` | Actual workspace/application injection hooks plus the integrated effect campaign: 100 stable replays, unknown-outcome branch suspension, and revocation/policy-resurrection rejection; unavailable live-provider reconciliation remains symbolic |
 | `all` | Every required suite above in one evidence bundle |
 
 Unsupported and failed matrix rows are retained in JSON and CSV. A detected executable or kernel
@@ -32,17 +32,18 @@ interpreted:
 | Linux COW aggregate PSS / full-copy bytes | at most 7,500 basis points |
 
 The checkpoint mechanism is marked `keep` only when retained samples have no failed/unsupported
-outcomes, correctness validations pass, and both p95 thresholds pass. COW remains `narrow` even
-when its memory threshold passes because the evidence covers one Linux/Python/fork workload, not
-arbitrary process state. Transparent external exactly-once through rollback is marked `kill`
-until a downstream idempotency/reconciliation API and crash evidence exist.
+outcomes, correctness validations pass, and both p95 thresholds pass. The durable effect gateway
+is marked `keep` only when all four actual safety campaigns pass. COW remains `narrow` even when
+its memory threshold passes because the evidence is kernel/workload-specific, not arbitrary
+process state. Transparent live-provider exactly-once through rollback remains `kill`; provider
+lookup/reconciliation is separate from local durable duplicate suppression.
 
 ## Reproduce locally
 
 Build and run a small cross-platform check:
 
 ```bash
-cargo build --locked -p epoch-cli
+cargo build --workspace --bins --locked
 ROOT="$(pwd)/.epoch/benchmarks"
 ./target/debug/epoch bench run checkpoint \
   --root "$ROOT" \
@@ -92,13 +93,15 @@ ROOT="$(pwd)/.epoch/benchmarks"
   --cow-repetitions 5
 ```
 
-This requests a 64 MiB parent allocation, four children, and 25% dirty pages. The helper and Rust
-front end independently reject more than 256 MiB per allocation, 16 children, 512 MiB allocation
-times fan-out, ratios above 100%, or more than 100 COW repetitions.
+The requested 64 MiB/four-child/25%-dirty point is retained alongside the suite's frozen clean,
+fully dirty, smaller-allocation, and fan-out controls. The helper and Rust front end independently
+reject more than 256 MiB per allocation, 16 children, 512 MiB allocation times fan-out, ratios
+above 100%, or more than 100 COW repetitions.
 
-The checked-in [Oracle ARM64 evidence index](../results/oracle-arm64/README.md) links the raw JSON,
-CSV, generated decision report, environment, checksums, and concise measured summary from this
-exact command.
+The checked-in [Oracle ARM64 evidence index](../results/oracle-arm64/README.md) currently preserves
+the pre-integration run as a historical baseline. It names its older revision explicitly and must
+not be presented as final effect-gateway or multi-point-matrix proof. Final acceptance follows the
+[revision-pinned runbook](final-runbook.md).
 
 ## COW helper boundary
 
@@ -125,5 +128,6 @@ Off Linux, without `python3`, or without `smaps_rollup`, the suite returns struc
   control copy simultaneously.
 - Process compatibility rows remain unsupported because this revision has no registered process
   checkpoint backend.
-- Effect-stage rows are symbolic where no gateway/reconciliation API exists and always set the
-  external exactly-once claim to false.
+- Gateway replay/unknown/authority rows are actual deterministic integration evidence. Only the
+  live-provider reconciliation boundary stays symbolic, and every row keeps the external
+  exactly-once claim false.

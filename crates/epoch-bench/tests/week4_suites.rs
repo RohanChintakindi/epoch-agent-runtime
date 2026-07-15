@@ -128,7 +128,7 @@ fn cow_configuration_is_bounded_and_non_linux_is_structured_unsupported() {
 }
 
 #[test]
-fn fault_matrix_distinguishes_actual_injection_from_symbolic_effect_boundaries() {
+fn fault_matrix_runs_effect_replay_unknown_and_authority_resurrection_campaigns() {
     let temp = TempDir::new().expect("temp");
     let matrix = run_fault_matrix(temp.path()).expect("fault matrix");
 
@@ -137,6 +137,31 @@ fn fault_matrix_distinguishes_actual_injection_from_symbolic_effect_boundaries()
             .rows
             .iter()
             .any(|row| row.evidence_kind == EvidenceKind::Actual)
+    );
+    for stage in [
+        "effect_replay_100_runs",
+        "effect_unknown_suspends_branch",
+        "capability_revocation_resurrection_blocked",
+        "capability_policy_rollback_blocked",
+    ] {
+        let row = matrix
+            .rows
+            .iter()
+            .find(|row| row.stage == stage)
+            .unwrap_or_else(|| panic!("missing required fault row {stage}"));
+        assert_eq!(row.evidence_kind, EvidenceKind::Actual);
+        assert!(matches!(row.outcome, SampleOutcome::Succeeded));
+        assert!(row.containment_verified);
+    }
+    let replay = matrix
+        .rows
+        .iter()
+        .find(|row| row.stage == "effect_replay_100_runs")
+        .expect("replay campaign");
+    assert_eq!(replay.evidence.get("attempts").map(String::as_str), Some("100"));
+    assert_eq!(
+        replay.evidence.get("downstream_dispatches").map(String::as_str),
+        Some("1")
     );
     assert!(
         matrix

@@ -441,6 +441,16 @@ fn faults_at_or_after_dispatch_are_conservatively_unknown_and_never_retried() {
             Err(GatewayError::UnresolvedOperation { .. })
         ));
         assert_eq!(dispatcher.calls.load(Ordering::SeqCst), expected_calls);
+        let branch_state: String = Store::open(&fixture.database)
+            .expect("reopen state")
+            .connection()
+            .query_row(
+                "SELECT state FROM branches WHERE id = ?1",
+                [fixture.branch.to_string()],
+                |row| row.get(0),
+            )
+            .expect("branch state");
+        assert_eq!(branch_state, "suspended");
     }
 }
 

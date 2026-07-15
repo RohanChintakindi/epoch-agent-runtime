@@ -118,9 +118,12 @@ fn serialization_is_stable_and_csv_keeps_failures_and_unsupported_rows() {
 
     let first = report.to_json().expect("serialize report");
     assert_eq!(first, report.to_json().expect("serialize repeatedly"));
-    assert_eq!(serde_json::from_str::<serde_json::Value>(&first).unwrap()["schema_version"], 1);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&first).unwrap()["schema_version"],
+        1
+    );
 
-    let csv = report.to_csv();
+    let csv = report.to_csv().expect("serialize CSV");
     assert_eq!(csv.lines().count(), 5);
     assert!(csv.contains("unsupported"));
     assert!(csv.contains("failed"));
@@ -134,7 +137,11 @@ fn trace_mode_is_part_of_the_authoritative_configuration() {
 
     assert_ne!(off, on);
     assert_ne!(
-        BenchmarkHarness::run(off, environment(), &mut FixtureScenario::default()).to_json(),
-        BenchmarkHarness::run(on, environment(), &mut FixtureScenario::default()).to_json()
+        BenchmarkHarness::run(off, environment(), &mut FixtureScenario::default())
+            .to_json()
+            .unwrap(),
+        BenchmarkHarness::run(on, environment(), &mut FixtureScenario::default())
+            .to_json()
+            .unwrap()
     );
 }

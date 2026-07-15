@@ -15,6 +15,7 @@ Linux isolation and checkpoint backends are added only after that vertical slice
 - `epoch-core`: stable identifiers, lifecycle state machines, and shared domain types.
 - `epoch-events`: append-only execution history with deterministic queries and external payloads.
 - `epoch-protocol`: versioned JSONL messages at the agent/supervisor boundary.
+- `epoch-supervisor`: direct execution plus restart-safe cooperative application recovery.
 - `epoch-test-agent`: seeded workload for repeatable execution, tracing, and fault experiments.
 - `epoch-cli`: command-line entry point and host capability diagnostics.
 
@@ -30,12 +31,13 @@ cargo run -p epoch-test-agent -- \
   --workspace .epoch/workload
 ```
 
-Its JSONL boundary history is written to stdout and its normalized state/trace hashes are written
-as one JSON object to stderr. See the [deterministic agent guide](docs/deterministic-agent.md) for
-scenarios and crash points.
+Its JSONL boundary history is written to stdout and its normalized state, trace hashes, and raw
+cooperative checkpoint context are written as one JSON object to stderr. See the
+[deterministic agent guide](docs/deterministic-agent.md) for scenarios and crash points.
 
 The [application checkpoint guide](docs/application-checkpoints.md) documents the Week 2 context
-schema, integrity boundary, and remaining supervisor integration work.
+schema, integrity boundary, supervisor-backed checkpoint/restore/status flow, and its explicit
+application-only limitations.
 
 ## Development
 

@@ -187,6 +187,12 @@ struct LoadedApplicationEpoch {
     artifact: ApplicationCheckpoint,
 }
 
+struct ValidatedBoundary {
+    safe_sequence: u64,
+    safe_point_id: String,
+    context_revision: u64,
+}
+
 enum RecoveryRejection {
     Unsupported(RecoveryIssue),
     Failed(RecoveryIssue),
@@ -495,6 +501,53 @@ impl DirectSupervisor {
         if computed_state_hash != captured.state_hash {
             return Err("captured W02 state hash does not match its raw state bytes".to_owned());
         }
+        let boundary = self.validate_boundary(session_id, branch_id, &computed_state_hash)?;
+        let context = &captured.checkpoint_context;
+        if context.safe_point_id != boundary.safe_point_id {
+            return Err("checkpoint context safe-point ID does not match the boundary".to_owned());
+        }
+        if context.context_revision != boundary.context_revision {
+            return Err("checkpoint revision does not match the final context update".to_owned());
+        }
+        if context.cursors.boundary_sequence != boundary.safe_sequence {
+            return Err("checkpoint boundary cursor does not match the safe point".to_owned());
+        }
+        if context.deterministic_seed != captured.state.seed {
+            return Err("checkpoint seed does not match captured W02 state".to_owned());
+        }
+        if context.cursors.message_cursor != 2 {
+            return Err(
+                "checkpoint model cursor does not match the completed W02 exchange".to_owned(),
+            );
+        }
+        if captured.event_count.checked_sub(2) != Some(boundary.safe_sequence) {
+            return Err(
+                "checkpoint event count does not end at completion after safe point".to_owned(),
+            );
+        }
+        let completed = u64::try_from(captured.state.completed_tools.len())
+            .map_err(|error| error.to_string())?;
+        if context.cursors.tool_cursor != completed || context.cursors.task_cursor != completed {
+            return Err("checkpoint tool/task cursors do not match captured W02 state".to_owned());
+        }
+        let expected_tools = captured
+            .state
+            .completed_tools
+            .iter()
+            .map(|tool| (tool.clone(), "fixture-v1".to_owned()))
+            .collect::<BTreeMap<_, _>>();
+        if context.tool_registry != expected_tools {
+            return Err("checkpoint tool registry does not match captured W02 state".to_owned());
+        }
+        Ok(())
+    }
+
+    fn validate_boundary(
+        &self,
+        session_id: SessionId,
+        branch_id: BranchId,
+        computed_state_hash: &BlobHash,
+    ) -> Result<ValidatedBoundary, String> {
         let safe_kind = EventKind::new("safe_point").map_err(|error| error.to_string())?;
         let safe_events = self
             .journal
@@ -522,39 +575,44 @@ impl DirectSupervisor {
             .as_str()
             .and_then(|value| BlobHash::from_str(value).ok())
             .ok_or_else(|| "safe point has no canonical context hash".to_owned())?;
-        let context = &captured.checkpoint_context;
-        if safe_hash != computed_state_hash {
+        if &safe_hash != computed_state_hash {
             return Err("safe point hash does not match captured raw W02 state".to_owned());
         }
-        if context.safe_point_id != safe_point_id {
-            return Err("checkpoint context safe-point ID does not match the boundary".to_owned());
-        }
-        if context.cursors.boundary_sequence != safe_sequence {
-            return Err("checkpoint boundary cursor does not match the safe point".to_owned());
-        }
-        if context.deterministic_seed != captured.state.seed {
-            return Err("checkpoint seed does not match captured W02 state".to_owned());
-        }
-        if captured.event_count.checked_sub(2) != Some(safe_sequence) {
-            return Err(
-                "checkpoint event count does not end at completion after safe point".to_owned(),
-            );
-        }
-        let completed = u64::try_from(captured.state.completed_tools.len())
+        let context_kind = EventKind::new("context.update").map_err(|error| error.to_string())?;
+        let context_events = self
+            .journal
+            .query(&EventQuery {
+                session_id,
+                branch_id: Some(branch_id),
+                kind: Some(context_kind),
+                sequence: None,
+            })
             .map_err(|error| error.to_string())?;
-        if context.cursors.tool_cursor != completed || context.cursors.task_cursor != completed {
-            return Err("checkpoint tool/task cursors do not match captured W02 state".to_owned());
+        let context_event = context_events
+            .last()
+            .ok_or_else(|| "run has no durable final context update".to_owned())?;
+        if context_event.sequence >= safe_event.sequence {
+            return Err("final context update is not causally before the safe point".to_owned());
         }
-        let expected_tools = captured
-            .state
-            .completed_tools
-            .iter()
-            .map(|tool| (tool.clone(), "fixture-v1".to_owned()))
-            .collect::<BTreeMap<_, _>>();
-        if context.tool_registry != expected_tools {
-            return Err("checkpoint tool registry does not match captured W02 state".to_owned());
+        let update_payload = self
+            .journal
+            .read_payload(context_event)
+            .map_err(|error| error.to_string())?;
+        let update_revision = update_payload["payload"]["revision"]
+            .as_u64()
+            .ok_or_else(|| "context update has no revision".to_owned())?;
+        let update_hash = update_payload["payload"]["context_hash"]
+            .as_str()
+            .and_then(|value| BlobHash::from_str(value).ok())
+            .ok_or_else(|| "context update has no canonical context hash".to_owned())?;
+        if &update_hash != computed_state_hash {
+            return Err("final context update does not match captured raw W02 state".to_owned());
         }
-        Ok(())
+        Ok(ValidatedBoundary {
+            safe_sequence,
+            safe_point_id: safe_point_id.to_owned(),
+            context_revision: update_revision,
+        })
     }
 
     fn persist_checkpoint(

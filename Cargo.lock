@@ -270,6 +270,7 @@ name = "epoch-supervisor"
 version = "0.1.0"
 dependencies = [
  "epoch-blob",
+ "epoch-checkpoint",
  "epoch-core",
  "epoch-events",
  "epoch-proc",

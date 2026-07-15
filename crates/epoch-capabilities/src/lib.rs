@@ -14,7 +14,8 @@ use std::{
 
 use epoch_core::{BranchId, CapabilityId, SessionId};
 use epoch_effects::{
-    AuthorizationDecision, AuthorizationRequest as EffectAuthorizationRequest, Authorizer,
+    AuthorizationDecision, AuthorizationError, AuthorizationRequest as EffectAuthorizationRequest,
+    Authorizer,
 };
 use epoch_storage::{StorageError, Store};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -473,14 +474,25 @@ impl CapabilityService {
         handle: &CapabilityHandle,
         request: &CapabilityUse,
     ) -> Result<CapabilityDecision, CapabilityError> {
-        let now = self.now()?;
-        let handle_hash = handle.digest();
         let mut store = self.lock_store()?;
         let transaction = store
             .connection_mut()
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let Some(capability) = load_capability_by_hash(&transaction, &handle_hash)? else {
-            return commit_decision(
+        let decision = self.authorize_and_consume_in_transaction(&transaction, handle, request)?;
+        transaction.commit()?;
+        Ok(decision)
+    }
+
+    fn authorize_and_consume_in_transaction(
+        &self,
+        transaction: &Transaction<'_>,
+        handle: &CapabilityHandle,
+        request: &CapabilityUse,
+    ) -> Result<CapabilityDecision, CapabilityError> {
+        let now = self.now()?;
+        let handle_hash = handle.digest();
+        let Some(capability) = load_capability_by_hash(transaction, &handle_hash)? else {
+            return record_decision(
                 transaction,
                 None,
                 &handle_hash,
@@ -491,9 +503,9 @@ impl CapabilityService {
             );
         };
         let (ancestors, requested_budget) =
-            match evaluate_authority(&transaction, &capability, request, now)? {
+            match evaluate_authority(transaction, &capability, request, now)? {
                 AuthorityEvaluation::Deny(reason) => {
-                    return commit_decision(
+                    return record_decision(
                         transaction,
                         Some(capability.id),
                         &handle_hash,
@@ -510,7 +522,7 @@ impl CapabilityService {
             };
 
         for ancestor in &ancestors {
-            consume_counter(&transaction, ancestor, requested_budget, now)?;
+            consume_counter(transaction, ancestor, requested_budget, now)?;
         }
         transaction.execute(
             "INSERT INTO capability_authorizations \
@@ -524,7 +536,7 @@ impl CapabilityService {
                 now,
             ],
         )?;
-        commit_decision(
+        record_decision(
             transaction,
             Some(capability.id),
             &handle_hash,
@@ -647,7 +659,11 @@ impl CapabilityAuthorizer {
 }
 
 impl Authorizer for CapabilityAuthorizer {
-    fn authorize(&self, request: &EffectAuthorizationRequest<'_>) -> AuthorizationDecision {
+    fn authorize(
+        &self,
+        transaction: &Transaction<'_>,
+        request: &EffectAuthorizationRequest<'_>,
+    ) -> Result<AuthorizationDecision, AuthorizationError> {
         let capability_use = CapabilityUse::new(
             request.session_id,
             request.branch_id,
@@ -660,14 +676,21 @@ impl Authorizer for CapabilityAuthorizer {
             request.input_hash.as_str(),
         );
         match capability_use.and_then(|capability_use| {
-            self.service
-                .authorize_and_consume(&self.handle, &capability_use)
+            self.service.authorize_and_consume_in_transaction(
+                transaction,
+                &self.handle,
+                &capability_use,
+            )
         }) {
             Ok(CapabilityDecision {
                 outcome: DecisionOutcome::Allow,
+                capability_id: Some(capability_id),
                 ..
-            }) => AuthorizationDecision::Allow,
-            Ok(_) | Err(_) => AuthorizationDecision::Deny,
+            }) => Ok(AuthorizationDecision::Authorized { capability_id }),
+            Ok(CapabilityDecision { capability_id, .. }) => {
+                Ok(AuthorizationDecision::Denied { capability_id })
+            }
+            Err(_) => Err(AuthorizationError::Unavailable),
         }
     }
 }
@@ -1098,8 +1121,8 @@ fn mark_consumed(
     Ok(())
 }
 
-fn commit_decision(
-    transaction: Transaction<'_>,
+fn record_decision(
+    transaction: &Transaction<'_>,
     capability_id: Option<CapabilityId>,
     handle_hash: &str,
     request: &CapabilityUse,
@@ -1134,7 +1157,6 @@ fn commit_decision(
             now,
         ],
     )?;
-    transaction.commit()?;
     Ok(CapabilityDecision {
         outcome,
         reason,

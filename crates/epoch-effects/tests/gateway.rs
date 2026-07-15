@@ -8,15 +8,15 @@ use std::{
     thread,
 };
 
-use epoch_core::{BranchId, SessionId};
+use epoch_core::{BranchId, CapabilityId, SessionId};
 use epoch_effects::{
-    AttemptState, AuthorizationDecision, AuthorizationRequest, Authorizer, CanonicalIntent,
-    DeterministicLocalDispatcher, DispatchFailureCode, DispatchOutcome, DispatchRequest,
-    DispatchResult, EffectDispatcher, EffectGateway, EffectState, FaultPoint, FaultSafety,
-    GatewayError,
+    AttemptState, AuthorizationDecision, AuthorizationError, AuthorizationRequest, Authorizer,
+    CanonicalIntent, DeterministicLocalDispatcher, DispatchFailureCode, DispatchOutcome,
+    DispatchRequest, DispatchResult, EffectDispatcher, EffectGateway, EffectState, FaultPoint,
+    FaultSafety, GatewayError,
 };
 use epoch_storage::Store;
-use rusqlite::params;
+use rusqlite::{Transaction, params};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -53,6 +53,23 @@ impl Fixture {
                 params![branch.to_string(), session.to_string()],
             )
             .expect("branch");
+        store
+            .connection()
+            .execute(
+                "INSERT INTO capabilities \
+                 (id, session_id, branch_id, subject, action, resource, constraints_json, \
+                  handle_hash, remaining_uses, policy_revision, status, issued_at_unix_ms, \
+                  updated_at_unix_ms) \
+                 VALUES (?1, ?2, ?3, 'test-authorizer', '*', '*', '{}', ?4, NULL, 3, \
+                         'active', 0, 0)",
+                params![
+                    CapabilityId::new().to_string(),
+                    session.to_string(),
+                    branch.to_string(),
+                    "0".repeat(64),
+                ],
+            )
+            .expect("test capability");
         drop(store);
         Self {
             _directory: directory,
@@ -92,9 +109,26 @@ struct AllowAuthorizer {
 }
 
 impl Authorizer for AllowAuthorizer {
-    fn authorize(&self, _request: &AuthorizationRequest<'_>) -> AuthorizationDecision {
+    fn authorize(
+        &self,
+        transaction: &Transaction<'_>,
+        request: &AuthorizationRequest<'_>,
+    ) -> Result<AuthorizationDecision, AuthorizationError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        AuthorizationDecision::Allow
+        let capability_id: String = transaction
+            .query_row(
+                "SELECT id FROM capabilities WHERE session_id = ?1 AND branch_id = ?2 LIMIT 1",
+                params![
+                    request.session_id.to_string(),
+                    request.branch_id.to_string()
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|_| AuthorizationError::Unavailable)?;
+        let capability_id = capability_id
+            .parse()
+            .map_err(|_| AuthorizationError::Unavailable)?;
+        Ok(AuthorizationDecision::Authorized { capability_id })
     }
 }
 
@@ -102,8 +136,14 @@ impl Authorizer for AllowAuthorizer {
 struct DenyAuthorizer;
 
 impl Authorizer for DenyAuthorizer {
-    fn authorize(&self, _request: &AuthorizationRequest<'_>) -> AuthorizationDecision {
-        AuthorizationDecision::Deny
+    fn authorize(
+        &self,
+        _transaction: &Transaction<'_>,
+        _request: &AuthorizationRequest<'_>,
+    ) -> Result<AuthorizationDecision, AuthorizationError> {
+        Ok(AuthorizationDecision::Denied {
+            capability_id: None,
+        })
     }
 }
 

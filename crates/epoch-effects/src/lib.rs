@@ -17,7 +17,7 @@ use std::{
 };
 
 use epoch_blob::{BlobError, BlobHash, BlobMetadata, BlobStore, InvalidBlobHash};
-use epoch_core::{BranchId, EffectId, SessionId};
+use epoch_core::{BranchId, CapabilityId, EffectId, SessionId};
 use epoch_storage::{StorageError, Store};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::Serialize;
@@ -181,13 +181,30 @@ pub struct AuthorizationRequest<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthorizationDecision {
-    Allow,
-    Deny,
+    Authorized { capability_id: CapabilityId },
+    Denied { capability_id: Option<CapabilityId> },
 }
 
-/// Pluggable authority decision. Implementations must consult current trusted state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthorizationError {
+    Unavailable,
+}
+
+/// Pluggable authority decision. Implementations must consult and update current trusted state
+/// through the supplied transaction so authority consumption and effect intent creation are
+/// atomic.
 pub trait Authorizer: Send + Sync {
-    fn authorize(&self, request: &AuthorizationRequest<'_>) -> AuthorizationDecision;
+    /// Validates current authority and records any consumption through `transaction`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthorizationError::Unavailable`] when trusted validation cannot complete. The
+    /// gateway fails closed and rolls back the surrounding effect transaction in that case.
+    fn authorize(
+        &self,
+        transaction: &Transaction<'_>,
+        request: &AuthorizationRequest<'_>,
+    ) -> Result<AuthorizationDecision, AuthorizationError>;
 }
 
 /// Explicit fail-closed authorizer useful as a safe default at composition boundaries.
@@ -195,8 +212,14 @@ pub trait Authorizer: Send + Sync {
 pub struct DenyAllAuthorizer;
 
 impl Authorizer for DenyAllAuthorizer {
-    fn authorize(&self, _request: &AuthorizationRequest<'_>) -> AuthorizationDecision {
-        AuthorizationDecision::Deny
+    fn authorize(
+        &self,
+        _transaction: &Transaction<'_>,
+        _request: &AuthorizationRequest<'_>,
+    ) -> Result<AuthorizationDecision, AuthorizationError> {
+        Ok(AuthorizationDecision::Denied {
+            capability_id: None,
+        })
     }
 }
 
@@ -418,29 +441,16 @@ impl EffectGateway {
             return self.resolve_existing(intent, existing);
         }
 
-        let authorization = self.authorizer.authorize(&AuthorizationRequest {
-            session_id: intent.session_id,
-            branch_id: intent.branch_id,
-            operation_id: &intent.operation_id,
-            action: &intent.action,
-            resource: &intent.resource,
-            input_hash: &intent.input_hash,
-            policy_revision: intent.policy_revision,
-        });
         let input_blob = self.blobs.put(
             &intent.canonical_bytes,
             "application/vnd.epoch.effect-intent+json",
         )?;
 
-        if authorization == AuthorizationDecision::Deny {
-            self.persist_denial(intent, &input_blob)?;
-            return Err(GatewayError::AuthorizationDenied {
-                operation_id: intent.operation_id.clone(),
-            });
-        }
-
-        match self.persist_prepared(intent, &input_blob)? {
+        match self.authorize_and_persist(intent, &input_blob)? {
             CreateResult::Created(effect_id) => self.dispatch(effect_id, intent, fault),
+            CreateResult::Denied => Err(GatewayError::AuthorizationDenied {
+                operation_id: intent.operation_id.clone(),
+            }),
             CreateResult::Existing(existing) => self.resolve_existing(intent, existing),
         }
     }
@@ -644,44 +654,7 @@ impl EffectGateway {
             .transpose()
     }
 
-    fn persist_denial(
-        &self,
-        intent: &CanonicalIntent,
-        input_blob: &BlobMetadata,
-    ) -> Result<(), GatewayError> {
-        let now = now_unix_ms()?;
-        let effect_id = EffectId::new();
-        let mut store = self.store.lock().map_err(|_| GatewayError::LockPoisoned)?;
-        let transaction = store
-            .connection_mut()
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if let Some(existing) = find_in_transaction(&transaction, &intent.operation_id)? {
-            transaction.rollback()?;
-            return self.resolve_existing(intent, existing).map(|_| ());
-        }
-        insert_blob_metadata(&transaction, input_blob, now)?;
-        insert_intent(&transaction, effect_id, intent, "denied", now)?;
-        append_transition(
-            &transaction,
-            effect_id,
-            0,
-            EffectState::Requested,
-            now,
-            "{}",
-        )?;
-        append_transition(
-            &transaction,
-            effect_id,
-            1,
-            EffectState::Failed,
-            now,
-            r#"{"reason":"authorization_denied"}"#,
-        )?;
-        transaction.commit()?;
-        Ok(())
-    }
-
-    fn persist_prepared(
+    fn authorize_and_persist(
         &self,
         intent: &CanonicalIntent,
         input_blob: &BlobMetadata,
@@ -696,8 +669,41 @@ impl EffectGateway {
             transaction.rollback()?;
             return Ok(CreateResult::Existing(existing));
         }
+        let authorization = self
+            .authorizer
+            .authorize(
+                &transaction,
+                &AuthorizationRequest {
+                    session_id: intent.session_id,
+                    branch_id: intent.branch_id,
+                    operation_id: &intent.operation_id,
+                    action: &intent.action,
+                    resource: &intent.resource,
+                    input_hash: &intent.input_hash,
+                    policy_revision: intent.policy_revision,
+                },
+            )
+            .map_err(|_| GatewayError::AuthorizationUnavailable {
+                operation_id: intent.operation_id.clone(),
+            })?;
         insert_blob_metadata(&transaction, input_blob, now)?;
-        insert_intent(&transaction, effect_id, intent, "prepared", now)?;
+        let (capability_id, state, terminal_state, detail, result) = match authorization {
+            AuthorizationDecision::Authorized { capability_id } => (
+                Some(capability_id),
+                "prepared",
+                EffectState::Prepared,
+                "{}",
+                CreateResult::Created(effect_id),
+            ),
+            AuthorizationDecision::Denied { capability_id } => (
+                capability_id,
+                "denied",
+                EffectState::Failed,
+                r#"{"reason":"authorization_denied"}"#,
+                CreateResult::Denied,
+            ),
+        };
+        insert_intent(&transaction, effect_id, capability_id, intent, state, now)?;
         append_transition(
             &transaction,
             effect_id,
@@ -706,9 +712,9 @@ impl EffectGateway {
             now,
             "{}",
         )?;
-        append_transition(&transaction, effect_id, 1, EffectState::Prepared, now, "{}")?;
+        append_transition(&transaction, effect_id, 1, terminal_state, now, detail)?;
         transaction.commit()?;
-        Ok(CreateResult::Created(effect_id))
+        Ok(result)
     }
 
     fn mark_dispatched(
@@ -894,6 +900,7 @@ impl EffectGateway {
 
 enum CreateResult {
     Created(EffectId),
+    Denied,
     Existing(EffectSnapshot),
 }
 
@@ -1041,6 +1048,7 @@ fn insert_blob_metadata(
 fn insert_intent(
     transaction: &Transaction<'_>,
     effect_id: EffectId,
+    capability_id: Option<CapabilityId>,
     intent: &CanonicalIntent,
     state: &str,
     now: i64,
@@ -1049,11 +1057,12 @@ fn insert_intent(
         "INSERT INTO effect_intents \
          (id, session_id, branch_id, capability_id, operation_id, replay_key, action, resource, \
           input_hash, state, policy_revision, prepared_at_unix_ms) \
-         VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             effect_id.to_string(),
             intent.session_id.to_string(),
             intent.branch_id.to_string(),
+            capability_id.map(|id| id.to_string()),
             intent.operation_id.as_str(),
             intent.replay_key,
             intent.action,
@@ -1301,6 +1310,8 @@ fn now_unix_ms() -> Result<i64, GatewayError> {
 pub enum GatewayError {
     #[error("authorization denied for {operation_id}")]
     AuthorizationDenied { operation_id: OperationId },
+    #[error("trusted authorization is unavailable for {operation_id}")]
+    AuthorizationUnavailable { operation_id: OperationId },
     #[error("operation {operation_id} reused with different input")]
     OperationInputConflict {
         operation_id: OperationId,

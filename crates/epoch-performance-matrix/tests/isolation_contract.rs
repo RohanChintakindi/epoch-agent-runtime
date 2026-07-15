@@ -50,8 +50,10 @@ fn unsupported_linux_is_explicit_and_never_populated_with_direct_samples() {
     assert_eq!(comparison.direct.status, "supported");
     assert_eq!(comparison.linux.status, "unsupported");
     assert!(comparison.linux.samples.is_empty());
-    assert_eq!(comparison.linux.diagnostic.as_ref().unwrap().code, "bubblewrap_missing");
+    assert_eq!(
+        comparison.linux.diagnostic.as_ref().unwrap().code,
+        "bubblewrap_missing"
+    );
     assert_eq!(comparison.status, "unsupported");
     assert_eq!(comparison.checkpoint_interactions.len(), 2);
 }
-

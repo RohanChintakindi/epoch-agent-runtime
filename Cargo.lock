@@ -326,6 +326,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "epoch-sandbox",
+ "nix",
  "serde",
  "serde_json",
  "sha2",

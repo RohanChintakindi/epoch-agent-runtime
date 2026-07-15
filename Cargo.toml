@@ -5,6 +5,7 @@ members = [
     "crates/epoch-core",
     "crates/epoch-protocol",
     "crates/epoch-storage",
+    "crates/epoch-test-agent",
 ]
 resolver = "2"
 

@@ -43,6 +43,10 @@ The [logical fork and replay boundary](docs/fork-replay.md) documents durable br
 restart-safe inspection, recorded-result evidence, and the explicit replay, effect-frontier, and
 promotion limitations.
 
+The [five-minute interview demo](docs/interview-demo.md) provides the exact reproducible command,
+talk track, evidence contract, safety rules, and integration hooks for the implemented vertical
+slice.
+
 ## Development
 
 ```bash

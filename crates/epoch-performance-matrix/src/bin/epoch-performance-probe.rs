@@ -119,3 +119,16 @@ fn field<'a>(status: &'a str, name: &str) -> Option<&'a str> {
         .lines()
         .find_map(|line| line.strip_prefix(name).map(str::trim))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::probe_workspace_filename;
+
+    #[test]
+    fn direct_and_linux_samples_never_share_a_workspace_marker_owner() {
+        assert_ne!(
+            probe_workspace_filename("direct"),
+            probe_workspace_filename("linux")
+        );
+    }
+}

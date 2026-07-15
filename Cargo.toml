@@ -4,6 +4,7 @@ members = [
     "crates/epoch-cli",
     "crates/epoch-core",
     "crates/epoch-events",
+    "crates/epoch-proc",
     "crates/epoch-protocol",
     "crates/epoch-storage",
     "crates/epoch-supervisor",

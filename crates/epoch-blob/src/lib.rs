@@ -6,6 +6,7 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(unix)]
@@ -20,6 +21,7 @@ use uuid::Uuid;
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 #[cfg(unix)]
 const PRIVATE_FILE_MODE: u32 = 0o600;
+const DEFAULT_STALE_TEMPORARY_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// A canonical lowercase SHA-256 digest.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -122,7 +124,9 @@ impl BlobStore {
         if ensure_secure_directory(&sha256.join(".tmp"))? {
             sync_directory(&sha256)?;
         }
-        Ok(Self { root })
+        let store = Self { root };
+        store.cleanup_stale_temporary_files(DEFAULT_STALE_TEMPORARY_AGE)?;
+        Ok(store)
     }
 
     /// Returns the canonical final path for a blob hash.
@@ -132,6 +136,51 @@ impl BlobStore {
             .join("sha256")
             .join(&hash.as_str()[..2])
             .join(hash.as_str())
+    }
+
+    /// Removes temporary files created by interrupted Epoch writes once they reach `minimum_age`.
+    ///
+    /// Only files with Epoch's hash-and-UUID temporary naming format are eligible. Unknown files
+    /// are retained, and any symlink in the managed temporary directory is rejected rather than
+    /// followed or silently removed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the temporary directory cannot be inspected or safely synchronized.
+    pub fn cleanup_stale_temporary_files(&self, minimum_age: Duration) -> Result<usize, BlobError> {
+        let temp_directory = self.root.join("sha256/.tmp");
+        let metadata = fs::symlink_metadata(&temp_directory)?;
+        validate_directory(&temp_directory, &metadata)?;
+
+        let cutoff = SystemTime::now()
+            .checked_sub(minimum_age)
+            .unwrap_or(UNIX_EPOCH);
+        let mut removed = 0;
+        for entry in fs::read_dir(&temp_directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path)?;
+            if metadata.file_type().is_symlink() {
+                return Err(BlobError::UnsafeSymlink { path });
+            }
+            if !is_managed_temporary_name(&entry.file_name()) {
+                continue;
+            }
+            if !metadata.is_file() {
+                return Err(BlobError::UnexpectedFileType {
+                    path,
+                    expected: "regular file",
+                });
+            }
+            if metadata.modified()? <= cutoff {
+                fs::remove_file(path)?;
+                removed += 1;
+            }
+        }
+        if removed != 0 {
+            sync_directory(&temp_directory)?;
+        }
+        Ok(removed)
     }
 
     /// Persists bytes and returns metadata suitable for the trusted database.
@@ -259,6 +308,19 @@ fn ensure_secure_directory(path: &Path) -> Result<bool, BlobError> {
         }
         Err(error) => Err(error.into()),
     }
+}
+
+fn is_managed_temporary_name(name: &std::ffi::OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    let Some(stem) = name.strip_suffix(".tmp") else {
+        return false;
+    };
+    let Some((hash, identifier)) = stem.split_once('.') else {
+        return false;
+    };
+    BlobHash::from_str(hash).is_ok() && Uuid::parse_str(identifier).is_ok()
 }
 
 fn validate_directory(path: &Path, metadata: &fs::Metadata) -> Result<(), BlobError> {

@@ -195,6 +195,7 @@ fn insert_event(
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn export_is_deterministic_grouped_labelled_and_payload_free() {
     let fixture = fixture();
     let first = export_session(

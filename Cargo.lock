@@ -316,6 +316,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-performance-matrix"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "epoch-sandbox",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "epoch-proc"
 version = "0.1.0"
 dependencies = [

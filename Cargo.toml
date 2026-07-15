@@ -12,6 +12,7 @@ members = [
     "crates/epoch-effects",
     "crates/epoch-proc",
     "crates/epoch-protocol",
+    "crates/epoch-performance-matrix",
     "crates/epoch-sandbox",
     "crates/epoch-storage",
     "crates/epoch-supervisor",

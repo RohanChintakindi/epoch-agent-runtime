@@ -279,6 +279,8 @@ pub enum StorageError {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
 
     const BASE_MIGRATION: Migration = Migration {
@@ -318,5 +320,39 @@ mod tests {
             })
             .expect("read schema version");
         assert_eq!(version, 1);
+    }
+
+    #[test]
+    fn transient_busy_errors_are_retried_during_initialization() {
+        let attempts = Cell::new(0_u8);
+        let result = retry_sqlite_busy(|| {
+            let attempt = attempts.get();
+            attempts.set(attempt + 1);
+            if attempt < 2 {
+                Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                    Some("database is locked".to_owned()),
+                ))
+            } else {
+                Ok("wal")
+            }
+        })
+        .expect("transient lock should clear");
+
+        assert_eq!(result, "wal");
+        assert_eq!(attempts.get(), 3);
+    }
+
+    #[test]
+    fn non_lock_errors_are_not_retried() {
+        let attempts = Cell::new(0_u8);
+        let error = retry_sqlite_busy(|| -> rusqlite::Result<()> {
+            attempts.set(attempts.get() + 1);
+            Err(rusqlite::Error::InvalidQuery)
+        })
+        .expect_err("non-lock failure must be returned");
+
+        assert!(matches!(error, rusqlite::Error::InvalidQuery));
+        assert_eq!(attempts.get(), 1);
     }
 }

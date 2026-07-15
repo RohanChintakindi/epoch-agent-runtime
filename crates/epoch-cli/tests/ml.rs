@@ -86,6 +86,7 @@ fn ml_export_writes_private_metadata_only_jsonl_and_summary() {
     let encoded = fs::read_to_string(&output_path).expect("trajectory JSONL");
     let record: serde_json::Value = serde_json::from_str(encoded.trim()).expect("record JSON");
     assert_eq!(record["success_label"], true);
+    assert_eq!(record["value_label"], 0.75);
     assert_eq!(record["privacy_profile"], "metadata_only");
     assert!(!record["events"].as_array().expect("events").is_empty());
     for forbidden in [
@@ -93,6 +94,8 @@ fn ml_export_writes_private_metadata_only_jsonl_and_summary() {
         run["branch_id"].as_str().expect("branch ID"),
         "repo-17.issue-42",
         "secret@example.com",
+        "agent.completion",
+        "branch_state",
         &fixture.path().display().to_string(),
     ] {
         assert!(!encoded.contains(forbidden), "leaked {forbidden:?}");

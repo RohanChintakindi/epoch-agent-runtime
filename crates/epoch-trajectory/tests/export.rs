@@ -208,24 +208,28 @@ fn export_is_deterministic_grouped_labelled_and_payload_free() {
 
     let success = first
         .iter()
-        .find(|record| record.branch_state == "promoted")
+        .find(|record| record.success_label == Some(true) && record.branch_depth == 1)
         .expect("successful branch");
     let failed = first
         .iter()
-        .find(|record| record.branch_state == "failed")
+        .find(|record| record.success_label == Some(false))
         .expect("failed branch");
     let suspended = first
         .iter()
-        .find(|record| record.branch_state == "suspended")
+        .find(|record| record.success_label.is_none())
         .expect("suspended branch");
     let root = first
         .iter()
-        .find(|record| record.branch_state == "completed")
+        .find(|record| record.success_label == Some(true) && record.branch_depth == 0)
         .expect("root branch");
 
     assert_eq!(success.success_label, Some(true));
+    assert_eq!(success.value_label, Some(1.0));
     assert_eq!(failed.success_label, Some(false));
+    assert_eq!(failed.value_label, Some(0.0));
     assert_eq!(suspended.success_label, None);
+    assert_eq!(suspended.value_label, None);
+    assert_eq!(root.value_label, Some(0.75));
     assert_eq!(root.branch_depth, 0);
     assert_eq!(success.branch_depth, 1);
     assert_eq!(success.candidate_group_id, failed.candidate_group_id);
@@ -233,6 +237,8 @@ fn export_is_deterministic_grouped_labelled_and_payload_free() {
     assert_eq!(success.events[1].delta_monotonic_ns, 25);
     assert_eq!(failed.summary.failed_events, 1);
     assert_eq!(suspended.summary.unknown_events, 1);
+    assert_eq!(root.events.len(), 1);
+    assert_eq!(root.events[0].kind, "agent.start");
 
     let encoded = first
         .iter()
@@ -247,6 +253,10 @@ fn export_is_deterministic_grouped_labelled_and_payload_free() {
         &fixture.session.to_string(),
         &fixture.root.to_string(),
         &fixture.successful.to_string(),
+        "branch_state",
+        "agent.completion",
+        "process.exited",
+        "supervisor.failure",
     ] {
         assert!(!encoded.contains(forbidden), "leaked {forbidden:?}");
     }

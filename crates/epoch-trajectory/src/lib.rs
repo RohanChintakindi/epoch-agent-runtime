@@ -28,7 +28,7 @@ pub const TRAJECTORY_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_MAX_BRANCHES: usize = 256;
 
 /// Conservative default bound for one branch export.
-pub const DEFAULT_MAX_EVENTS_PER_BRANCH: usize = 100_000;
+pub const DEFAULT_MAX_EVENTS_PER_BRANCH: usize = 256;
 
 /// Export safety limits. Limits fail the whole export instead of silently truncating examples.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,7 +55,7 @@ pub enum PrivacyProfile {
 }
 
 /// One branch trajectory and its terminal learning label, if known.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchTrajectory {
     pub schema_version: u32,
@@ -65,8 +65,8 @@ pub struct BranchTrajectory {
     pub session_group_id: String,
     pub candidate_group_id: String,
     pub branch_depth: u32,
-    pub branch_state: String,
     pub success_label: Option<bool>,
+    pub value_label: Option<f64>,
     pub events: Vec<TrajectoryEvent>,
     pub summary: TrajectorySummary,
 }
@@ -155,6 +155,7 @@ pub fn export_session(
             limits.max_events_per_branch,
         )?;
         let summary = summarize(&events)?;
+        let (success_label, value_label) = learning_labels(&branch.state);
         records.push(BranchTrajectory {
             schema_version: TRAJECTORY_SCHEMA_VERSION,
             privacy_profile: PrivacyProfile::MetadataOnly,
@@ -167,8 +168,8 @@ pub fn export_session(
             session_group_id: session_group_id.clone(),
             candidate_group_id,
             branch_depth,
-            branch_state: branch.state.clone(),
-            success_label: success_label(&branch.state),
+            success_label,
+            value_label,
             events,
             summary,
         });
@@ -332,20 +333,24 @@ fn read_events(
     }
     let mut previous_monotonic_ns = None;
     let mut events = Vec::with_capacity(raw.len());
-    for (expected_position, row) in raw.into_iter().enumerate() {
-        let position = u64::try_from(row.0).map_err(|_| ExportError::InvalidStoredValue {
-            table: "events",
-            field: "sequence",
-        })?;
-        let expected_position =
-            u64::try_from(expected_position).map_err(|_| ExportError::InvalidLimits)?;
-        if position != expected_position {
+    for (expected_source_position, row) in raw.into_iter().enumerate() {
+        let source_position =
+            u64::try_from(row.0).map_err(|_| ExportError::InvalidStoredValue {
+                table: "events",
+                field: "sequence",
+            })?;
+        let expected_source_position =
+            u64::try_from(expected_source_position).map_err(|_| ExportError::InvalidLimits)?;
+        if source_position != expected_source_position {
             return Err(ExportError::NonContiguousEvents { branch_id });
         }
         let monotonic_ns = u64::try_from(row.1).map_err(|_| ExportError::InvalidStoredValue {
             table: "events",
             field: "monotonic_ns",
         })?;
+        if is_terminal_outcome_kind(&row.3) {
+            continue;
+        }
         let delta_monotonic_ns = match previous_monotonic_ns {
             None => 0,
             Some(previous) => monotonic_ns
@@ -353,6 +358,7 @@ fn read_events(
                 .ok_or(ExportError::MonotonicClockRegression { branch_id })?,
         };
         previous_monotonic_ns = Some(monotonic_ns);
+        let position = u64::try_from(events.len()).map_err(|_| ExportError::InvalidLimits)?;
         events.push(TrajectoryEvent {
             position,
             delta_monotonic_ns,
@@ -396,12 +402,20 @@ fn summarize(events: &[TrajectoryEvent]) -> Result<TrajectorySummary, ExportErro
     Ok(summary)
 }
 
-const fn success_label(state: &str) -> Option<bool> {
+const fn learning_labels(state: &str) -> (Option<bool>, Option<f64>) {
     match state.as_bytes() {
-        b"completed" | b"promoted" => Some(true),
-        b"failed" | b"abandoned" => Some(false),
-        _ => None,
+        b"promoted" => (Some(true), Some(1.0)),
+        b"completed" => (Some(true), Some(0.75)),
+        b"failed" | b"abandoned" => (Some(false), Some(0.0)),
+        _ => (None, None),
     }
+}
+
+fn is_terminal_outcome_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "agent.completion" | "process.exited" | "supervisor.failure"
+    )
 }
 
 fn pseudonym(parts: &[&str]) -> String {

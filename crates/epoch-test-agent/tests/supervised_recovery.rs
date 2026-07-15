@@ -2,9 +2,7 @@
 
 use std::fs;
 
-use epoch_supervisor::{
-    ApplicationRestoreMode, DirectSupervisor, RecoveryOutcome, RestoreScope,
-};
+use epoch_supervisor::{ApplicationRestoreMode, DirectSupervisor, RecoveryOutcome, RestoreScope};
 use tempfile::TempDir;
 
 fn supported<T>(outcome: RecoveryOutcome<T>) -> T {
@@ -46,7 +44,10 @@ fn three_restart_safe_run_checkpoint_mutate_restore_inspect_cycles_need_no_repai
             Some(run.branch_id),
             Some("before-mutation"),
         ));
-        assert_eq!(checkpoint.restore_scope, RestoreScope::ApplicationContextOnly);
+        assert_eq!(
+            checkpoint.restore_scope,
+            RestoreScope::ApplicationContextOnly
+        );
         assert_eq!(checkpoint.context_revision, 1);
         assert_eq!(checkpoint.boundary_sequence, 9);
         drop(supervisor);
@@ -56,19 +57,16 @@ fn three_restart_safe_run_checkpoint_mutate_restore_inspect_cycles_need_no_repai
             .expect("mutate workspace after checkpoint");
 
         let restarted = DirectSupervisor::open(&state_root).expect("restart supervisor");
-        let restored = supported(restarted.restore_application(
-            checkpoint.epoch_id,
-            ApplicationRestoreMode::Activate,
-        ));
+        let restored = supported(
+            restarted.restore_application(checkpoint.epoch_id, ApplicationRestoreMode::Activate),
+        );
         assert!(restored.activated);
         assert!(!restored.process_restored);
         assert!(!restored.workspace_restored);
         assert_eq!(restored.context.safe_point_id, checkpoint.safe_point_id);
         assert_eq!(restored.context.cursors.boundary_sequence, 9);
 
-        let status = supported(
-            restarted.application_status(run.session_id, Some(run.branch_id)),
-        );
+        let status = supported(restarted.application_status(run.session_id, Some(run.branch_id)));
         assert_eq!(status.current_epoch_id, Some(checkpoint.epoch_id));
         assert_eq!(
             status

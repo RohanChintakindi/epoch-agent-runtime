@@ -160,7 +160,7 @@ fn phase<'a>(report: &'a serde_json::Value, name: &str) -> &'a serde_json::Value
 }
 
 #[test]
-fn demo_runs_real_product_flow_and_reports_explicit_gaps() {
+fn demo_runs_real_composite_recovery_flow_and_reports_only_current_gaps() {
     let fixture = TempDir::new().expect("create demo fixture");
     let agent = deterministic_agent(&fixture);
     let root = fixture.path().join("demo-root");
@@ -193,6 +193,21 @@ fn demo_runs_real_product_flow_and_reports_explicit_gaps() {
     assert!(phase(&report, "run_baseline")["evidence"]["session_id"].is_string());
     assert!(phase(&report, "checkpoint_baseline")["evidence"]["epoch_id"].is_string());
     assert_eq!(
+        phase(&report, "restore_baseline")["evidence"]["workspace_restored"],
+        true
+    );
+    assert!(phase(&report, "restore_baseline")["evidence"]["workspace_target"].is_string());
+    assert_eq!(
+        phase(&report, "status_after_restore")["evidence"]
+            ["original_workspace_change_preserved"],
+        true
+    );
+    assert_eq!(
+        phase(&report, "status_after_restore")["evidence"]
+            ["restored_workspace_matches_checkpoint"],
+        true
+    );
+    assert_eq!(
         phase(&report, "semantic_diff")["evidence"]["identical"],
         false
     );
@@ -204,7 +219,7 @@ fn demo_runs_real_product_flow_and_reports_explicit_gaps() {
             .iter()
             .map(|section| section["section"].as_str().expect("section"))
             .collect::<Vec<_>>(),
-        ["capabilities", "effects", "isolation", "workspace"]
+        ["continuation", "effects", "isolation", "process"]
     );
     let report_path = report["report_path"].as_str().expect("report path");
     assert!(std::path::Path::new(report_path).is_file());

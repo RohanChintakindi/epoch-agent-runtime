@@ -12,6 +12,7 @@ Linux isolation and checkpoint backends are added only after that vertical slice
 
 - `epoch-blob`: private, atomic SHA-256 storage with bounded verified reads and media-type locking.
 - `epoch-checkpoint`: versioned, blob-backed observable application checkpoints.
+- `epoch-criu-compat`: bounded CRIU dump/restore compatibility and scaling evidence runner.
 - `epoch-core`: stable identifiers, lifecycle state machines, and shared domain types.
 - `epoch-events`: append-only execution history with deterministic queries and external payloads.
 - `epoch-protocol`: versioned JSONL messages at the agent/supervisor boundary.
@@ -39,6 +40,9 @@ cooperative checkpoint context are written as one JSON object to stderr. See the
 The [application checkpoint guide](docs/application-checkpoints.md) and
 [workspace checkpoint guide](docs/workspace-checkpoint.md) document the Week 2 composite
 checkpoint/restore/status/diff flow and its explicit process-memory limitations.
+
+The [CRIU compatibility guide](docs/criu-compatibility.md) documents the standalone runner,
+structured matrix, Oracle ARM64 evidence, preliminary decision gates, and integration limitations.
 
 ## Development
 

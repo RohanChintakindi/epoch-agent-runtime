@@ -1,0 +1,1 @@
+scenario: external TCP depends on remote peer state and is explicitly outside the transparent restore subset

@@ -62,6 +62,9 @@ Oracle ARM64 evidence command.
 The [CRIU compatibility guide](docs/criu-compatibility.md) documents the standalone runner,
 structured matrix, Oracle ARM64 evidence, preliminary decision gates, and integration limitations.
 
+The [final Week 4 acceptance runbook](docs/final-runbook.md) is the single demo, benchmark, Linux,
+CRIU, evidence, and interview-Q&A gate for a clean candidate revision.
+
 ## Development
 
 ```bash

@@ -6,9 +6,10 @@ events and two application checkpoints, changes a workspace, restores and inspec
 fresh CLI processes, computes a semantic diff, and creates a durable logical fork.
 
 The command is intentionally honest about its boundary. A successful run ends as
-`completed_with_unsupported`, because application context recovery is implemented while workspace
-rollback, process isolation/checkpointing, capability reconciliation, and effect-frontier
-reconciliation are not yet registered end to end.
+`completed_with_unsupported`: application context and workspace restore, monotonic capability
+state, effect frontiers, semantic diff, and fork lineage are implemented. Live process-memory
+restore, the Linux-to-supervisor launch adapter, autonomous branch continuation, and live-provider
+effect reconciliation remain explicit narrow boundaries.
 
 ## Reproduce it
 
@@ -55,40 +56,41 @@ are persisted in SQLite; larger components live in verified content-addressed bl
 Point to `checkpoint_baseline`, `controlled_workspace_change`, `run_variant`,
 `checkpoint_variant`, `restore_baseline`, and `status_after_restore`.
 
-“The checkpoint captures normalized application context. I deliberately change a file afterward,
-then restore the earlier application epoch from another process. The application context moves
-back, but the file change remains. The report says that clearly instead of presenting a partial
-restore as full-machine recovery.”
+“The checkpoint captures normalized application context and an immutable full-copy workspace
+manifest. I deliberately change a file afterward, then restore the earlier composite epoch from
+another process into a clean no-clobber target. The original workspace remains visibly changed,
+while the restored target reproduces the checkpointed bytes. Live process memory is not claimed.”
 
 ### 2:25–3:20 — Semantic diff
 
 Point to `semantic_diff` and its `change_count`, before/after epoch IDs, and unsupported sections.
 
 “A byte diff is noisy for agent state. This diff compares normalized messages, pending tasks,
-tool history, and model metadata. The two seeded executions are observably different. Workspace,
-capability, and effect sections remain typed unsupported boundaries until their trusted sources
-are connected.”
+tool history, model metadata, workspace manifests, and monotonic capability/effect frontiers. The
+two seeded executions are observably different without treating rolled-back sandbox bytes as
+trusted authority.”
 
 ### 3:20–4:10 — Fork and restart safety
 
 Point to `fork` and `branch_inspect`.
 
 “Fork creates immutable lineage from the baseline epoch. Inspection happens through another CLI
-process, proving the branch is durable rather than an in-memory object. Recorded model-result
-evidence is present; autonomous continuation and effect inheritance are explicitly unsupported.”
+process, proving the branch is durable rather than an in-memory object. Security frontiers remain
+outside rollback. Recorded-result inspection works; autonomous continuation and live-provider
+reconciliation remain explicit.”
 
 ### 4:10–5:00 — Recommendation and next experiments
 
 Point to `completed_with_unsupported` and the four unsupported sections.
 
-“The evidence supports keeping cooperative application checkpoints as the portable baseline and
-keeping semantic diff plus durable branch lineage. Next I would connect a COW workspace backend,
-then benchmark a Linux isolation/process-checkpoint backend against that baseline. Capabilities
-and external effects must remain in monotonic trusted state outside rollback; restore may
-reconcile against them, never resurrect them.”
+“The evidence supports keeping cooperative application plus immutable workspace checkpoints as
+the portable baseline, and keeping semantic diff, monotonic authority, effect journaling, and
+durable branch lineage. The next product bet is a measured Linux supervisor adapter and a narrowly
+compatible process-checkpoint backend—not a claim that arbitrary processes are transparent.”
 
-Do not claim that the current demo rolls back files, restores a live process, replays external
-effects, or enforces branch-bound authority. The report is designed to make those overclaims hard.
+Do not claim that the demo overwrites the original workspace, restores a live process, continues a
+fork autonomously, or proves exactly-once behavior for a live external provider. The report is
+designed to make those overclaims hard.
 
 ## Evidence and failure drill
 
@@ -116,11 +118,11 @@ The current seams for the next experiments are deliberately narrow:
 
 | Section | Present evidence | Hook required for support | Acceptance gate |
 |---|---|---|---|
-| Workspace | Controlled mutation remains observable after application restore | Register a workspace snapshot backend with immutable layer ID and manifest hash in the composite epoch | Restored files, modes, and symlinks match the checkpoint while the parent layer stays immutable |
+| Workspace | Composite checkpoints publish verified files, modes, and symlinks to a clean target while preserving the mutated original | Keep the full-copy backend as baseline; evaluate COW only as a measured optimization | Restored manifest matches and no-clobber remains enforced |
 | Isolation | `doctor` identifies direct execution as registered and reports other backends separately | Add a registered Linux launcher behind the supervisor, returning namespace, cgroup, and seccomp evidence | Escape tests fail closed and startup/runtime overhead is benchmarked |
 | Process | Process observation exists; no process checkpoint backend is registered | Connect a versioned process-checkpoint backend and compatibility report to composite checkpoint/restore | Supported workloads restore; incompatible kernel state returns typed unsupported, never false success |
-| Capabilities | Stable capability IDs exist, but branch authority is not reconciled | Store grants and revocations in monotonic trusted state and invoke an authority reconciler during restore/fork | Restoring an old handle cannot restore revoked authority |
-| Effects | Durable event history and an explicit fork frontier boundary exist | Add idempotency records plus downstream reconciliation outside the rollback domain | Crash-after-commit retries suppress or reconcile duplicates deterministically |
+| Capabilities | Branch-bound grants, consumption, revocation, policy revisions, and audit are monotonic trusted state | Keep authority outside rollback and bind every effect intent atomically | Restoring an old handle cannot restore revoked or stale authority |
+| Effects | Stable operation IDs, durable transitions, duplicate suppression, unknown outcomes, branch suspension, and checkpoint frontiers are implemented | Add provider-specific lookup/reconciliation behind the trusted dispatcher | 100 local replays dispatch once; ambiguous provider commits remain unknown until reconciled |
 | Continuation | Recorded-result provenance is inspectable | Register a resumable agent adapter with an explicit context/schema contract | A child continues from its fork point without inheriting unapproved authority or effects |
 
 An integration should change a section from `unsupported` only after its evidence is part of the
@@ -128,7 +130,8 @@ atomic epoch contract and its failure modes are tested. Tool detection alone is 
 
 ## Pre-interview rehearsal
 
-- Run the demo three times from the intended laptop and keep the three reports.
+- Run the demo three times from the intended laptop and keep the three revision-pinned reports plus
+  their SHA-256 checksums.
 - Rehearse once with networking disabled; the deterministic path should still work.
 - Keep a terminal sized so all 13 phase names fit without wrapping.
 - Know the distinction between application restore, workspace restore, and process restore.

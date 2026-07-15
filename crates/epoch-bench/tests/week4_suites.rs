@@ -122,6 +122,7 @@ fn cow_configuration_is_bounded_and_non_linux_is_structured_unsupported() {
         );
         assert!(matches!(result.outcome, SampleOutcome::Unsupported { .. }));
         assert!(result.samples.is_empty());
+        assert!(result.summary.is_none());
     }
 }
 
@@ -203,5 +204,20 @@ fn all_suite_emits_stable_json_csv_and_threshold_backed_decisions() {
             .decisions
             .iter()
             .all(|item| !item.evidence.is_empty())
+    );
+    let keep = report
+        .decisions
+        .iter()
+        .find(|item| item.decision == Decision::Keep)
+        .expect("keep decision");
+    assert!(
+        keep.evidence
+            .iter()
+            .any(|fact| fact.starts_with("capture_p95_ns="))
+    );
+    assert!(
+        keep.evidence
+            .iter()
+            .any(|fact| fact.starts_with("restore_p95_ns="))
     );
 }

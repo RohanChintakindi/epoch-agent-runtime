@@ -169,6 +169,12 @@ fi
 Older committed Oracle artifacts are historical baselines, not final proof. Their documentation
 must name the older source revision explicitly.
 
+The accepted clean-source run for revision
+`11739a8e3f2da9673d642ac718cee8bbb39dc229` is preserved in the
+[final candidate evidence index](../results/final-11739a8/README.md). Its platform manifests cover
+the measured files; the later evidence-only commit is intentionally not the embedded source
+revision.
+
 ## Keep / narrow / kill
 
 | Decision | Scope | Evidence rule |

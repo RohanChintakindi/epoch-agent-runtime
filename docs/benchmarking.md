@@ -126,6 +126,12 @@ the pre-integration run as a historical baseline. It names its older revision ex
 not be presented as final effect-gateway or multi-point-matrix proof. Final acceptance follows the
 [revision-pinned runbook](final-runbook.md).
 
+The completed cross-platform acceptance run from clean revision
+`11739a8e3f2da9673d642ac718cee8bbb39dc229` is preserved in the
+[final candidate evidence index](../results/final-11739a8/README.md). The Oracle report retains all
+60 matrix keys (54 supported, 6 safely skipped, 0 failed) and supported direct/Linux execution
+samples; the macOS report retains all 60 keys as structured platform-unsupported rows.
+
 ## COW helper boundary
 
 The auditable helper is

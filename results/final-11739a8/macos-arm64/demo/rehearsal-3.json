@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+  "code_dirty": false,
+  "outcome": "completed_with_unsupported",
+  "run_id": "run-fd83fa59-5602-4bc7-b338-bcdc13aea105",
+  "run_root": "/tmp/epoch-final-11739a8/mac-demo/state-3/runs/run-fd83fa59-5602-4bc7-b338-bcdc13aea105",
+  "workspace_root": "/tmp/epoch-final-11739a8/mac-demo/state-3/workspaces/run-fd83fa59-5602-4bc7-b338-bcdc13aea105",
+  "report_path": "/tmp/epoch-final-11739a8/mac-demo/state-3/runs/run-fd83fa59-5602-4bc7-b338-bcdc13aea105/report.json",
+  "phases": [
+    {
+      "name": "doctor",
+      "status": "succeeded",
+      "duration_ms": 2,
+      "evidence": {
+        "architecture": "aarch64",
+        "backends": {
+          "application_checkpoint": {
+            "backend": "cooperative-w02-v1",
+            "reason": "the cooperative W02 application checkpoint backend is registered",
+            "registered": true,
+            "scope": "application_context_only",
+            "status": "supported"
+          },
+          "criu_checkpoint": {
+            "backend": null,
+            "dependency_detected": false,
+            "reason": "CRIU integration is not registered; tool presence alone is insufficient",
+            "registered": false,
+            "scope": "process_tree",
+            "status": "unsupported"
+          },
+          "direct_execution": {
+            "backend": "direct-process-v1",
+            "reason": "the direct process supervisor is compiled and registered",
+            "registered": true,
+            "scope": "process_lifecycle",
+            "status": "supported"
+          },
+          "linux_isolation": {
+            "backend": "linux",
+            "diagnostics": [
+              {
+                "code": "platform_not_linux",
+                "detail": "Linux isolation requires Linux; current OS is macos",
+                "facility": "operating_system"
+              }
+            ],
+            "status": "unsupported"
+          },
+          "process_checkpoint": {
+            "backend": null,
+            "reason": "no process checkpoint backend is registered",
+            "registered": false,
+            "scope": "process_memory",
+            "status": "unsupported"
+          },
+          "workspace_checkpoint": {
+            "backend": "full-copy-cas-v1",
+            "reason": "the deterministic full-copy CAS workspace backend is registered",
+            "registered": true,
+            "scope": "workspace_files_without_process_memory",
+            "status": "supported"
+          }
+        },
+        "control_plane": "available",
+        "os": "macos"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "run_baseline",
+      "status": "succeeded",
+      "duration_ms": 35,
+      "evidence": {
+        "branch_id": "6236e5a8-0d4d-42af-9982-588947c5c3b7",
+        "protocol_records": 11,
+        "session_id": "4b0ca158-8cb8-4fa6-9a56-3b8f8d664567",
+        "termination": "succeeded"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "status_before_checkpoint",
+      "status": "succeeded",
+      "duration_ms": 9,
+      "evidence": {
+        "branch_count": 1,
+        "session_id": "4b0ca158-8cb8-4fa6-9a56-3b8f8d664567",
+        "state": "completed"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "events",
+      "status": "succeeded",
+      "duration_ms": 6,
+      "evidence": {
+        "branch_id": "6236e5a8-0d4d-42af-9982-588947c5c3b7",
+        "event_count": 16,
+        "first_event_id": "ed76ff2d-e6e6-473e-bc11-4edc93a5a4e2",
+        "last_event_id": "af45ff87-4e19-44d9-b6c4-100a6cd75909",
+        "session_id": "4b0ca158-8cb8-4fa6-9a56-3b8f8d664567"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "checkpoint_baseline",
+      "status": "succeeded",
+      "duration_ms": 96,
+      "evidence": {
+        "boundary_sequence": 9,
+        "branch_id": "6236e5a8-0d4d-42af-9982-588947c5c3b7",
+        "component_hash": "efdfd14368ca0798943eba4acc070cb5656430544d69d19a3acd0ba021d98467",
+        "epoch_id": "d9fa51c6-8109-4539-9a3a-b3304d8a9cb2",
+        "restore_scope": "application_and_workspace",
+        "session_id": "4b0ca158-8cb8-4fa6-9a56-3b8f8d664567"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "controlled_workspace_change",
+      "status": "succeeded",
+      "duration_ms": 0,
+      "evidence": {
+        "artifact": "/tmp/epoch-final-11739a8/mac-demo/state-3/workspaces/run-fd83fa59-5602-4bc7-b338-bcdc13aea105/baseline/artifact.txt",
+        "changed": true,
+        "workspace_checkpoint": "captured_before_change"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "run_variant",
+      "status": "succeeded",
+      "duration_ms": 18,
+      "evidence": {
+        "branch_id": "5398e5c1-ccdd-42fd-9726-1c3c894be2c3",
+        "protocol_records": 11,
+        "session_id": "655c470d-935b-46fa-8a6a-6250a2f718b4",
+        "termination": "succeeded"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "checkpoint_variant",
+      "status": "succeeded",
+      "duration_ms": 95,
+      "evidence": {
+        "boundary_sequence": 9,
+        "branch_id": "5398e5c1-ccdd-42fd-9726-1c3c894be2c3",
+        "component_hash": "50d7f1b8a489a17f555c4e1bbd557dea6eca36535e52574d86c20fc45fc5ac5f",
+        "epoch_id": "2e761c16-6d89-49e4-ae8d-d38384beb534",
+        "restore_scope": "application_and_workspace",
+        "session_id": "655c470d-935b-46fa-8a6a-6250a2f718b4"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "restore_baseline",
+      "status": "succeeded",
+      "duration_ms": 33,
+      "evidence": {
+        "activated": true,
+        "epoch_id": "d9fa51c6-8109-4539-9a3a-b3304d8a9cb2",
+        "process_restored": false,
+        "workspace_restored": true,
+        "workspace_target": "/tmp/epoch-final-11739a8/mac-demo/state-3/workspaces/run-fd83fa59-5602-4bc7-b338-bcdc13aea105/restored-baseline"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "status_after_restore",
+      "status": "succeeded",
+      "duration_ms": 12,
+      "evidence": {
+        "current_epoch_id": "d9fa51c6-8109-4539-9a3a-b3304d8a9cb2",
+        "original_workspace_change_preserved": true,
+        "restored_workspace_matches_checkpoint": true,
+        "session_id": "4b0ca158-8cb8-4fa6-9a56-3b8f8d664567",
+        "state": "completed"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "semantic_diff",
+      "status": "succeeded",
+      "duration_ms": 11,
+      "evidence": {
+        "after_epoch_id": "2e761c16-6d89-49e4-ae8d-d38384beb534",
+        "before_epoch_id": "d9fa51c6-8109-4539-9a3a-b3304d8a9cb2",
+        "capabilities": {
+          "advanced_since_after": false,
+          "advanced_since_before": false,
+          "after_frontier": 0,
+          "before_frontier": 0,
+          "changed_between_epochs": false,
+          "current_after_scope": 0,
+          "current_before_scope": 0
+        },
+        "change_count": 2,
+        "effects": {
+          "advanced_since_after": false,
+          "advanced_since_before": false,
+          "after_frontier": 0,
+          "before_frontier": 0,
+          "changed_between_epochs": false,
+          "current_after_scope": 0,
+          "current_before_scope": 0
+        },
+        "identical": false,
+        "workspace": {
+          "after_manifest_hash": "04f66bcfe13ca17d7f43b49573e9195aceca7406f07f45113884a8ab0a6b3439",
+          "before_manifest_hash": "959ac46b8b50158ad1eb0183fe172df6dc37c49ab379c3378c357bd12699ac86",
+          "identical": false
+        }
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "fork",
+      "status": "succeeded",
+      "duration_ms": 9,
+      "evidence": {
+        "branch_id": "1a5dca87-03e5-44f5-ad5b-3bdff7234cdc",
+        "effect_frontier": "unsupported",
+        "fork_epoch_id": "d9fa51c6-8109-4539-9a3a-b3304d8a9cb2",
+        "fork_point_sequence": 9,
+        "parent_branch_id": "6236e5a8-0d4d-42af-9982-588947c5c3b7",
+        "replay_continuation": "unsupported",
+        "session_id": "4b0ca158-8cb8-4fa6-9a56-3b8f8d664567"
+      },
+      "diagnostic": null
+    },
+    {
+      "name": "branch_inspect",
+      "status": "succeeded",
+      "duration_ms": 8,
+      "evidence": {
+        "branch_id": "1a5dca87-03e5-44f5-ad5b-3bdff7234cdc",
+        "effect_frontier": "unsupported",
+        "fork_epoch_id": "d9fa51c6-8109-4539-9a3a-b3304d8a9cb2",
+        "fork_point_sequence": 9,
+        "parent_branch_id": "6236e5a8-0d4d-42af-9982-588947c5c3b7",
+        "replay_continuation": "unsupported",
+        "session_id": "4b0ca158-8cb8-4fa6-9a56-3b8f8d664567"
+      },
+      "diagnostic": null
+    }
+  ],
+  "unsupported_sections": [
+    {
+      "section": "continuation",
+      "outcome": "unsupported",
+      "code": "autonomous_branch_continuation_pending",
+      "detail": "fork lineage is durable but autonomous execution continuation is not registered"
+    },
+    {
+      "section": "effects",
+      "outcome": "unsupported",
+      "code": "external_effect_delivery_reconciliation_pending",
+      "detail": "effect frontiers are durable but live provider delivery reconciliation is not registered"
+    },
+    {
+      "section": "isolation",
+      "outcome": "unsupported",
+      "code": "linux_supervisor_adapter_pending",
+      "detail": "the native-tested Linux backend is not composed into the supervisor launch path"
+    },
+    {
+      "section": "process",
+      "outcome": "unsupported",
+      "code": "process_checkpoint_backend_not_registered",
+      "detail": "application and workspace state restore without live process memory"
+    }
+  ],
+  "summary": "Epoch demo completed: 13/13 real phases succeeded; four narrow boundaries remain explicitly unsupported.",
+  "failure": null
+}

@@ -105,6 +105,11 @@ Final acceptance uses a new directory produced from a clean candidate revision. 
 embed the full 40-character `code_revision` and `code_dirty: false`, as specified by the
 [final acceptance runbook](final-runbook.md).
 
+The final Oracle ARM64 matrix for clean revision
+`11739a8e3f2da9673d642ac718cee8bbb39dc229`, including all raw row logs and checksums, is indexed in
+the [final candidate evidence](../results/final-11739a8/README.md). Twelve in-scope rows restored
+and verified; external TCP remains the single explicit unsupported row.
+
 ## Integration contract and limitations
 
 The supervisor integration seam is `RunnerConfig` plus `CompatibilityRunner::run`, which returns a

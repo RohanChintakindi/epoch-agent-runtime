@@ -1,0 +1,12 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running tests/linux_native.rs (/opt/epoch-root-isolation-target/debug/deps/linux_native-bd27e490d33bc5ac)
+
+running 3 tests
+direct_launch_ns=[4354390, 995447, 221641]
+linux_launch_ns=[38830823, 33332106, 37021371]
+test launch_overhead_samples_are_emitted_for_direct_and_linux_backends ... ok
+test cgroup_pid_and_memory_limits_are_visible_and_units_are_collected ... ok
+test privileged_oracle_boundary_enforces_filesystem_network_pid_and_kernel_policy ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+

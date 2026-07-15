@@ -1,0 +1,431 @@
+{
+  "schema_version": 1,
+  "scenario_schema_version": 1,
+  "code_revision": "11739a8e3f2da9673d642ac718cee8bbb39dc229",
+  "code_dirty": false,
+  "environment": {
+    "operating_system": "linux",
+    "architecture": "aarch64",
+    "kernel_release": "6.17.0-1018-oracle",
+    "criu_version": "Version: 4.2",
+    "criu_check_supported": true,
+    "criu_check_diagnostic": {
+      "code": "supported",
+      "stage": "criu_check",
+      "message": "criu check succeeded",
+      "log_artifact": "logs/environment-criu-check.log"
+    },
+    "criu_check_all_supported": false,
+    "criu_check_all_diagnostic": {
+      "code": "criu_check_failed",
+      "stage": "criu_check_all",
+      "message": "criu check --all exited Some(1): Looks good but some kernel features are missing",
+      "log_artifact": "logs/environment-criu-check-all.log"
+    },
+    "effective_uid": 0
+  },
+  "limits": {
+    "dump_timeout_ms": 30000,
+    "restore_timeout_ms": 30000,
+    "max_log_bytes": 262144
+  },
+  "scaling": {
+    "memory_bytes": [
+      4194304,
+      67108864
+    ],
+    "process_counts": [
+      2,
+      4
+    ]
+  },
+  "thresholds": {
+    "required_restore_correctness_percent": 100,
+    "checkpoint_pause_p95_ms": 1000,
+    "restore_p95_ms": 3000
+  },
+  "rows": [
+    {
+      "scenario": "sleeping_process",
+      "scale": {
+        "memory_bytes": 4194304,
+        "process_count": 1
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0000-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 31,
+        "log_artifact": "logs/row-0000-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 10,
+        "log_artifact": "logs/row-0000-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 4325440,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "sleeping_process",
+      "scale": {
+        "memory_bytes": 67108864,
+        "process_count": 1
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0001-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 103,
+        "log_artifact": "logs/row-0001-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 41,
+        "log_artifact": "logs/row-0001-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 67236190,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "open_regular_file",
+      "scale": {
+        "memory_bytes": 4194304,
+        "process_count": 1
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0002-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 21,
+        "log_artifact": "logs/row-0002-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 30,
+        "log_artifact": "logs/row-0002-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 4321446,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "open_regular_file",
+      "scale": {
+        "memory_bytes": 67108864,
+        "process_count": 1
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0003-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 53,
+        "log_artifact": "logs/row-0003-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 41,
+        "log_artifact": "logs/row-0003-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 67240393,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "process_tree",
+      "scale": {
+        "memory_bytes": 4194304,
+        "process_count": 2
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0004-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 20,
+        "log_artifact": "logs/row-0004-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 20,
+        "log_artifact": "logs/row-0004-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 4451711,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "process_tree",
+      "scale": {
+        "memory_bytes": 4194304,
+        "process_count": 4
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0005-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 20,
+        "log_artifact": "logs/row-0005-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 20,
+        "log_artifact": "logs/row-0005-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 4696053,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "process_tree",
+      "scale": {
+        "memory_bytes": 67108864,
+        "process_count": 2
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0006-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 51,
+        "log_artifact": "logs/row-0006-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 40,
+        "log_artifact": "logs/row-0006-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 67362463,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "process_tree",
+      "scale": {
+        "memory_bytes": 67108864,
+        "process_count": 4
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0007-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 51,
+        "log_artifact": "logs/row-0007-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 41,
+        "log_artifact": "logs/row-0007-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 67615003,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "loopback_socket",
+      "scale": {
+        "memory_bytes": 4194304,
+        "process_count": 1
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0008-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 30,
+        "log_artifact": "logs/row-0008-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 40,
+        "log_artifact": "logs/row-0008-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 4325841,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "loopback_socket",
+      "scale": {
+        "memory_bytes": 67108864,
+        "process_count": 1
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0009-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 50,
+        "log_artifact": "logs/row-0009-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 70,
+        "log_artifact": "logs/row-0009-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 67240694,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "external_tcp",
+      "scale": {
+        "memory_bytes": 4194304,
+        "process_count": 1
+      },
+      "status": "unsupported",
+      "diagnostic": {
+        "code": "external_tcp_unsupported",
+        "stage": "scenario",
+        "message": "external TCP depends on remote peer state and is explicitly outside the transparent restore subset",
+        "log_artifact": "logs/row-0010-diagnostic.log"
+      },
+      "dump": null,
+      "restore": null,
+      "image_bytes": null,
+      "restored_behavior_verified": false
+    },
+    {
+      "scenario": "workspace_mutation",
+      "scale": {
+        "memory_bytes": 4194304,
+        "process_count": 1
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0011-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 20,
+        "log_artifact": "logs/row-0011-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 10,
+        "log_artifact": "logs/row-0011-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 4321359,
+      "restored_behavior_verified": true
+    },
+    {
+      "scenario": "workspace_mutation",
+      "scale": {
+        "memory_bytes": 67108864,
+        "process_count": 1
+      },
+      "status": "supported",
+      "diagnostic": {
+        "code": "supported",
+        "stage": "complete",
+        "message": "dump, restore, behavior verification, and cleanup succeeded",
+        "log_artifact": "logs/row-0012-diagnostic.log"
+      },
+      "dump": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 40,
+        "log_artifact": "logs/row-0012-dump.log",
+        "log_truncated": false
+      },
+      "restore": {
+        "exit_code": 0,
+        "timed_out": false,
+        "latency_ms": 40,
+        "log_artifact": "logs/row-0012-restore.log",
+        "log_truncated": false
+      },
+      "image_bytes": 67240306,
+      "restored_behavior_verified": true
+    }
+  ],
+  "decision": {
+    "recommendation": "keep",
+    "rationale": "Every declared in-scope row restored correctly within the preliminary latency gates."
+  }
+}

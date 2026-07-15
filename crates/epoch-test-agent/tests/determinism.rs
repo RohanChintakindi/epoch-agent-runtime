@@ -5,7 +5,8 @@ use std::{
 };
 
 use epoch_protocol::{Message, decode_line};
-use epoch_test_agent::{Scenario, WorkloadConfig, run_workload};
+use epoch_test_agent::{CrashPoint, Scenario, WorkloadConfig, WorkloadError, run_workload};
+use sha2::{Digest, Sha256};
 
 static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
 
@@ -53,6 +54,10 @@ fn messages(trace: &[u8]) -> Vec<Message> {
         .collect()
 }
 
+fn sha256(bytes: &[u8]) -> String {
+    format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
 #[test]
 fn same_seed_produces_identical_trace_and_normalized_state() {
     let first = TestDir::new("same-seed-a");
@@ -67,6 +72,14 @@ fn same_seed_produces_identical_trace_and_normalized_state() {
     assert_eq!(
         first_summary.normalized_trace_hash,
         second_summary.normalized_trace_hash
+    );
+    assert_eq!(first_summary.normalized_trace_hash, sha256(&first_trace));
+    assert_eq!(
+        first_summary.state_hash,
+        sha256(
+            &serde_json::to_vec(&first_summary.state)
+                .expect("normalized state should serialize deterministically")
+        )
     );
 }
 
@@ -157,5 +170,31 @@ fn individual_scenarios_execute_only_the_selected_tools() {
             })
             .collect();
         assert_eq!(tools, expected, "wrong tools for {scenario:?}");
+    }
+}
+
+#[test]
+fn configured_crashes_leave_a_valid_deterministic_partial_trace() {
+    let cases = [
+        (CrashPoint::AfterModel, "model.response"),
+        (CrashPoint::AfterFirstTool, "tool.result"),
+        (CrashPoint::AfterSafePoint, "safe_point"),
+    ];
+
+    for (point, expected_last_kind) in cases {
+        let workspace = TestDir::new(point.as_str());
+        let mut config = WorkloadConfig::new(91, Scenario::Full, workspace.path().to_path_buf());
+        config.crash_at = Some(point);
+        let mut trace = Vec::new();
+
+        let error = run_workload(&config, &mut trace).expect_err("configured crash must fail");
+        assert!(matches!(error, WorkloadError::InjectedCrash { point: actual } if actual == point));
+        let messages = messages(&trace);
+        assert_eq!(messages.last().map(Message::kind), Some(expected_last_kind));
+        assert!(
+            !messages
+                .iter()
+                .any(|message| matches!(message, Message::Completion(_)))
+        );
     }
 }

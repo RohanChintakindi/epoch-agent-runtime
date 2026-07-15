@@ -10,6 +10,7 @@ Linux isolation and checkpoint backends are added only after that vertical slice
 
 ## Workspace
 
+- `epoch-blob`: atomic, SHA-256-addressed artifact storage with verified reads.
 - `epoch-core`: stable identifiers, lifecycle state machines, and shared domain types.
 - `epoch-cli`: command-line entry point and host capability diagnostics.
 

@@ -116,6 +116,8 @@ pub struct ApplicationCheckpointReport {
     pub context_revision: u64,
     pub boundary_sequence: u64,
     pub process_checkpointed: bool,
+    pub capability_frontier: u64,
+    pub effect_frontier: u64,
     pub workspace: WorkspaceCheckpointReport,
     pub restore_scope: RestoreScope,
 }
@@ -149,6 +151,8 @@ pub struct ApplicationEpochDiffReport {
     pub after_epoch_id: EpochId,
     pub diff: ApplicationSemanticDiff,
     pub workspace: WorkspaceEpochDiff,
+    pub capabilities: SecurityFrontierDiff,
+    pub effects: SecurityFrontierDiff,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -156,6 +160,17 @@ pub struct WorkspaceEpochDiff {
     pub identical: bool,
     pub before_manifest_hash: BlobHash,
     pub after_manifest_hash: BlobHash,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SecurityFrontierDiff {
+    pub before_frontier: u64,
+    pub after_frontier: u64,
+    pub current_before_scope: u64,
+    pub current_after_scope: u64,
+    pub changed_between_epochs: bool,
+    pub advanced_since_before: bool,
+    pub advanced_since_after: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -239,7 +254,25 @@ struct LoadedApplicationEpoch {
     artifact: ApplicationCheckpoint,
     workspace: WorkspaceSnapshot,
     workspace_source: PathBuf,
+    capability_frontier: u64,
     effect_frontier: u64,
+}
+
+struct StoredApplicationEpochRow {
+    session: String,
+    branch: String,
+    epoch_status: String,
+    epoch_backend: String,
+    capability_frontier: i64,
+    effect_frontier: i64,
+    component_status: String,
+    backend: String,
+    blob_hash: String,
+    checksum: String,
+    component_length: i64,
+    metadata_json: String,
+    registered_length: i64,
+    media_type: String,
 }
 
 pub(crate) struct ValidatedApplicationSource {
@@ -325,7 +358,7 @@ impl DirectSupervisor {
             Ok(snapshot) => snapshot,
             Err(error) => return map_workspace_error(&error),
         };
-        let epoch_id = match self.persist_checkpoint(
+        let (epoch_id, capability_frontier, effect_frontier) = match self.persist_checkpoint(
             session_id,
             branch_id,
             &artifact,
@@ -347,6 +380,8 @@ impl DirectSupervisor {
             context_revision: artifact.metadata.context_revision,
             boundary_sequence: artifact.metadata.boundary_sequence,
             process_checkpointed: false,
+            capability_frontier,
+            effect_frontier,
             workspace: WorkspaceCheckpointReport {
                 backend: WORKSPACE_BACKEND,
                 manifest_hash: workspace.manifest_hash().clone(),
@@ -439,6 +474,16 @@ impl DirectSupervisor {
             Ok(loaded) => loaded,
             Err(rejection) => return rejection.into_outcome(),
         };
+        let (current_before_capabilities, current_before_effects) =
+            match self.current_security_frontiers(before.session_id, before.branch_id) {
+                Ok(frontiers) => frontiers,
+                Err(issue) => return RecoveryOutcome::Failed(issue),
+            };
+        let (current_after_capabilities, current_after_effects) =
+            match self.current_security_frontiers(after.session_id, after.branch_id) {
+                Ok(frontiers) => frontiers,
+                Err(issue) => return RecoveryOutcome::Failed(issue),
+            };
         let backend = match self.application_backend() {
             Ok(backend) => backend,
             Err(issue) => return RecoveryOutcome::Failed(issue),
@@ -453,6 +498,18 @@ impl DirectSupervisor {
                     before_manifest_hash: before.workspace.manifest_hash().clone(),
                     after_manifest_hash: after.workspace.manifest_hash().clone(),
                 },
+                capabilities: frontier_diff(
+                    before.capability_frontier,
+                    after.capability_frontier,
+                    current_before_capabilities,
+                    current_after_capabilities,
+                ),
+                effects: frontier_diff(
+                    before.effect_frontier,
+                    after.effect_frontier,
+                    current_before_effects,
+                    current_after_effects,
+                ),
             }),
             Err(error) => map_diff_error(&error),
         }
@@ -937,7 +994,7 @@ impl DirectSupervisor {
         workspace: &WorkspaceSnapshot,
         workspace_source: &Path,
         label: Option<String>,
-    ) -> Result<EpochId, RecoveryIssue> {
+    ) -> Result<(EpochId, u64, u64), RecoveryIssue> {
         let timestamp = unix_ms().map_err(|detail| issue(RecoveryCode::Persistence, detail))?;
         let mut store = Store::open(&self.database_path)
             .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
@@ -950,6 +1007,8 @@ impl DirectSupervisor {
         register_workspace_blob(&transaction, workspace, timestamp)?;
 
         let (sequence, parent_epoch_id) = next_epoch(&transaction, branch_id)?;
+        let (capability_frontier, effect_frontier) =
+            security_frontiers(&transaction, session_id, branch_id)?;
         let policy_revision = transaction
             .query_row(
                 "SELECT policy_revision FROM sessions WHERE id = ?1",
@@ -962,8 +1021,9 @@ impl DirectSupervisor {
             .execute(
                 "INSERT INTO epochs \
                  (id, session_id, branch_id, parent_epoch_id, sequence, status, backend, \
-                  policy_revision, effect_frontier, created_at_unix_ms, committed_at_unix_ms) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'creating', ?6, ?7, 0, ?8, NULL)",
+                  policy_revision, capability_frontier, effect_frontier, created_at_unix_ms, \
+                  committed_at_unix_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'creating', ?6, ?7, ?8, ?9, ?10, NULL)",
                 params![
                     epoch_id.to_string(),
                     session_id.to_string(),
@@ -972,6 +1032,8 @@ impl DirectSupervisor {
                     sequence,
                     COMPOSITE_BACKEND,
                     policy_revision,
+                    capability_frontier,
+                    effect_frontier,
                     timestamp,
                 ],
             )
@@ -1033,80 +1095,50 @@ impl DirectSupervisor {
         transaction
             .commit()
             .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
-        Ok(epoch_id)
+        persisted_checkpoint(epoch_id, capability_frontier, effect_frontier)
+    }
+
+    fn current_security_frontiers(
+        &self,
+        session_id: SessionId,
+        branch_id: BranchId,
+    ) -> Result<(u64, u64), RecoveryIssue> {
+        let store = Store::open(&self.database_path)
+            .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?;
+        let (capabilities, effects) =
+            security_frontiers(store.connection(), session_id, branch_id)?;
+        Ok((
+            u64::try_from(capabilities)
+                .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?,
+            u64::try_from(effects)
+                .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?,
+        ))
     }
 
     fn load_epoch(&self, epoch_id: EpochId) -> Result<LoadedApplicationEpoch, RecoveryRejection> {
         let store = Store::open(&self.database_path)
             .map_err(|error| failed_rejection(RecoveryCode::Persistence, error.to_string()))?;
-        let row = store
-            .connection()
-            .query_row(
-                "SELECT e.session_id, e.branch_id, e.status, e.backend, e.effect_frontier, \
-                        c.status, c.backend, \
-                        c.blob_hash, c.checksum_sha256, c.byte_length, c.metadata_json, \
-                        b.byte_length, b.media_type \
-                 FROM epochs e \
-                 JOIN snapshot_components c ON c.epoch_id = e.id \
-                 JOIN blobs b ON b.hash = c.blob_hash \
-                 WHERE e.id = ?1 AND c.kind = ?2",
-                params![epoch_id.to_string(), APPLICATION_COMPONENT_KIND],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, i64>(4)?,
-                        row.get::<_, String>(5)?,
-                        row.get::<_, String>(6)?,
-                        row.get::<_, String>(7)?,
-                        row.get::<_, String>(8)?,
-                        row.get::<_, i64>(9)?,
-                        row.get::<_, String>(10)?,
-                        row.get::<_, i64>(11)?,
-                        row.get::<_, String>(12)?,
-                    ))
-                },
-            )
-            .optional()
-            .map_err(|error| failed_rejection(RecoveryCode::Persistence, error.to_string()))?;
-        let Some((
-            session,
-            branch,
-            epoch_status,
-            epoch_backend,
-            effect_frontier,
-            component_status,
-            backend,
-            blob_hash,
-            checksum,
-            component_length,
-            metadata_json,
-            registered_length,
-            media_type,
-        )) = row
-        else {
+        let Some(row) = load_application_epoch_row(store.connection(), epoch_id)? else {
             return Err(failed_rejection(
                 RecoveryCode::NotFound,
                 format!("committed application epoch {epoch_id} was not found"),
             ));
         };
-        if epoch_status != "committed"
-            || epoch_backend != COMPOSITE_BACKEND
-            || component_status != "committed"
-            || backend != APPLICATION_BACKEND
-            || checksum != blob_hash
-            || component_length != registered_length
-            || media_type != APPLICATION_CONTEXT_MEDIA_TYPE
+        if row.epoch_status != "committed"
+            || row.epoch_backend != COMPOSITE_BACKEND
+            || row.component_status != "committed"
+            || row.backend != APPLICATION_BACKEND
+            || row.checksum != row.blob_hash
+            || row.component_length != row.registered_length
+            || row.media_type != APPLICATION_CONTEXT_MEDIA_TYPE
         {
             return Err(failed_rejection(
                 RecoveryCode::MetadataMismatch,
                 "application epoch metadata is inconsistent".to_owned(),
             ));
         }
-        let metadata: StoredApplicationMetadata =
-            serde_json::from_str(&metadata_json).map_err(|error| {
+        let metadata: StoredApplicationMetadata = serde_json::from_str(&row.metadata_json)
+            .map_err(|error| {
                 failed_rejection(
                     RecoveryCode::MetadataMismatch,
                     format!("invalid component metadata: {error}"),
@@ -1118,10 +1150,16 @@ impl DirectSupervisor {
                 "application epoch has an invalid restore scope".to_owned(),
             ));
         }
-        let (session_id, branch_id, component_hash, byte_length) =
-            parse_application_component(&session, &branch, &blob_hash, component_length)?;
+        let (session_id, branch_id, component_hash, byte_length) = parse_application_component(
+            &row.session,
+            &row.branch,
+            &row.blob_hash,
+            row.component_length,
+        )?;
         let (workspace, workspace_source) = load_workspace_component(store.connection(), epoch_id)?;
-        let effect_frontier = u64::try_from(effect_frontier)
+        let capability_frontier = u64::try_from(row.capability_frontier)
+            .map_err(|error| failed_rejection(RecoveryCode::MetadataMismatch, error.to_string()))?;
+        let effect_frontier = u64::try_from(row.effect_frontier)
             .map_err(|error| failed_rejection(RecoveryCode::MetadataMismatch, error.to_string()))?;
         Ok(LoadedApplicationEpoch {
             epoch_id,
@@ -1139,6 +1177,7 @@ impl DirectSupervisor {
             ),
             workspace,
             workspace_source,
+            capability_frontier,
             effect_frontier,
         })
     }
@@ -1179,6 +1218,95 @@ impl DirectSupervisor {
             })
             .map(|_| ())
             .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))
+    }
+}
+
+fn security_frontiers(
+    connection: &Connection,
+    session_id: SessionId,
+    branch_id: BranchId,
+) -> Result<(i64, i64), RecoveryIssue> {
+    connection
+        .query_row(
+            "SELECT \
+                (SELECT COUNT(*) FROM capabilities \
+                 WHERE session_id = ?1 AND branch_id = ?2) + \
+                (SELECT COUNT(*) FROM capability_decisions \
+                 WHERE session_id = ?1 AND branch_id = ?2), \
+                (SELECT COUNT(*) FROM effect_transition_history h \
+                 JOIN effect_intents i ON i.id = h.effect_id \
+                 WHERE i.session_id = ?1 AND i.branch_id = ?2)",
+            params![session_id.to_string(), branch_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))
+}
+
+fn persisted_checkpoint(
+    epoch_id: EpochId,
+    capability_frontier: i64,
+    effect_frontier: i64,
+) -> Result<(EpochId, u64, u64), RecoveryIssue> {
+    Ok((
+        epoch_id,
+        u64::try_from(capability_frontier)
+            .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?,
+        u64::try_from(effect_frontier)
+            .map_err(|error| issue(RecoveryCode::Persistence, error.to_string()))?,
+    ))
+}
+
+fn load_application_epoch_row(
+    connection: &Connection,
+    epoch_id: EpochId,
+) -> Result<Option<StoredApplicationEpochRow>, RecoveryRejection> {
+    connection
+        .query_row(
+            "SELECT e.session_id, e.branch_id, e.status, e.backend, e.capability_frontier, \
+                    e.effect_frontier, c.status, c.backend, c.blob_hash, c.checksum_sha256, \
+                    c.byte_length, c.metadata_json, b.byte_length, b.media_type \
+             FROM epochs e \
+             JOIN snapshot_components c ON c.epoch_id = e.id \
+             JOIN blobs b ON b.hash = c.blob_hash \
+             WHERE e.id = ?1 AND c.kind = ?2",
+            params![epoch_id.to_string(), APPLICATION_COMPONENT_KIND],
+            |row| {
+                Ok(StoredApplicationEpochRow {
+                    session: row.get(0)?,
+                    branch: row.get(1)?,
+                    epoch_status: row.get(2)?,
+                    epoch_backend: row.get(3)?,
+                    capability_frontier: row.get(4)?,
+                    effect_frontier: row.get(5)?,
+                    component_status: row.get(6)?,
+                    backend: row.get(7)?,
+                    blob_hash: row.get(8)?,
+                    checksum: row.get(9)?,
+                    component_length: row.get(10)?,
+                    metadata_json: row.get(11)?,
+                    registered_length: row.get(12)?,
+                    media_type: row.get(13)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| failed_rejection(RecoveryCode::Persistence, error.to_string()))
+}
+
+const fn frontier_diff(
+    before_frontier: u64,
+    after_frontier: u64,
+    current_before_scope: u64,
+    current_after_scope: u64,
+) -> SecurityFrontierDiff {
+    SecurityFrontierDiff {
+        before_frontier,
+        after_frontier,
+        current_before_scope,
+        current_after_scope,
+        changed_between_epochs: before_frontier != after_frontier,
+        advanced_since_before: current_before_scope > before_frontier,
+        advanced_since_after: current_after_scope > after_frontier,
     }
 }
 

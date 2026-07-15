@@ -440,166 +440,175 @@ fn cli_fork_and_branch_inspection_are_restart_safe_and_promotion_is_explicit() {
 #[test]
 fn trusted_security_state_survives_restore_and_fork_three_times() {
     let fixture = TempDir::new().expect("create Week 3 security fixture");
-
     for seed in [111_u64, 112, 113] {
-        let (raw_session, raw_branch, _) = run_fixture(&fixture, seed);
-        let session = SessionId::from_str(&raw_session).expect("session ID");
-        let branch = BranchId::from_str(&raw_branch).expect("branch ID");
-        let constraints = json!({
-            "subject": "agent-1",
-            "resource": "mailbox:test",
-            "max_uses": 1,
-            "budget_units": 1
-        })
-        .to_string();
-        let grant = |label: &str| {
-            let output = successful_json(
-                &epoch(
-                    &fixture,
-                    &[
-                        "capability",
-                        "grant",
-                        &raw_branch,
-                        "email.send",
-                        &constraints,
-                    ],
-                ),
-                label,
-            );
-            (
-                output["capability_id"]
-                    .as_str()
-                    .expect("capability ID")
-                    .to_owned(),
-                CapabilityHandle::from_str(output["handle"].as_str().expect("capability handle"))
-                    .expect("opaque handle"),
-            )
-        };
-        let (revoked_id, revoked_handle) = grant("grant revocable capability");
-        let (_, consumed_handle) = grant("grant consumable capability");
-        let before_epoch = checkpoint(&fixture, &raw_session, &raw_branch);
+        run_security_cycle(&fixture, seed);
+    }
+}
 
-        let service = Arc::new(
-            CapabilityService::open(fixture.path().join(".epoch/state.db"))
-                .expect("capability service"),
-        );
-        let gateway = EffectGateway::open(
-            fixture.path().join(".epoch/state.db"),
-            fixture.path().join(".epoch/blobs"),
-            Arc::new(
-                CapabilityAuthorizer::new(service.clone(), consumed_handle.clone(), "agent-1", 1)
-                    .expect("effect authority"),
-            ),
-            Arc::new(DeterministicLocalDispatcher::default()),
-        )
-        .expect("effect gateway");
-        let intent = CanonicalIntent::new(
-            session,
-            branch,
-            format!("security-{seed}/email-1"),
-            "email.send",
-            "mailbox:test",
-            json!({"to": "checkpoint@example.test"}),
-            0,
-        )
-        .expect("effect intent");
+fn run_security_cycle(fixture: &TempDir, seed: u64) {
+    let (raw_session, raw_branch, _) = run_fixture(fixture, seed);
+    let session = SessionId::from_str(&raw_session).expect("session ID");
+    let branch = BranchId::from_str(&raw_branch).expect("branch ID");
+    let (revoked_id, revoked_handle) = grant_security_capability(fixture, &raw_branch);
+    let (_, consumed_handle) = grant_security_capability(fixture, &raw_branch);
+    let before_epoch = checkpoint(fixture, &raw_session, &raw_branch);
+
+    let service = Arc::new(
+        CapabilityService::open(fixture.path().join(".epoch/state.db"))
+            .expect("capability service"),
+    );
+    let gateway = EffectGateway::open(
+        fixture.path().join(".epoch/state.db"),
+        fixture.path().join(".epoch/blobs"),
+        Arc::new(
+            CapabilityAuthorizer::new(service.clone(), consumed_handle.clone(), "agent-1", 1)
+                .expect("effect authority"),
+        ),
+        Arc::new(DeterministicLocalDispatcher::default()),
+    )
+    .expect("effect gateway");
+    let intent = CanonicalIntent::new(
+        session,
+        branch,
+        format!("security-{seed}/email-1"),
+        "email.send",
+        "mailbox:test",
+        json!({"to": "checkpoint@example.test"}),
+        0,
+    )
+    .expect("effect intent");
+    gateway
+        .execute(&intent, FaultPoint::None)
+        .expect("consume one-use authority");
+    successful_json(
+        &epoch(fixture, &["capability", "revoke", &revoked_id]),
+        "revoke capability",
+    );
+
+    let restore_target = fixture.path().join(format!("security-restore-{seed}"));
+    let restore = Command::new(env!("CARGO_BIN_EXE_epoch"))
+        .current_dir(fixture.path())
+        .args(["restore", &before_epoch, "--workspace-target"])
+        .arg(&restore_target)
+        .output()
+        .expect("restore source epoch");
+    successful_json(&restore, "security restore");
+
+    assert_restored_denial(
+        &service,
+        &revoked_handle,
+        session,
+        branch,
+        seed,
+        DenialReason::Revoked,
+    );
+    assert_restored_denial(
+        &service,
+        &consumed_handle,
+        session,
+        branch,
+        seed,
+        DenialReason::Consumed,
+    );
+    assert_eq!(
+        gateway.list(session, None).expect("effect history").len(),
+        1
+    );
+
+    let fork = successful_json(
+        &epoch(
+            fixture,
+            &[
+                "fork",
+                &before_epoch,
+                "--name",
+                &format!("security-fork-{seed}"),
+            ],
+        ),
+        "security fork",
+    );
+    assert_eq!(
+        fork["result"]["replay"]["continuation"]["outcome"],
+        "unsupported"
+    );
+    assert_eq!(
         gateway
-            .execute(&intent, FaultPoint::None)
-            .expect("consume one-use authority");
-        successful_json(
-            &epoch(&fixture, &["capability", "revoke", &revoked_id]),
-            "revoke capability",
-        );
+            .list(session, None)
+            .expect("post-fork effects")
+            .len(),
+        1
+    );
 
-        let restore_target = fixture.path().join(format!("security-restore-{seed}"));
-        let restore = Command::new(env!("CARGO_BIN_EXE_epoch"))
-            .current_dir(fixture.path())
-            .args(["restore", &before_epoch, "--workspace-target"])
-            .arg(&restore_target)
-            .output()
-            .expect("restore source epoch");
-        successful_json(&restore, "security restore");
+    let after_epoch = checkpoint(fixture, &raw_session, &raw_branch);
+    assert_security_diff(fixture, &before_epoch, &after_epoch);
+}
 
-        for (handle, request_id, expected) in [
-            (&revoked_handle, "restored-revoked", DenialReason::Revoked),
-            (
-                &consumed_handle,
-                "restored-consumed",
-                DenialReason::Consumed,
-            ),
-        ] {
-            let request = CapabilityUse::new(
-                session,
-                branch,
-                "agent-1",
-                "email.send",
-                "mailbox:test",
-                0,
-                1,
-                format!("{request_id}-{seed}"),
-                &"a".repeat(64),
-            )
-            .expect("use request");
-            let decision = service
-                .authorize_and_consume(handle, &request)
-                .expect("durable restored denial");
-            assert_eq!(decision.outcome, DecisionOutcome::Deny);
-            assert_eq!(decision.reason, expected);
-        }
-        assert_eq!(
-            gateway.list(session, None).expect("effect history").len(),
-            1
-        );
+fn grant_security_capability(fixture: &TempDir, branch: &str) -> (String, CapabilityHandle) {
+    let constraints = json!({
+        "subject": "agent-1",
+        "resource": "mailbox:test",
+        "max_uses": 1,
+        "budget_units": 1
+    })
+    .to_string();
+    let output = successful_json(
+        &epoch(
+            fixture,
+            &["capability", "grant", branch, "email.send", &constraints],
+        ),
+        "grant security capability",
+    );
+    (
+        output["capability_id"]
+            .as_str()
+            .expect("capability ID")
+            .to_owned(),
+        CapabilityHandle::from_str(output["handle"].as_str().expect("capability handle"))
+            .expect("opaque handle"),
+    )
+}
 
-        let fork = successful_json(
-            &epoch(
-                &fixture,
-                &[
-                    "fork",
-                    &before_epoch,
-                    "--name",
-                    &format!("security-fork-{seed}"),
-                ],
-            ),
-            "security fork",
-        );
-        assert_eq!(
-            fork["result"]["replay"]["continuation"]["outcome"],
-            "unsupported"
-        );
-        assert_eq!(
-            gateway
-                .list(session, None)
-                .expect("post-fork effects")
-                .len(),
-            1
-        );
+fn assert_restored_denial(
+    service: &CapabilityService,
+    handle: &CapabilityHandle,
+    session: SessionId,
+    branch: BranchId,
+    seed: u64,
+    expected: DenialReason,
+) {
+    let request = CapabilityUse::new(
+        session,
+        branch,
+        "agent-1",
+        "email.send",
+        "mailbox:test",
+        0,
+        1,
+        format!("restored-{expected:?}-{seed}"),
+        &"a".repeat(64),
+    )
+    .expect("use request");
+    let decision = service
+        .authorize_and_consume(handle, &request)
+        .expect("durable restored denial");
+    assert_eq!(decision.outcome, DecisionOutcome::Deny);
+    assert_eq!(decision.reason, expected);
+}
 
-        let after_epoch = checkpoint(&fixture, &raw_session, &raw_branch);
-        let diff = successful_json(
-            &epoch(&fixture, &["diff", &before_epoch, &after_epoch, "--json"]),
-            "security diff",
-        );
-        assert_eq!(
-            diff["result"]["capabilities"]["changed_between_epochs"],
-            true
-        );
-        assert_eq!(diff["result"]["effects"]["changed_between_epochs"], true);
+fn assert_security_diff(fixture: &TempDir, before_epoch: &str, after_epoch: &str) {
+    let diff = successful_json(
+        &epoch(fixture, &["diff", before_epoch, after_epoch, "--json"]),
+        "security diff",
+    );
+    for section in ["capabilities", "effects"] {
+        assert_eq!(diff["result"][section]["changed_between_epochs"], true);
         assert!(
-            diff["result"]["capabilities"]["after_frontier"]
+            diff["result"][section]["after_frontier"]
                 .as_u64()
-                .expect("after capability frontier")
-                > diff["result"]["capabilities"]["before_frontier"]
+                .expect("after security frontier")
+                > diff["result"][section]["before_frontier"]
                     .as_u64()
-                    .expect("before capability frontier")
-        );
-        assert!(
-            diff["result"]["effects"]["after_frontier"]
-                .as_u64()
-                .expect("after effect frontier")
-                > diff["result"]["effects"]["before_frontier"]
-                    .as_u64()
-                    .expect("before effect frontier")
+                    .expect("before security frontier")
         );
     }
 }

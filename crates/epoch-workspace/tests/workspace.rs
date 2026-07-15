@@ -180,6 +180,33 @@ fn nested_epoch_state_is_never_captured() {
 
 #[test]
 #[cfg(unix)]
+fn blob_state_root_is_excluded_when_nested_and_rejected_when_equal_to_workspace() {
+    let fixture = Fixture::new();
+    write(&fixture.source.join("kept"), b"yes");
+    let custom_state = fixture.source.join("runtime-state");
+    let backend = WorkspaceBackend::open(&custom_state, WorkspaceLimits::default()).expect("open");
+    let snapshot = backend.snapshot(&fixture.source).expect("snapshot");
+    assert!(
+        backend
+            .manifest(&snapshot)
+            .expect("manifest")
+            .entries
+            .iter()
+            .all(|entry| !entry.path.starts_with("runtime-state"))
+    );
+
+    let equal = fixture._temp.path().join("equal-root");
+    fs::create_dir(&equal).expect("equal root");
+    fs::set_permissions(&equal, fs::Permissions::from_mode(0o700)).expect("private root");
+    let backend = WorkspaceBackend::open(&equal, WorkspaceLimits::default()).expect("backend");
+    assert!(matches!(
+        backend.snapshot(&equal),
+        Err(WorkspaceError::StateRootOverlapsWorkspace)
+    ));
+}
+
+#[test]
+#[cfg(unix)]
 fn symlink_escape_and_special_files_are_explicitly_unsupported() {
     let fixture = Fixture::new();
     symlink("../../outside", &fixture.source.join("escape"));
@@ -237,6 +264,85 @@ fn configured_file_total_depth_and_path_limits_fail_before_manifest_commit() {
         backend.snapshot(&fixture.source),
         Err(WorkspaceError::LimitExceeded {
             kind: LimitKind::FileBytes,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn every_resource_dimension_has_a_typed_limit() {
+    let fixture = Fixture::new();
+    write(&fixture.source.join("one"), b"123");
+    write(&fixture.source.join("two"), b"456");
+
+    let entry_limits = WorkspaceLimits {
+        max_entries: 1,
+        ..WorkspaceLimits::default()
+    };
+    assert!(matches!(
+        WorkspaceBackend::open(&fixture.blobs, entry_limits)
+            .expect("entry backend")
+            .snapshot(&fixture.source),
+        Err(WorkspaceError::LimitExceeded {
+            kind: LimitKind::Entries,
+            ..
+        })
+    ));
+
+    let total_limits = WorkspaceLimits {
+        max_total_bytes: 5,
+        max_file_bytes: 5,
+        ..WorkspaceLimits::default()
+    };
+    assert!(matches!(
+        WorkspaceBackend::open(&fixture.blobs, total_limits)
+            .expect("total backend")
+            .snapshot(&fixture.source),
+        Err(WorkspaceError::LimitExceeded {
+            kind: LimitKind::TotalBytes,
+            ..
+        })
+    ));
+
+    write(&fixture.source.join("directory/child"), b"x");
+    let depth_limits = WorkspaceLimits {
+        max_depth: 1,
+        ..WorkspaceLimits::default()
+    };
+    assert!(matches!(
+        WorkspaceBackend::open(&fixture.blobs, depth_limits)
+            .expect("depth backend")
+            .snapshot(&fixture.source),
+        Err(WorkspaceError::LimitExceeded {
+            kind: LimitKind::Depth,
+            ..
+        })
+    ));
+
+    let path_limits = WorkspaceLimits {
+        max_path_bytes: 2,
+        ..WorkspaceLimits::default()
+    };
+    assert!(matches!(
+        WorkspaceBackend::open(&fixture.blobs, path_limits)
+            .expect("path backend")
+            .snapshot(&fixture.source),
+        Err(WorkspaceError::LimitExceeded {
+            kind: LimitKind::PathBytes,
+            ..
+        })
+    ));
+
+    let component_limits = WorkspaceLimits {
+        max_component_bytes: 2,
+        ..WorkspaceLimits::default()
+    };
+    assert!(matches!(
+        WorkspaceBackend::open(&fixture.blobs, component_limits)
+            .expect("component backend")
+            .snapshot(&fixture.source),
+        Err(WorkspaceError::LimitExceeded {
+            kind: LimitKind::ComponentBytes,
             ..
         })
     ));
@@ -362,6 +468,88 @@ fn traversal_manifest_and_existing_target_fail_closed_without_escape_or_clobber(
         fs::read(existing.join("sentinel")).expect("sentinel"),
         b"keep"
     );
+}
+
+#[test]
+fn absolute_windows_reserved_and_separator_paths_are_rejected_before_staging() {
+    let fixture = Fixture::new();
+    write(&fixture.source.join("file"), b"content");
+    let backend = fixture.backend();
+    let valid = backend.snapshot(&fixture.source).expect("snapshot");
+    let base = backend.manifest(&valid).expect("manifest");
+    let blobs = BlobStore::open(&fixture.blobs).expect("blobs");
+
+    for (index, unsafe_path) in ["/absolute", "C:/windows", "dir\\file", ".epoch/state"]
+        .into_iter()
+        .enumerate()
+    {
+        let mut manifest = base.clone();
+        manifest.entries[0].path = unsafe_path.to_owned();
+        let encoded = serde_json::to_vec(&manifest).expect("encode");
+        let metadata = blobs
+            .put(&encoded, epoch_workspace::MANIFEST_MEDIA_TYPE)
+            .expect("put manifest");
+        let snapshot = WorkspaceSnapshot::new(metadata.hash, metadata.length);
+        assert!(matches!(
+            backend.restore(&snapshot, fixture.target(&format!("unsafe-{index}"))),
+            Err(WorkspaceError::UnsafeManifestPath { .. })
+        ));
+    }
+    assert!(fs::read_dir(&fixture.restore_parent)
+        .expect("parent")
+        .next()
+        .is_none());
+}
+
+#[test]
+fn manifest_structure_and_file_metadata_are_validated_before_staging() {
+    let fixture = Fixture::new();
+    write(&fixture.source.join("file"), b"content");
+    let backend = fixture.backend();
+    let valid = backend.snapshot(&fixture.source).expect("snapshot");
+    let base = backend.manifest(&valid).expect("manifest");
+    let blobs = BlobStore::open(&fixture.blobs).expect("blobs");
+
+    let mut missing_parent = base.clone();
+    missing_parent.entries[0].path = "missing/file".to_owned();
+    let encoded = serde_json::to_vec(&missing_parent).expect("missing parent");
+    let metadata = blobs
+        .put(&encoded, epoch_workspace::MANIFEST_MEDIA_TYPE)
+        .expect("put missing parent");
+    assert!(matches!(
+        backend.restore(
+            &WorkspaceSnapshot::new(metadata.hash, metadata.length),
+            fixture.target("missing-parent")
+        ),
+        Err(WorkspaceError::InvalidManifest { .. })
+    ));
+
+    let mut wrong_metadata = base;
+    let EntryKind::Regular {
+        executable,
+        length,
+        ..
+    } = &mut wrong_metadata.entries[0].kind
+    else {
+        panic!("regular fixture")
+    };
+    *executable = !*executable;
+    *length += 1;
+    let encoded = serde_json::to_vec(&wrong_metadata).expect("wrong metadata");
+    let metadata = blobs
+        .put(&encoded, epoch_workspace::MANIFEST_MEDIA_TYPE)
+        .expect("put wrong metadata");
+    assert!(matches!(
+        backend.restore(
+            &WorkspaceSnapshot::new(metadata.hash, metadata.length),
+            fixture.target("wrong-metadata")
+        ),
+        Err(WorkspaceError::InvalidManifest { .. })
+    ));
+    assert!(fs::read_dir(&fixture.restore_parent)
+        .expect("parent")
+        .next()
+        .is_none());
 }
 
 #[test]

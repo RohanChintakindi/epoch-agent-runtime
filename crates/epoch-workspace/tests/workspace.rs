@@ -76,7 +76,10 @@ fn snapshot_restore_preserves_tree_bytes_modes_empty_files_and_symlink_text() {
     let target = fixture.target("restored");
     let report = backend.restore(&snapshot, &target).expect("restore");
 
-    assert_eq!(fs::read(target.join("README.md")).expect("read"), b"hello\n");
+    assert_eq!(
+        fs::read(target.join("README.md")).expect("read"),
+        b"hello\n"
+    );
     assert_eq!(
         fs::read(target.join("data/binary")).expect("binary"),
         [0, 0xff, 1, 0x80]
@@ -142,6 +145,7 @@ fn nested_epoch_state_is_never_captured() {
     let fixture = Fixture::new();
     let nested_blobs = fixture.source.join(".epoch/blobs");
     write(&fixture.source.join("kept"), b"yes");
+    fs::create_dir(fixture.source.join(".epoch")).expect("state parent");
     let backend = WorkspaceBackend::open(&nested_blobs, WorkspaceLimits::default()).expect("open");
     let snapshot = backend.snapshot(&fixture.source).expect("snapshot");
     let manifest = backend.manifest(&snapshot).expect("manifest");
@@ -162,7 +166,9 @@ fn symlink_escape_and_special_files_are_explicitly_unsupported() {
     let backend = fixture.backend();
     assert!(matches!(
         backend.snapshot(&fixture.source),
-        Err(WorkspaceError::Unsupported(Unsupported::SymlinkEscape { .. }))
+        Err(WorkspaceError::Unsupported(
+            Unsupported::SymlinkEscape { .. }
+        ))
     ));
 
     fs::remove_file(fixture.source.join("escape")).expect("remove link");
@@ -183,7 +189,15 @@ fn symlink_escape_and_special_files_are_explicitly_unsupported() {
 fn non_utf8_names_are_rejected_without_lossy_normalization() {
     let fixture = Fixture::new();
     let name = std::ffi::OsString::from_vec(vec![b'f', 0x80]);
-    write(&fixture.source.join(name), b"bytes");
+    if let Err(error) = fs::write(fixture.source.join(name), b"bytes") {
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(error.raw_os_error(), Some(92));
+            return;
+        }
+        #[cfg(not(target_os = "macos"))]
+        panic!("create non-UTF-8 fixture: {error}");
+    }
     assert!(matches!(
         fixture.backend().snapshot(&fixture.source),
         Err(WorkspaceError::Unsupported(Unsupported::NonUtf8Path))
@@ -194,8 +208,10 @@ fn non_utf8_names_are_rejected_without_lossy_normalization() {
 fn configured_file_total_depth_and_path_limits_fail_before_manifest_commit() {
     let fixture = Fixture::new();
     write(&fixture.source.join("a/b/c"), b"12345");
-    let mut limits = WorkspaceLimits::default();
-    limits.max_file_bytes = 4;
+    let limits = WorkspaceLimits {
+        max_file_bytes: 4,
+        ..WorkspaceLimits::default()
+    };
     let backend = WorkspaceBackend::open(&fixture.blobs, limits).expect("backend");
     assert!(matches!(
         backend.snapshot(&fixture.source),
@@ -228,10 +244,12 @@ fn restore_validates_every_blob_before_creating_the_target() {
     let target = fixture.target("must-not-exist");
     assert!(backend.restore(&snapshot, &target).is_err());
     assert!(!target.exists());
-    assert!(fs::read_dir(&fixture.restore_parent)
-        .expect("parent")
-        .next()
-        .is_none());
+    assert!(
+        fs::read_dir(&fixture.restore_parent)
+            .expect("parent")
+            .next()
+            .is_none()
+    );
 }
 
 #[test]
@@ -258,7 +276,7 @@ fn future_noncanonical_and_wrong_length_manifests_are_rejected_before_mutation()
 
     let wrong = WorkspaceSnapshot::new(valid.manifest_hash().clone(), valid.manifest_length() + 1);
     assert!(matches!(
-        backend.restore(&wrong, &fixture.target("wrong-length")),
+        backend.restore(&wrong, fixture.target("wrong-length")),
         Err(WorkspaceError::ManifestLengthMismatch { .. })
     ));
 
@@ -269,7 +287,7 @@ fn future_noncanonical_and_wrong_length_manifests_are_rejected_before_mutation()
         .expect("pretty blob");
     let noncanonical = WorkspaceSnapshot::new(metadata.hash, metadata.length);
     assert!(matches!(
-        backend.restore(&noncanonical, &fixture.target("pretty")),
+        backend.restore(&noncanonical, fixture.target("pretty")),
         Err(WorkspaceError::NonCanonicalManifest)
     ));
 }
@@ -280,17 +298,16 @@ fn traversal_manifest_and_existing_target_fail_closed_without_escape_or_clobber(
     write(&fixture.source.join("file"), b"content");
     let backend = fixture.backend();
     let valid = backend.snapshot(&fixture.source).expect("snapshot");
-    let manifest = backend.manifest(&valid).expect("manifest");
-    let mut value = serde_json::to_value(&manifest).expect("value");
-    value["entries"][0]["path"] = Value::from("../escaped");
-    let encoded = serde_json::to_vec(&value).expect("malicious manifest");
+    let mut manifest = backend.manifest(&valid).expect("manifest");
+    manifest.entries[0].path = "../escaped".to_owned();
+    let encoded = serde_json::to_vec(&manifest).expect("malicious manifest");
     let metadata = BlobStore::open(&fixture.blobs)
         .expect("blobs")
         .put(&encoded, epoch_workspace::MANIFEST_MEDIA_TYPE)
         .expect("manifest blob");
     let malicious = WorkspaceSnapshot::new(metadata.hash, metadata.length);
     assert!(matches!(
-        backend.restore(&malicious, &fixture.target("traversal")),
+        backend.restore(&malicious, fixture.target("traversal")),
         Err(WorkspaceError::UnsafeManifestPath { .. })
     ));
     assert!(!fixture.restore_parent.join("escaped").exists());
@@ -302,7 +319,10 @@ fn traversal_manifest_and_existing_target_fail_closed_without_escape_or_clobber(
         backend.restore(&valid, &existing),
         Err(WorkspaceError::TargetExists { .. })
     ));
-    assert_eq!(fs::read(existing.join("sentinel")).expect("sentinel"), b"keep");
+    assert_eq!(
+        fs::read(existing.join("sentinel")).expect("sentinel"),
+        b"keep"
+    );
 }
 
 #[test]
@@ -323,9 +343,11 @@ fn injected_restore_interrupts_remove_staging_and_never_publish_partial_target()
             Err(WorkspaceError::FaultInjected { point }) if point == fault
         ));
         assert!(!target.exists());
-        assert!(fs::read_dir(&fixture.restore_parent)
-            .expect("parent")
-            .next()
-            .is_none());
+        assert!(
+            fs::read_dir(&fixture.restore_parent)
+                .expect("parent")
+                .next()
+                .is_none()
+        );
     }
 }

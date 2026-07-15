@@ -5,6 +5,7 @@ description = "Privacy-safe trajectory branch-value experiments for Epoch"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    # Torch probes NumPy tensor conversion during import even though this package does not call it.
     "numpy>=1.23,<3",
     "torch>=2.2,<2.8",
 ]

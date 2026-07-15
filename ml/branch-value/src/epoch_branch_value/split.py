@@ -26,9 +26,19 @@ class SplitConfig:
     def validate(self) -> None:
         if isinstance(self.seed, bool) or not isinstance(self.seed, int) or self.seed < 0:
             raise ValueError("split seed must be a nonnegative integer")
-        if not math.isfinite(self.train_ratio) or not 0.0 < self.train_ratio < 1.0:
+        if (
+            isinstance(self.train_ratio, bool)
+            or not isinstance(self.train_ratio, (int, float))
+            or not math.isfinite(self.train_ratio)
+            or not 0.0 < self.train_ratio < 1.0
+        ):
             raise ValueError("train_ratio must be finite and between zero and one")
-        if not math.isfinite(self.validation_ratio) or not 0.0 <= self.validation_ratio < 1.0:
+        if (
+            isinstance(self.validation_ratio, bool)
+            or not isinstance(self.validation_ratio, (int, float))
+            or not math.isfinite(self.validation_ratio)
+            or not 0.0 <= self.validation_ratio < 1.0
+        ):
             raise ValueError("validation_ratio must be finite and in [0, 1)")
         if not math.isfinite(self.test_ratio) or not 0.0 < self.test_ratio < 1.0:
             raise ValueError("train, validation, and test ratios must sum to one")

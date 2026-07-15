@@ -224,6 +224,67 @@ fn denial_is_durable_and_dispatch_is_never_called() {
 }
 
 #[test]
+fn effect_history_lists_deterministic_session_and_branch_scoped_records() {
+    let fixture = Fixture::new();
+    let dispatcher = Arc::new(IdempotentDispatcher::default());
+    let allowed_gateway = fixture.gateway(Arc::new(AllowAuthorizer::default()), dispatcher.clone());
+    let allowed = fixture.intent(json!({"to": "allowed@example.test"}));
+    allowed_gateway
+        .execute(&allowed, FaultPoint::None)
+        .expect("allowed effect");
+
+    let denied = CanonicalIntent::new(
+        fixture.session,
+        fixture.branch,
+        "turn-8/email-2",
+        "email.send",
+        "mailbox:demo",
+        json!({"to": "denied@example.test"}),
+        3,
+    )
+    .expect("denied intent");
+    let denied_gateway = fixture.gateway(Arc::new(DenyAuthorizer), dispatcher);
+    assert!(matches!(
+        denied_gateway.execute(&denied, FaultPoint::None),
+        Err(GatewayError::AuthorizationDenied { .. })
+    ));
+
+    let session_records = denied_gateway
+        .list(fixture.session, None)
+        .expect("session history");
+    let branch_records = denied_gateway
+        .list(fixture.session, Some(fixture.branch))
+        .expect("branch history");
+    assert_eq!(session_records, branch_records);
+    assert_eq!(session_records.len(), 2);
+    assert!(
+        session_records
+            .windows(2)
+            .all(|pair| pair[0].operation_id < pair[1].operation_id),
+        "effect history must have stable operation-ID ordering"
+    );
+    let allowed_record = session_records
+        .iter()
+        .find(|record| record.operation_id == *allowed.operation_id())
+        .expect("allowed record");
+    assert_eq!(allowed_record.session_id, fixture.session);
+    assert_eq!(allowed_record.branch_id, fixture.branch);
+    assert!(allowed_record.capability_id.is_some());
+    assert_eq!(allowed_record.action, "email.send");
+    assert_eq!(allowed_record.resource, "mailbox:demo");
+    assert_eq!(allowed_record.policy_revision, 3);
+    assert_eq!(allowed_record.state, EffectState::Committed);
+
+    let other_branch = BranchId::new();
+    assert!(
+        denied_gateway
+            .list(fixture.session, Some(other_branch))
+            .expect("empty other branch")
+            .is_empty()
+    );
+}
+
+#[test]
 fn committed_duplicate_replays_exact_recorded_bytes_without_authorize_or_dispatch() {
     let fixture = Fixture::new();
     let authorizer = Arc::new(AllowAuthorizer::default());

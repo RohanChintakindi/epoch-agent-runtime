@@ -55,7 +55,14 @@ fn messages(trace: &[u8]) -> Vec<Message> {
 }
 
 fn sha256(bytes: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(bytes))
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn is_canonical_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 #[test]
@@ -81,6 +88,8 @@ fn same_seed_produces_identical_trace_and_normalized_state() {
                 .expect("normalized state should serialize deterministically")
         )
     );
+    assert!(is_canonical_sha256(&first_summary.state_hash));
+    assert!(is_canonical_sha256(&first_summary.normalized_trace_hash));
 }
 
 #[test]

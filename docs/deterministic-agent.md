@@ -31,8 +31,9 @@ cargo run -p epoch-test-agent -- \
 
 The seed controls stable IDs, file mutations, memory bytes, and the loopback payload. The normalized
 state contains hashes and semantic values, never the workspace's absolute path, a process ID, or an
-ephemeral TCP port. Consequently, runs with the same configuration in different directories emit
-byte-identical JSONL and identical SHA-256 state and trace hashes.
+ephemeral TCP port. Hash values use the storage layer's canonical bare 64-character lowercase
+SHA-256 representation. Consequently, runs with the same configuration in different directories
+emit byte-identical JSONL and identical state and trace hashes.
 
 The test agent does not claim instruction-level replay. Its boundary history is deterministic so
 Epoch can test recorded-boundary replay, checkpoint coordination, and semantic state diffing around

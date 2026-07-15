@@ -479,9 +479,12 @@ fn deterministic_id(prefix: &str, seed: u64, scenario: Scenario) -> String {
 
 fn sha256(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
-    let mut encoded = String::with_capacity(7 + digest.len() * 2);
-    encoded.push_str("sha256:");
-    for byte in digest {
+    lower_hex(&digest)
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
         write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
     }
     encoded
@@ -532,12 +535,7 @@ impl<'a, W: Write> Emitter<'a, W> {
 
     fn finish(self) -> (String, u64) {
         let digest = self.trace_hasher.finalize();
-        let mut encoded = String::with_capacity(7 + digest.len() * 2);
-        encoded.push_str("sha256:");
-        for byte in digest {
-            write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
-        }
-        (encoded, self.sequence)
+        (lower_hex(&digest), self.sequence)
     }
 }
 

@@ -19,12 +19,13 @@ changes are sorted by path. A pure reorder of messages or the pending-task queue
 order can alter model context or the next task selected. Pending operation IDs are treated as
 correlation sets; their serialized order is not semantic in application-context schema 1.
 
-The current application context represents resume cursors, model/tool configuration, observable
+The application-context component represents resume cursors, model/tool configuration, observable
 messages, pending tasks and operation IDs, task payload references, message content references, and
 the user-visible summary reference. It does **not** represent a workspace file manifest, the current
-branch capability set, or the trusted effect frontier. Every application diff explicitly lists
-those sections as unsupported. Composite epoch integration must supply validated typed components
-for them; this crate will not infer them from task text, summaries, or hidden reasoning state.
+branch capability set, or the trusted effect frontier, so its component-level diff explicitly
+lists those sections as unsupported. The supervisor's composite epoch diff adds validated workspace
+manifests plus recorded/current capability and effect frontiers. It does not infer either security
+domain from task text, summaries, or hidden reasoning state.
 
 Unknown application-context fields are rejected by the checkpoint decoder. A future schema version
 returns `unsupported_schema`, while corrupt, missing, non-canonical, or metadata-mismatched inputs

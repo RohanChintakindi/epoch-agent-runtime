@@ -1,12 +1,19 @@
-use std::{env, path::PathBuf, process::ExitCode, str::FromStr as _};
+use std::{env, path::PathBuf, process::ExitCode, str::FromStr as _, sync::Arc};
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-use epoch_core::{BranchId, EpochId, SessionId};
+use epoch_capabilities::{CapabilityConstraints, CapabilityError, CapabilityService, IssueRequest};
+use epoch_core::{BranchId, CapabilityId, EpochId, SessionId};
+use epoch_effects::{DenyAllAuthorizer, DeterministicLocalDispatcher, EffectGateway};
+use epoch_sandbox::{
+    BackendCapabilities as SandboxBackendCapabilities, ExecutionBackend as _, LinuxBackend,
+};
+use epoch_storage::Store;
 use epoch_supervisor::{
     AgentTermination, ApplicationRestoreMode, DirectSupervisor, EventPageRequest, InspectionError,
     RecoveryCode, RecoveryIssue, RecoveryOutcome, RunOutcome, SessionStatusReport,
 };
-use serde::Serialize;
+use rusqlite::OptionalExtension as _;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const SUPERVISOR_FAILURE_EXIT: u8 = 125;
@@ -38,6 +45,9 @@ enum Command {
         /// Workload manifest to execute.
         #[arg(long)]
         manifest: PathBuf,
+        /// Execution boundary to select explicitly. Linux never falls back to direct execution.
+        #[arg(long, value_enum, default_value_t = ExecutionBackendSelection::Direct)]
+        backend: ExecutionBackendSelection,
     },
     /// Show the current state of a session.
     Status { session: String },
@@ -129,10 +139,18 @@ enum RestoreMode {
     ForkOnDivergence,
 }
 
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum ExecutionBackendSelection {
+    #[default]
+    Direct,
+    Linux,
+}
+
 #[derive(Debug, Subcommand)]
 enum BranchCommand {
     Promote { branch: String },
     Abandon { branch: String },
+    Inspect { branch: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -145,12 +163,28 @@ enum CapabilityCommand {
     Revoke {
         capability: String,
     },
+    Inspect {
+        capability: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 enum EffectsCommand {
     List { session: String },
     Resolve(ResolveEffect),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GrantConstraints {
+    subject: String,
+    resource: String,
+    #[serde(default)]
+    max_uses: Option<u64>,
+    #[serde(default)]
+    budget_units: Option<u64>,
+    #[serde(default)]
+    expires_at_unix_ms: Option<i64>,
 }
 
 #[derive(Debug, Args)]
@@ -201,6 +235,7 @@ struct HostCapabilities {
 #[derive(Debug, Serialize)]
 struct BackendCapabilities {
     direct_execution: BackendCapability,
+    linux_isolation: SandboxBackendCapabilities,
     application_checkpoint: BackendCapability,
     process_checkpoint: BackendCapability,
     criu_checkpoint: BackendCapability,
@@ -303,7 +338,7 @@ impl HostCapabilities {
 }
 
 impl BackendCapabilities {
-    const fn detect(criu_dependency_detected: bool) -> Self {
+    fn detect(criu_dependency_detected: bool) -> Self {
         Self {
             direct_execution: BackendCapability {
                 status: BackendStatus::Supported,
@@ -313,6 +348,7 @@ impl BackendCapabilities {
                 reason: "the direct process supervisor is compiled and registered",
                 dependency_detected: None,
             },
+            linux_isolation: LinuxBackend::discover().capabilities(),
             application_checkpoint: BackendCapability {
                 status: BackendStatus::Supported,
                 registered: true,
@@ -370,7 +406,7 @@ fn main() -> ExitCode {
 
 fn execute(command: Command) -> ExitCode {
     match command {
-        Command::Run { manifest } => run_manifest(&manifest),
+        Command::Run { manifest, backend } => run_selected_backend(&manifest, backend),
         Command::Status { session } => inspect_status(&session),
         Command::Events {
             session,
@@ -393,6 +429,10 @@ fn execute(command: Command) -> ExitCode {
             right,
             json: _,
         } => diff_application_epochs(&left, &right),
+        Command::Fork { epoch, name } => fork_application_epoch(&epoch, &name),
+        Command::Branch { command } => execute_branch_command(command),
+        Command::Capability { command } => execute_capability_command(command),
+        Command::Effects { command } => execute_effects_command(command),
         Command::Doctor { json } => {
             let capabilities = HostCapabilities::detect();
             if json {
@@ -449,6 +489,211 @@ fn execute(command: Command) -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+fn execute_capability_command(command: CapabilityCommand) -> ExitCode {
+    match command {
+        CapabilityCommand::Grant {
+            branch,
+            action,
+            constraints,
+        } => grant_capability(&branch, &action, constraints.as_deref()),
+        CapabilityCommand::Revoke { capability } => revoke_capability(&capability),
+        CapabilityCommand::Inspect { capability } => inspect_capability(&capability),
+    }
+}
+
+fn grant_capability(branch: &str, action: &str, constraints: Option<&str>) -> ExitCode {
+    let branch_id = match BranchId::from_str(branch) {
+        Ok(branch_id) => branch_id,
+        Err(error) => return user_security_error(format!("invalid branch ID: {error}")),
+    };
+    let constraints = match constraints {
+        Some(value) => match serde_json::from_str::<GrantConstraints>(value) {
+            Ok(constraints) => constraints,
+            Err(error) => {
+                return user_security_error(format!("invalid capability constraints: {error}"));
+            }
+        },
+        None => {
+            return user_security_error(
+                "capability constraints JSON must include subject and resource",
+            );
+        }
+    };
+    let database = match existing_database_path() {
+        Ok(database) => database,
+        Err(exit) => return exit,
+    };
+    let store = match Store::open(&database) {
+        Ok(store) => store,
+        Err(error) => return trusted_security_error(error.to_string()),
+    };
+    let branch_context = match store
+        .connection()
+        .query_row(
+            "SELECT b.session_id, s.policy_revision \
+             FROM branches b JOIN sessions s ON s.id = b.session_id WHERE b.id = ?1",
+            [branch_id.to_string()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+    {
+        Ok(Some(context)) => context,
+        Ok(None) => return user_security_error(format!("branch {branch_id} does not exist")),
+        Err(error) => return trusted_security_error(error.to_string()),
+    };
+    let Ok(session_id) = SessionId::from_str(&branch_context.0) else {
+        return trusted_security_error("stored session ID is invalid");
+    };
+    let Ok(policy_revision) = u64::try_from(branch_context.1) else {
+        return trusted_security_error("stored policy revision is invalid");
+    };
+    drop(store);
+
+    let service = match CapabilityService::open(&database) {
+        Ok(service) => service,
+        Err(error) => return capability_error(&error),
+    };
+    if let Err(error) = service.set_policy_revision(session_id, branch_id, policy_revision) {
+        return capability_error(&error);
+    }
+    let issued = match service.issue(&IssueRequest {
+        session_id,
+        branch_id,
+        subject: constraints.subject,
+        action: action.to_owned(),
+        resource: constraints.resource,
+        constraints: CapabilityConstraints {
+            max_uses: constraints.max_uses,
+            budget_units: constraints.budget_units,
+        },
+        expires_at_unix_ms: constraints.expires_at_unix_ms,
+        policy_revision,
+    }) {
+        Ok(issued) => issued,
+        Err(error) => return capability_error(&error),
+    };
+    let snapshot = match service.inspect(issued.capability_id) {
+        Ok(snapshot) => snapshot,
+        Err(error) => return capability_error(&error),
+    };
+    print_json(&json!({
+        "capability_id": snapshot.capability_id,
+        "session_id": snapshot.session_id,
+        "branch_id": snapshot.branch_id,
+        "subject": snapshot.subject,
+        "action": snapshot.action,
+        "resource": snapshot.resource,
+        "remaining_uses": snapshot.remaining_uses,
+        "remaining_budget_units": snapshot.remaining_budget_units,
+        "policy_revision": snapshot.policy_revision,
+        "state": snapshot.state,
+        "expires_at_unix_ms": snapshot.expires_at_unix_ms,
+        "handle": issued.handle.expose(),
+    }))
+}
+
+fn inspect_capability(capability: &str) -> ExitCode {
+    let capability_id = match CapabilityId::from_str(capability) {
+        Ok(capability_id) => capability_id,
+        Err(error) => return user_security_error(format!("invalid capability ID: {error}")),
+    };
+    let service = match existing_capability_service() {
+        Ok(service) => service,
+        Err(exit) => return exit,
+    };
+    match service.inspect(capability_id) {
+        Ok(snapshot) => print_json(&snapshot),
+        Err(error) => capability_error(&error),
+    }
+}
+
+fn revoke_capability(capability: &str) -> ExitCode {
+    let capability_id = match CapabilityId::from_str(capability) {
+        Ok(capability_id) => capability_id,
+        Err(error) => return user_security_error(format!("invalid capability ID: {error}")),
+    };
+    let service = match existing_capability_service() {
+        Ok(service) => service,
+        Err(exit) => return exit,
+    };
+    if let Err(error) = service.revoke_by_id(capability_id) {
+        return capability_error(&error);
+    }
+    match service.inspect(capability_id) {
+        Ok(snapshot) => print_json(&snapshot),
+        Err(error) => capability_error(&error),
+    }
+}
+
+fn execute_effects_command(command: EffectsCommand) -> ExitCode {
+    match command {
+        EffectsCommand::List { session } => list_effects(&session),
+        EffectsCommand::Resolve(_) => user_security_error(
+            "effect resolution is not implemented; unresolved outcomes remain fail-closed",
+        ),
+    }
+}
+
+fn list_effects(session: &str) -> ExitCode {
+    let session_id = match SessionId::from_str(session) {
+        Ok(session_id) => session_id,
+        Err(error) => return user_security_error(format!("invalid session ID: {error}")),
+    };
+    let database = match existing_database_path() {
+        Ok(database) => database,
+        Err(exit) => return exit,
+    };
+    let gateway = match EffectGateway::open(
+        database,
+        PathBuf::from(".epoch/blobs"),
+        Arc::new(DenyAllAuthorizer),
+        Arc::new(DeterministicLocalDispatcher::default()),
+    ) {
+        Ok(gateway) => gateway,
+        Err(error) => return trusted_security_error(error.to_string()),
+    };
+    match gateway.list(session_id, None) {
+        Ok(records) => print_json(&records),
+        Err(error) => trusted_security_error(error.to_string()),
+    }
+}
+
+fn existing_capability_service() -> Result<CapabilityService, ExitCode> {
+    let database = existing_database_path()?;
+    CapabilityService::open(database).map_err(|error| capability_error(&error))
+}
+
+fn existing_database_path() -> Result<PathBuf, ExitCode> {
+    DirectSupervisor::open_existing(".epoch").map_err(|error| report_inspection_error(&error))?;
+    Ok(PathBuf::from(".epoch/state.db"))
+}
+
+fn capability_error(error: &CapabilityError) -> ExitCode {
+    if matches!(
+        error,
+        CapabilityError::CapabilityNotFound { .. }
+            | CapabilityError::InvalidField { .. }
+            | CapabilityError::InvalidExpiration
+            | CapabilityError::PolicyNotInitialized
+            | CapabilityError::PolicyRevisionRollback { .. }
+            | CapabilityError::PolicyNotCurrent { .. }
+    ) {
+        user_security_error(error.to_string())
+    } else {
+        trusted_security_error(error.to_string())
+    }
+}
+
+fn user_security_error(detail: impl AsRef<str>) -> ExitCode {
+    eprintln!("{}", detail.as_ref());
+    ExitCode::from(2)
+}
+
+fn trusted_security_error(detail: impl AsRef<str>) -> ExitCode {
+    eprintln!("trusted state is unavailable: {}", detail.as_ref());
+    ExitCode::from(SUPERVISOR_FAILURE_EXIT)
 }
 
 fn inspect_status(raw_session: &str) -> ExitCode {
@@ -644,6 +889,68 @@ fn diff_application_epochs(before: &str, after: &str) -> ExitCode {
     )
 }
 
+fn fork_application_epoch(epoch: &str, name: &str) -> ExitCode {
+    let epoch_id = match EpochId::from_str(epoch) {
+        Ok(epoch_id) => epoch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "fork",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid epoch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("fork") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery("fork", supervisor.fork_application_epoch(epoch_id, name))
+}
+
+fn execute_branch_command(command: BranchCommand) -> ExitCode {
+    match command {
+        BranchCommand::Inspect { branch } => inspect_fork_branch(&branch),
+        BranchCommand::Promote { branch } => emit_recovery_issue(
+            "branch.promote",
+            "unsupported",
+            RecoveryCode::UnsupportedMode,
+            format!(
+                "branch {branch} cannot be promoted until canonical-branch compare-and-swap is implemented"
+            ),
+            ExitCode::from(RECOVERY_UNSUPPORTED_EXIT),
+        ),
+        BranchCommand::Abandon { branch } => emit_recovery_issue(
+            "branch.abandon",
+            "unsupported",
+            RecoveryCode::UnsupportedMode,
+            format!("branch {branch} abandonment is not implemented"),
+            ExitCode::from(RECOVERY_UNSUPPORTED_EXIT),
+        ),
+    }
+}
+
+fn inspect_fork_branch(branch: &str) -> ExitCode {
+    let branch_id = match BranchId::from_str(branch) {
+        Ok(branch_id) => branch_id,
+        Err(error) => {
+            return emit_recovery_issue(
+                "branch.inspect",
+                "failed",
+                RecoveryCode::NotFound,
+                format!("invalid branch ID: {error}"),
+                ExitCode::from(SUPERVISOR_FAILURE_EXIT),
+            );
+        }
+    };
+    let supervisor = match recovery_supervisor("branch.inspect") {
+        Ok(supervisor) => supervisor,
+        Err(exit) => return exit,
+    };
+    emit_recovery("branch.inspect", supervisor.inspect_fork_branch(branch_id))
+}
+
 fn recovery_supervisor(operation: &str) -> Result<DirectSupervisor, ExitCode> {
     DirectSupervisor::open(".epoch").map_err(|error| {
         emit_recovery_issue(
@@ -710,6 +1017,28 @@ fn emit_recovery_json(document: &serde_json::Value, exit: ExitCode) -> ExitCode 
         Err(error) => {
             eprintln!("failed to encode recovery report: {error}");
             ExitCode::from(SUPERVISOR_FAILURE_EXIT)
+        }
+    }
+}
+
+fn run_selected_backend(
+    manifest: &std::path::Path,
+    backend: ExecutionBackendSelection,
+) -> ExitCode {
+    match backend {
+        ExecutionBackendSelection::Direct => run_manifest(manifest),
+        ExecutionBackendSelection::Linux => {
+            let capabilities = LinuxBackend::discover().capabilities();
+            let detail = capabilities.diagnostics.first().map_or_else(
+                || {
+                    "the Linux boundary is available, but the direct supervisor launch adapter \
+                     is not composed with it yet"
+                        .to_owned()
+                },
+                |diagnostic| diagnostic.detail.clone(),
+            );
+            eprintln!("Linux execution was selected and cannot start: {detail}");
+            ExitCode::from(RECOVERY_UNSUPPORTED_EXIT)
         }
     }
 }
@@ -824,6 +1153,14 @@ mod tests {
         );
         assert!(capabilities.backends.direct_execution.registered);
         assert_eq!(
+            capabilities.backends.linux_isolation.backend,
+            epoch_sandbox::BackendKind::Linux
+        );
+        if capabilities.backends.linux_isolation.status == epoch_sandbox::BackendStatus::Unsupported
+        {
+            assert!(!capabilities.backends.linux_isolation.diagnostics.is_empty());
+        }
+        assert_eq!(
             capabilities.backends.application_checkpoint.status,
             BackendStatus::Supported
         );
@@ -890,8 +1227,8 @@ mod tests {
     fn nested_command_groups_match_the_runtime_spec() {
         let command = Cli::command();
         for (group, expected) in [
-            ("branch", ["abandon", "promote"].as_slice()),
-            ("capability", ["grant", "revoke"].as_slice()),
+            ("branch", ["abandon", "inspect", "promote"].as_slice()),
+            ("capability", ["grant", "inspect", "revoke"].as_slice()),
             ("effects", ["list", "resolve"].as_slice()),
             ("bench", ["report", "run"].as_slice()),
             ("fault", ["run"].as_slice()),
@@ -914,6 +1251,14 @@ mod tests {
     fn representative_spec_commands_parse() {
         for arguments in [
             vec!["epoch", "run", "--manifest", "workload.toml"],
+            vec![
+                "epoch",
+                "run",
+                "--backend",
+                "linux",
+                "--manifest",
+                "workload.toml",
+            ],
             vec!["epoch", "events", "session-1", "--branch", "branch-1"],
             vec![
                 "epoch",
@@ -932,6 +1277,7 @@ mod tests {
                 "fork-on-divergence",
             ],
             vec!["epoch", "effects", "resolve", "effect-1", "--committed"],
+            vec!["epoch", "branch", "inspect", "branch-1"],
             vec!["epoch", "serve", "--bind", "127.0.0.1:9090"],
         ] {
             Cli::try_parse_from(arguments).expect("specified command must parse");

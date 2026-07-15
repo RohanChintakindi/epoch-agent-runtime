@@ -6,11 +6,20 @@ use std::{
     os::unix::fs::{PermissionsExt as _, symlink},
     path::{Path, PathBuf},
     process::Command,
+    str::FromStr as _,
+    sync::Arc,
 };
 
 use epoch_blob::BlobHash;
+use epoch_capabilities::{
+    CapabilityAuthorizer, CapabilityHandle, CapabilityService, CapabilityUse, DecisionOutcome,
+    DenialReason,
+};
 use epoch_checkpoint::{APPLICATION_CONTEXT_SCHEMA_VERSION, ApplicationContext, ResumeCursors};
+use epoch_core::{BranchId, SessionId};
+use epoch_effects::{CanonicalIntent, DeterministicLocalDispatcher, EffectGateway, FaultPoint};
 use serde::Serialize;
+use serde_json::json;
 use tempfile::TempDir;
 
 #[derive(Serialize)]
@@ -380,4 +389,226 @@ fn cli_returns_explicit_machine_readable_failed_and_unsupported_outcomes() {
         serde_json::from_slice(&future_mode.stdout).expect("unsupported-mode JSON");
     assert_eq!(future_mode["outcome"], "unsupported");
     assert_eq!(future_mode["issue"]["code"], "unsupported_mode");
+}
+
+#[test]
+fn cli_fork_and_branch_inspection_are_restart_safe_and_promotion_is_explicit() {
+    let fixture = TempDir::new().expect("create CLI fork fixture");
+    let (session, branch, _) = run_fixture(&fixture, 91);
+    let epoch_id = checkpoint(&fixture, &session, &branch);
+
+    let fork = successful_json(
+        &epoch(&fixture, &["fork", &epoch_id, "--name", "cli-experiment"]),
+        "fork",
+    );
+    assert_eq!(fork["operation"], "fork");
+    assert_eq!(fork["outcome"], "supported");
+    assert_eq!(fork["result"]["session_id"], session);
+    assert_eq!(fork["result"]["parent_branch_id"], branch);
+    assert_eq!(fork["result"]["fork_epoch_id"], epoch_id);
+    assert_eq!(fork["result"]["name"], "cli-experiment");
+    assert_eq!(
+        fork["result"]["replay"]["continuation"]["outcome"],
+        "unsupported"
+    );
+    assert_eq!(fork["result"]["effect_frontier"]["outcome"], "unsupported");
+    let child = fork["result"]["branch_id"].as_str().expect("child branch");
+
+    let inspect = successful_json(
+        &epoch(&fixture, &["branch", "inspect", child]),
+        "branch inspect",
+    );
+    assert_eq!(inspect["operation"], "branch.inspect");
+    assert_eq!(inspect["outcome"], "supported");
+    assert_eq!(inspect["result"], fork["result"]);
+
+    let promotion = epoch(&fixture, &["branch", "promote", child]);
+    assert_eq!(promotion.status.code(), Some(3));
+    let promotion: serde_json::Value =
+        serde_json::from_slice(&promotion.stdout).expect("promotion JSON");
+    assert_eq!(promotion["operation"], "branch.promote");
+    assert_eq!(promotion["outcome"], "unsupported");
+    assert_eq!(promotion["issue"]["code"], "unsupported_mode");
+    assert!(
+        promotion["issue"]["detail"]
+            .as_str()
+            .expect("promotion detail")
+            .contains("compare-and-swap")
+    );
+}
+
+#[test]
+fn trusted_security_state_survives_restore_and_fork_three_times() {
+    let fixture = TempDir::new().expect("create Week 3 security fixture");
+    for seed in [111_u64, 112, 113] {
+        run_security_cycle(&fixture, seed);
+    }
+}
+
+fn run_security_cycle(fixture: &TempDir, seed: u64) {
+    let (raw_session, raw_branch, _) = run_fixture(fixture, seed);
+    let session = SessionId::from_str(&raw_session).expect("session ID");
+    let branch = BranchId::from_str(&raw_branch).expect("branch ID");
+    let (revoked_id, revoked_handle) = grant_security_capability(fixture, &raw_branch);
+    let (_, consumed_handle) = grant_security_capability(fixture, &raw_branch);
+    let before_epoch = checkpoint(fixture, &raw_session, &raw_branch);
+
+    let service = Arc::new(
+        CapabilityService::open(fixture.path().join(".epoch/state.db"))
+            .expect("capability service"),
+    );
+    let gateway = EffectGateway::open(
+        fixture.path().join(".epoch/state.db"),
+        fixture.path().join(".epoch/blobs"),
+        Arc::new(
+            CapabilityAuthorizer::new(service.clone(), consumed_handle.clone(), "agent-1", 1)
+                .expect("effect authority"),
+        ),
+        Arc::new(DeterministicLocalDispatcher::default()),
+    )
+    .expect("effect gateway");
+    let intent = CanonicalIntent::new(
+        session,
+        branch,
+        format!("security-{seed}/email-1"),
+        "email.send",
+        "mailbox:test",
+        json!({"to": "checkpoint@example.test"}),
+        0,
+    )
+    .expect("effect intent");
+    gateway
+        .execute(&intent, FaultPoint::None)
+        .expect("consume one-use authority");
+    successful_json(
+        &epoch(fixture, &["capability", "revoke", &revoked_id]),
+        "revoke capability",
+    );
+
+    let restore_target = fixture.path().join(format!("security-restore-{seed}"));
+    let restore = Command::new(env!("CARGO_BIN_EXE_epoch"))
+        .current_dir(fixture.path())
+        .args(["restore", &before_epoch, "--workspace-target"])
+        .arg(&restore_target)
+        .output()
+        .expect("restore source epoch");
+    successful_json(&restore, "security restore");
+
+    assert_restored_denial(
+        &service,
+        &revoked_handle,
+        session,
+        branch,
+        seed,
+        DenialReason::Revoked,
+    );
+    assert_restored_denial(
+        &service,
+        &consumed_handle,
+        session,
+        branch,
+        seed,
+        DenialReason::Consumed,
+    );
+    assert_eq!(
+        gateway.list(session, None).expect("effect history").len(),
+        1
+    );
+
+    let fork = successful_json(
+        &epoch(
+            fixture,
+            &[
+                "fork",
+                &before_epoch,
+                "--name",
+                &format!("security-fork-{seed}"),
+            ],
+        ),
+        "security fork",
+    );
+    assert_eq!(
+        fork["result"]["replay"]["continuation"]["outcome"],
+        "unsupported"
+    );
+    assert_eq!(
+        gateway
+            .list(session, None)
+            .expect("post-fork effects")
+            .len(),
+        1
+    );
+
+    let after_epoch = checkpoint(fixture, &raw_session, &raw_branch);
+    assert_security_diff(fixture, &before_epoch, &after_epoch);
+}
+
+fn grant_security_capability(fixture: &TempDir, branch: &str) -> (String, CapabilityHandle) {
+    let constraints = json!({
+        "subject": "agent-1",
+        "resource": "mailbox:test",
+        "max_uses": 1,
+        "budget_units": 1
+    })
+    .to_string();
+    let output = successful_json(
+        &epoch(
+            fixture,
+            &["capability", "grant", branch, "email.send", &constraints],
+        ),
+        "grant security capability",
+    );
+    (
+        output["capability_id"]
+            .as_str()
+            .expect("capability ID")
+            .to_owned(),
+        CapabilityHandle::from_str(output["handle"].as_str().expect("capability handle"))
+            .expect("opaque handle"),
+    )
+}
+
+fn assert_restored_denial(
+    service: &CapabilityService,
+    handle: &CapabilityHandle,
+    session: SessionId,
+    branch: BranchId,
+    seed: u64,
+    expected: DenialReason,
+) {
+    let request = CapabilityUse::new(
+        session,
+        branch,
+        "agent-1",
+        "email.send",
+        "mailbox:test",
+        0,
+        1,
+        format!("restored-{expected:?}-{seed}"),
+        &"a".repeat(64),
+    )
+    .expect("use request");
+    let decision = service
+        .authorize_and_consume(handle, &request)
+        .expect("durable restored denial");
+    assert_eq!(decision.outcome, DecisionOutcome::Deny);
+    assert_eq!(decision.reason, expected);
+}
+
+fn assert_security_diff(fixture: &TempDir, before_epoch: &str, after_epoch: &str) {
+    let diff = successful_json(
+        &epoch(fixture, &["diff", before_epoch, after_epoch, "--json"]),
+        "security diff",
+    );
+    for section in ["capabilities", "effects"] {
+        assert_eq!(diff["result"][section]["changed_between_epochs"], true);
+        assert!(
+            diff["result"][section]["after_frontier"]
+                .as_u64()
+                .expect("after security frontier")
+                > diff["result"][section]["before_frontier"]
+                    .as_u64()
+                    .expect("before security frontier")
+        );
+    }
 }

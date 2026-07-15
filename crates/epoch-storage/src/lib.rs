@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 /// Latest schema version understood by this build.
-pub const LATEST_SCHEMA_VERSION: i64 = 2;
+pub const LATEST_SCHEMA_VERSION: i64 = 6;
 
 #[derive(Clone, Copy)]
 struct Migration {
@@ -16,7 +16,7 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: [Migration; 2] = [
+const MIGRATIONS: [Migration; 6] = [
     Migration {
         version: 1,
         name: "initial_runtime_schema",
@@ -26,6 +26,26 @@ const MIGRATIONS: [Migration; 2] = [
         version: 2,
         name: "append_only_event_payloads",
         sql: include_str!("0002_append_only_events.sql"),
+    },
+    Migration {
+        version: 3,
+        name: "append_only_effect_history",
+        sql: include_str!("0003_append_only_effect_history.sql"),
+    },
+    Migration {
+        version: 4,
+        name: "trusted_capability_authority",
+        sql: include_str!("0004_trusted_capability_authority.sql"),
+    },
+    Migration {
+        version: 5,
+        name: "durable_branch_forks",
+        sql: include_str!("0005_durable_branch_forks.sql"),
+    },
+    Migration {
+        version: 6,
+        name: "security_frontiers",
+        sql: include_str!("0006_security_frontiers.sql"),
     },
 ];
 

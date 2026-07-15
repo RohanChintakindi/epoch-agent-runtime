@@ -190,6 +190,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-capabilities"
+version = "0.1.0"
+dependencies = [
+ "epoch-core",
+ "epoch-effects",
+ "epoch-storage",
+ "getrandom",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "epoch-checkpoint"
 version = "0.1.0"
 dependencies = [
@@ -206,9 +223,14 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "epoch-blob",
+ "epoch-capabilities",
  "epoch-checkpoint",
  "epoch-core",
+ "epoch-effects",
+ "epoch-sandbox",
+ "epoch-storage",
  "epoch-supervisor",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
@@ -233,6 +255,22 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "epoch-effects"
+version = "0.1.0"
+dependencies = [
+ "epoch-blob",
+ "epoch-core",
+ "epoch-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "uuid",
 ]
 
 [[package]]
@@ -268,6 +306,18 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "epoch-sandbox"
+version = "0.1.0"
+dependencies = [
+ "nix",
+ "seccompiler",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "uuid",
 ]
 
 [[package]]
@@ -310,6 +360,7 @@ dependencies = [
  "epoch-checkpoint",
  "epoch-core",
  "epoch-diff",
+ "epoch-events",
  "epoch-protocol",
  "epoch-storage",
  "epoch-supervisor",
@@ -620,6 +671,17 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "seccompiler"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4ae55de56877481d112a559bbc12667635fdaf5e005712fd4e2b2fa50ffc884"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "serde"

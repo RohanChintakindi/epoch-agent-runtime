@@ -1,29 +1,23 @@
 [package]
-name = "epoch-cli"
+name = "epoch-capabilities"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "epoch"
-path = "src/main.rs"
-
 [dependencies]
-clap.workspace = true
-epoch-capabilities.workspace = true
-epoch-core = { path = "../epoch-core" }
+epoch-core.workspace = true
 epoch-effects.workspace = true
-epoch-sandbox.workspace = true
 epoch-storage.workspace = true
-epoch-supervisor = { path = "../epoch-supervisor" }
+getrandom.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
-epoch-blob.workspace = true
-epoch-checkpoint.workspace = true
 tempfile.workspace = true
 
 [lints]

@@ -118,3 +118,24 @@ fn run_reserves_exit_125_for_supervisor_failures() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("supervisor failed"));
     assert!(fixture.path().join(".epoch/state.db").is_file());
 }
+
+#[test]
+fn explicit_linux_selection_never_falls_back_to_direct_execution() {
+    let fixture = TempDir::new().expect("create Linux selection fixture");
+    let marker = fixture.path().join("must-not-run");
+    let manifest = workload(&fixture, &format!("touch {}\n", marker.display()));
+    let output = Command::new(env!("CARGO_BIN_EXE_epoch"))
+        .current_dir(fixture.path())
+        .args(["run", "--backend", "linux", "--manifest"])
+        .arg(manifest)
+        .output()
+        .expect("select Linux backend");
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("Linux execution was selected and cannot start")
+    );
+    assert!(!marker.exists(), "Linux selection must not launch directly");
+    assert!(!fixture.path().join(".epoch").exists());
+}

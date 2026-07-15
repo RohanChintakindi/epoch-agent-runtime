@@ -17,6 +17,7 @@ thiserror.workspace = true
 [dev-dependencies]
 epoch-core.workspace = true
 epoch-diff = { path = "../epoch-diff" }
+epoch-events = { path = "../epoch-events" }
 epoch-storage.workspace = true
 epoch-supervisor = { path = "../epoch-supervisor" }
 tempfile.workspace = true

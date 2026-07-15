@@ -1,0 +1,403 @@
+{
+  "epoch_agent": {
+    "mismatch_action": {
+      "errno": 1
+    },
+    "match_action": "allow",
+    "filter": [
+      {
+        "syscall": "accept"
+      },
+      {
+        "syscall": "accept4"
+      },
+      {
+        "syscall": "bind"
+      },
+      {
+        "syscall": "brk"
+      },
+      {
+        "syscall": "chdir"
+      },
+      {
+        "syscall": "clock_getres"
+      },
+      {
+        "syscall": "clock_gettime"
+      },
+      {
+        "syscall": "clock_nanosleep"
+      },
+      {
+        "syscall": "clone"
+      },
+      {
+        "syscall": "clone3"
+      },
+      {
+        "syscall": "close"
+      },
+      {
+        "syscall": "close_range"
+      },
+      {
+        "syscall": "connect"
+      },
+      {
+        "syscall": "dup"
+      },
+      {
+        "syscall": "dup3"
+      },
+      {
+        "syscall": "epoll_create1"
+      },
+      {
+        "syscall": "epoll_ctl"
+      },
+      {
+        "syscall": "epoll_pwait"
+      },
+      {
+        "syscall": "epoll_pwait2"
+      },
+      {
+        "syscall": "eventfd2"
+      },
+      {
+        "syscall": "execve"
+      },
+      {
+        "syscall": "execveat"
+      },
+      {
+        "syscall": "exit"
+      },
+      {
+        "syscall": "exit_group"
+      },
+      {
+        "syscall": "faccessat"
+      },
+      {
+        "syscall": "faccessat2"
+      },
+      {
+        "syscall": "fchdir"
+      },
+      {
+        "syscall": "fchmod"
+      },
+      {
+        "syscall": "fchmodat"
+      },
+      {
+        "syscall": "fchown"
+      },
+      {
+        "syscall": "fchownat"
+      },
+      {
+        "syscall": "fcntl"
+      },
+      {
+        "syscall": "fdatasync"
+      },
+      {
+        "syscall": "flock"
+      },
+      {
+        "syscall": "fstat"
+      },
+      {
+        "syscall": "fstatfs"
+      },
+      {
+        "syscall": "fsync"
+      },
+      {
+        "syscall": "ftruncate"
+      },
+      {
+        "syscall": "futex"
+      },
+      {
+        "syscall": "getcpu"
+      },
+      {
+        "syscall": "getcwd"
+      },
+      {
+        "syscall": "getdents64"
+      },
+      {
+        "syscall": "getegid"
+      },
+      {
+        "syscall": "geteuid"
+      },
+      {
+        "syscall": "getgid"
+      },
+      {
+        "syscall": "getitimer"
+      },
+      {
+        "syscall": "getpeername"
+      },
+      {
+        "syscall": "getpid"
+      },
+      {
+        "syscall": "getppid"
+      },
+      {
+        "syscall": "getrandom"
+      },
+      {
+        "syscall": "getresgid"
+      },
+      {
+        "syscall": "getresuid"
+      },
+      {
+        "syscall": "getrlimit"
+      },
+      {
+        "syscall": "get_robust_list"
+      },
+      {
+        "syscall": "getrusage"
+      },
+      {
+        "syscall": "getsockname"
+      },
+      {
+        "syscall": "getsockopt"
+      },
+      {
+        "syscall": "gettid"
+      },
+      {
+        "syscall": "gettimeofday"
+      },
+      {
+        "syscall": "getuid"
+      },
+      {
+        "syscall": "ioctl"
+      },
+      {
+        "syscall": "kill"
+      },
+      {
+        "syscall": "listen"
+      },
+      {
+        "syscall": "lseek"
+      },
+      {
+        "syscall": "madvise"
+      },
+      {
+        "syscall": "membarrier"
+      },
+      {
+        "syscall": "mincore"
+      },
+      {
+        "syscall": "mkdirat"
+      },
+      {
+        "syscall": "mmap"
+      },
+      {
+        "syscall": "mprotect"
+      },
+      {
+        "syscall": "mremap"
+      },
+      {
+        "syscall": "msync"
+      },
+      {
+        "syscall": "munmap"
+      },
+      {
+        "syscall": "nanosleep"
+      },
+      {
+        "syscall": "newfstatat"
+      },
+      {
+        "syscall": "openat"
+      },
+      {
+        "syscall": "pidfd_open"
+      },
+      {
+        "syscall": "pidfd_send_signal"
+      },
+      {
+        "syscall": "pipe2"
+      },
+      {
+        "syscall": "ppoll"
+      },
+      {
+        "syscall": "prctl"
+      },
+      {
+        "syscall": "pread64"
+      },
+      {
+        "syscall": "prlimit64"
+      },
+      {
+        "syscall": "pselect6"
+      },
+      {
+        "syscall": "pwrite64"
+      },
+      {
+        "syscall": "read"
+      },
+      {
+        "syscall": "readlinkat"
+      },
+      {
+        "syscall": "readv"
+      },
+      {
+        "syscall": "recvfrom"
+      },
+      {
+        "syscall": "recvmsg"
+      },
+      {
+        "syscall": "renameat"
+      },
+      {
+        "syscall": "renameat2"
+      },
+      {
+        "syscall": "restart_syscall"
+      },
+      {
+        "syscall": "rseq"
+      },
+      {
+        "syscall": "rt_sigaction"
+      },
+      {
+        "syscall": "rt_sigprocmask"
+      },
+      {
+        "syscall": "rt_sigreturn"
+      },
+      {
+        "syscall": "sched_getaffinity"
+      },
+      {
+        "syscall": "sched_getparam"
+      },
+      {
+        "syscall": "sched_getscheduler"
+      },
+      {
+        "syscall": "sched_setaffinity"
+      },
+      {
+        "syscall": "sched_yield"
+      },
+      {
+        "syscall": "sendfile"
+      },
+      {
+        "syscall": "sendmsg"
+      },
+      {
+        "syscall": "sendto"
+      },
+      {
+        "syscall": "setitimer"
+      },
+      {
+        "syscall": "setrlimit"
+      },
+      {
+        "syscall": "set_robust_list"
+      },
+      {
+        "syscall": "setsockopt"
+      },
+      {
+        "syscall": "set_tid_address"
+      },
+      {
+        "syscall": "shutdown"
+      },
+      {
+        "syscall": "sigaltstack"
+      },
+      {
+        "syscall": "signalfd4"
+      },
+      {
+        "syscall": "socket"
+      },
+      {
+        "syscall": "socketpair"
+      },
+      {
+        "syscall": "statfs"
+      },
+      {
+        "syscall": "statx"
+      },
+      {
+        "syscall": "sysinfo"
+      },
+      {
+        "syscall": "tgkill"
+      },
+      {
+        "syscall": "timerfd_create"
+      },
+      {
+        "syscall": "timerfd_gettime"
+      },
+      {
+        "syscall": "timerfd_settime"
+      },
+      {
+        "syscall": "times"
+      },
+      {
+        "syscall": "truncate"
+      },
+      {
+        "syscall": "umask"
+      },
+      {
+        "syscall": "uname"
+      },
+      {
+        "syscall": "unlinkat"
+      },
+      {
+        "syscall": "wait4"
+      },
+      {
+        "syscall": "waitid"
+      },
+      {
+        "syscall": "write"
+      },
+      {
+        "syscall": "writev"
+      }
+    ]
+  }
+}

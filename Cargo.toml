@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/epoch-blob",
+    "crates/epoch-capabilities",
     "crates/epoch-checkpoint",
     "crates/epoch-cli",
     "crates/epoch-core",
@@ -25,6 +26,7 @@ rust-version = "1.85"
 [workspace.dependencies]
 clap = { version = "4.5", features = ["derive"] }
 epoch-blob = { path = "crates/epoch-blob" }
+epoch-capabilities = { path = "crates/epoch-capabilities" }
 epoch-checkpoint = { path = "crates/epoch-checkpoint" }
 epoch-core = { path = "crates/epoch-core" }
 epoch-effects = { path = "crates/epoch-effects" }

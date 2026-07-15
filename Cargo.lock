@@ -190,6 +190,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "epoch-capabilities"
+version = "0.1.0"
+dependencies = [
+ "epoch-core",
+ "epoch-effects",
+ "epoch-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "epoch-checkpoint"
 version = "0.1.0"
 dependencies = [

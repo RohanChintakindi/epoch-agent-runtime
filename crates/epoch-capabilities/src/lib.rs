@@ -111,6 +111,32 @@ pub struct IssuedCapability {
     pub handle: CapabilityHandle,
 }
 
+/// Current trusted lifecycle state exposed without revealing bearer material.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityState {
+    Active,
+    Consumed,
+    Expired,
+    Revoked,
+}
+
+/// Non-secret administrative view of one durable capability.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CapabilitySnapshot {
+    pub capability_id: CapabilityId,
+    pub session_id: SessionId,
+    pub branch_id: BranchId,
+    pub subject: String,
+    pub action: String,
+    pub resource: String,
+    pub remaining_uses: Option<u64>,
+    pub remaining_budget_units: Option<u64>,
+    pub policy_revision: u64,
+    pub state: CapabilityState,
+    pub expires_at_unix_ms: Option<i64>,
+}
+
 /// A validated attempt to use a capability.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityUse {
@@ -452,7 +478,7 @@ impl CapabilityService {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let capability = load_capability_by_hash(&transaction, &handle.digest())?
             .ok_or(CapabilityError::UnknownParentCapability)?;
-        if capability.status == CapabilityStatus::Active {
+        if capability.status == CapabilityState::Active {
             transaction.execute(
                 "UPDATE capabilities SET status = 'revoked', updated_at_unix_ms = ?2 \
                  WHERE id = ?1 AND status = 'active'",
@@ -461,6 +487,48 @@ impl CapabilityService {
         }
         transaction.commit()?;
         Ok(())
+    }
+
+    /// Irreversibly revokes a capability by its non-secret durable identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unknown identity, invalid clock, or trusted storage failure.
+    pub fn revoke_by_id(&self, capability_id: CapabilityId) -> Result<(), CapabilityError> {
+        let now = self.now()?;
+        let mut store = self.lock_store()?;
+        let transaction = store
+            .connection_mut()
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let capability = load_capability_by_id(&transaction, capability_id)?
+            .ok_or(CapabilityError::CapabilityNotFound { capability_id })?;
+        if capability.status == CapabilityState::Active {
+            let changed = transaction.execute(
+                "UPDATE capabilities SET status = 'revoked', updated_at_unix_ms = ?2 \
+                 WHERE id = ?1 AND status = 'active'",
+                params![capability_id.to_string(), now],
+            )?;
+            if changed != 1 {
+                return Err(CapabilityError::ConcurrentAuthorityChange);
+            }
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Returns a non-secret current view of a capability.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unknown identity or corrupt/unavailable trusted state.
+    pub fn inspect(
+        &self,
+        capability_id: CapabilityId,
+    ) -> Result<CapabilitySnapshot, CapabilityError> {
+        let store = self.lock_store()?;
+        let capability = load_capability_by_id(store.connection(), capability_id)?
+            .ok_or(CapabilityError::CapabilityNotFound { capability_id })?;
+        CapabilitySnapshot::try_from(capability)
     }
 
     /// Validates current authority, atomically consumes all ancestor counters, and appends audit.
@@ -695,15 +763,7 @@ impl Authorizer for CapabilityAuthorizer {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CapabilityStatus {
-    Active,
-    Consumed,
-    Expired,
-    Revoked,
-}
-
-impl CapabilityStatus {
+impl CapabilityState {
     fn parse(value: &str) -> Result<Self, CapabilityError> {
         match value {
             "active" => Ok(Self::Active),
@@ -728,7 +788,7 @@ struct StoredCapability {
     remaining_uses: Option<i64>,
     remaining_budget_units: Option<i64>,
     policy_revision: i64,
-    status: CapabilityStatus,
+    status: CapabilityState,
     expires_at_unix_ms: Option<i64>,
 }
 
@@ -1015,10 +1075,10 @@ fn direct_state_denial(
     now: i64,
 ) -> Result<Option<DenialReason>, CapabilityError> {
     match capability.status {
-        CapabilityStatus::Revoked => return Ok(Some(DenialReason::Revoked)),
-        CapabilityStatus::Expired => return Ok(Some(DenialReason::Expired)),
-        CapabilityStatus::Consumed => return Ok(Some(DenialReason::Consumed)),
-        CapabilityStatus::Active => {}
+        CapabilityState::Revoked => return Ok(Some(DenialReason::Revoked)),
+        CapabilityState::Expired => return Ok(Some(DenialReason::Expired)),
+        CapabilityState::Consumed => return Ok(Some(DenialReason::Consumed)),
+        CapabilityState::Active => {}
     }
     if capability.remaining_uses == Some(0) || capability.remaining_budget_units == Some(0) {
         mark_consumed(transaction, capability.id, now)?;
@@ -1042,10 +1102,10 @@ fn ancestor_denial(
 ) -> Result<Option<DenialReason>, CapabilityError> {
     for ancestor in ancestors.iter().skip(1) {
         match ancestor.status {
-            CapabilityStatus::Revoked => return Ok(Some(DenialReason::AncestorRevoked)),
-            CapabilityStatus::Expired => return Ok(Some(DenialReason::AncestorExpired)),
-            CapabilityStatus::Consumed => return Ok(Some(DenialReason::AncestorConsumed)),
-            CapabilityStatus::Active => {}
+            CapabilityState::Revoked => return Ok(Some(DenialReason::AncestorRevoked)),
+            CapabilityState::Expired => return Ok(Some(DenialReason::AncestorExpired)),
+            CapabilityState::Consumed => return Ok(Some(DenialReason::AncestorConsumed)),
+            CapabilityState::Active => {}
         }
         if ancestor.remaining_uses == Some(0) || ancestor.remaining_budget_units == Some(0) {
             mark_consumed(transaction, ancestor.id, now)?;
@@ -1209,6 +1269,36 @@ fn load_capability_by_hash(
     raw.map(stored_capability_from_raw).transpose()
 }
 
+fn load_capability_by_id(
+    connection: &Connection,
+    capability_id: CapabilityId,
+) -> Result<Option<StoredCapability>, CapabilityError> {
+    let raw = connection
+        .query_row(
+            "SELECT id, session_id, branch_id, subject, action, resource, remaining_uses, \
+             remaining_budget_units, policy_revision, status, expires_at_unix_ms \
+             FROM capabilities WHERE id = ?1",
+            [capability_id.to_string()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, i64>(8)?,
+                    row.get::<_, String>(9)?,
+                    row.get::<_, Option<i64>>(10)?,
+                ))
+            },
+        )
+        .optional()?;
+    raw.map(stored_capability_from_raw).transpose()
+}
+
 fn load_ancestors(
     connection: &Connection,
     capability_id: CapabilityId,
@@ -1267,9 +1357,42 @@ fn stored_capability_from_raw(raw: RawCapability) -> Result<StoredCapability, Ca
         remaining_uses: raw.6,
         remaining_budget_units: raw.7,
         policy_revision: raw.8,
-        status: CapabilityStatus::parse(&raw.9)?,
+        status: CapabilityState::parse(&raw.9)?,
         expires_at_unix_ms: raw.10,
     })
+}
+
+impl TryFrom<StoredCapability> for CapabilitySnapshot {
+    type Error = CapabilityError;
+
+    fn try_from(capability: StoredCapability) -> Result<Self, Self::Error> {
+        Ok(Self {
+            capability_id: capability.id,
+            session_id: capability.session_id,
+            branch_id: capability.branch_id,
+            subject: capability.subject,
+            action: capability.action,
+            resource: capability.resource,
+            remaining_uses: capability
+                .remaining_uses
+                .map(|value| stored_u64("capabilities.remaining_uses", value))
+                .transpose()?,
+            remaining_budget_units: capability
+                .remaining_budget_units
+                .map(|value| stored_u64("capabilities.remaining_budget_units", value))
+                .transpose()?,
+            policy_revision: stored_u64(
+                "capabilities.policy_revision",
+                capability.policy_revision,
+            )?,
+            state: capability.status,
+            expires_at_unix_ms: capability.expires_at_unix_ms,
+        })
+    }
+}
+
+fn stored_u64(field: &'static str, value: i64) -> Result<u64, CapabilityError> {
+    u64::try_from(value).map_err(|_| CapabilityError::CorruptRecord { field })
 }
 
 fn parse_capability_id(value: &str) -> Result<CapabilityId, CapabilityError> {
@@ -1356,6 +1479,8 @@ pub enum CapabilityError {
     PolicyNotCurrent { current: u64, requested: u64 },
     #[error("parent capability is unknown")]
     UnknownParentCapability,
+    #[error("capability {capability_id} does not exist")]
+    CapabilityNotFound { capability_id: CapabilityId },
     #[error("parent capability is not currently active")]
     InactiveParentCapability,
     #[error("attenuation would widen {field}")]
